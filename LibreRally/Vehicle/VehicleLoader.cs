@@ -90,6 +90,8 @@ public class VehicleLoader
             BreakWheels = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
             DriveMotorForce = motorForce,
             WheelRadius = wheelRadius,
+            DriveRatio = gearRatio1 * finalDrive,
+            MaxRpm = definition.Vars.TryGetValue("maxRPM", out float mr) && mr > 0 ? mr : 7500f,
         };
         rootEntity.Add(car);
 

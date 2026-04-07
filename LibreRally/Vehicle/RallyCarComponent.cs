@@ -42,7 +42,16 @@ public class RallyCarComponent : SyncScript
     /// <summary>Lateral grip: fraction of sideways velocity removed per second.</summary>
     public float LateralGrip { get; set; } = 6f;
 
+    /// <summary>Combined gear + final drive ratio for RPM estimation (gear1 × finalDrive).</summary>
+    public float DriveRatio { get; set; } = 16.57f;  // 3.64 × 4.55 (rally_pro_asphalt)
+
+    /// <summary>Max engine RPM (redline).</summary>
+    public float MaxRpm { get; set; } = 7500f;
+
     public float SpeedKmh { get; private set; }
+    public float EngineRpm { get; private set; }
+    public float ThrottleInput { get; private set; }
+    public float BrakeInput { get; private set; }
 
     public override void Start() { }
 
@@ -92,6 +101,12 @@ public class RallyCarComponent : SyncScript
         float forwardSpeed = Vector3.Dot(vel, noseDir);
 
         SpeedKmh = MathF.Abs(forwardSpeed) * 3.6f;
+        ThrottleInput = throttle;
+        BrakeInput    = brake;
+
+        // Estimate engine RPM from wheel speed × drive ratio
+        float wheelOmega = MathF.Abs(forwardSpeed) / WheelRadius;  // rad/s
+        EngineRpm = Math.Clamp(wheelOmega * DriveRatio * 60f / (2f * MathF.PI), 800f, MaxRpm);
 
         // ── Drive wheels (motor-based spin → friction → propulsion) ──────────
         // Nose is at +Z. Positive rotation around chassis +X moves wheel bottom in -Z,

@@ -86,9 +86,10 @@ public class RallyCameraScript : SyncScript
 
     /// <summary>
     /// Points the camera toward <paramref name="targetWorldPos"/> using correct Stride conventions.
-    /// In Stride: identity rotation looks toward -Z; positive pitch tilts up.
-    /// Yaw   = atan2(lookDir.X, -lookDir.Z)  — zero when looking along -Z
-    /// Pitch = atan2(lookDir.Y,  horizontal)  — negative when target is below camera
+    /// Stride camera default forward = -Z. After RotationY(yaw), local -Z becomes (-sin yaw, 0, -cos yaw).
+    /// We need that to match lookDir.X and lookDir.Z, so:
+    ///   -sin(yaw) = lookDir.X  →  yaw = atan2(-lookDir.X, -lookDir.Z)
+    /// Pitch = atan2(lookDir.Y, horizontal) — negative when target is below camera.
     /// </summary>
     private void ApplyCameraRotation(Vector3 targetWorldPos)
     {
@@ -97,7 +98,7 @@ public class RallyCameraScript : SyncScript
 
         lookDir.Normalize();
         float horizontal = MathF.Sqrt(lookDir.X * lookDir.X + lookDir.Z * lookDir.Z);
-        float yaw   = MathF.Atan2(lookDir.X, -lookDir.Z);
+        float yaw   = MathF.Atan2(-lookDir.X, -lookDir.Z);
         float pitch = MathF.Atan2(lookDir.Y,  horizontal);
         Entity.Transform.Rotation = Quaternion.RotationYawPitchRoll(yaw, pitch, 0f);
     }

@@ -95,8 +95,7 @@ public static class JBeamAssembler
 
             if (library.TryGetValue(partName, out var child))
                 ResolveSlots(child, library, result, visited, pcParts);
-            else
-                Console.WriteLine($"[JBeamAssembler] Slot '{slot.Type}' wants '{partName}' but part not found.");
+            // Missing parts (e.g. common.zip parts not shipped with the mod) are silently ignored.
         }
     }
 

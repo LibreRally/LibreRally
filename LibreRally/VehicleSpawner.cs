@@ -7,6 +7,10 @@ using Stride.BepuPhysics;
 using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
 using Stride.Engine;
+using Stride.Graphics;
+using Stride.Rendering;
+using Stride.Rendering.Materials;
+using Stride.Rendering.Materials.ComputeColors;
 
 namespace LibreRally;
 
@@ -67,6 +71,24 @@ public class VehicleSpawner : SyncScript
         Log.Info(_status);
 
         AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
+        AttachHud(vehicle.CarComponent);
+    }
+
+    private void AttachHud(RallyCarComponent car)
+    {
+        // Find an existing HUD entity or create one
+        var hudEntity = SceneSystem.SceneInstance.RootScene.Entities
+            .FirstOrDefault(e => e.Name == "HUD");
+        if (hudEntity == null)
+        {
+            hudEntity = new Entity("HUD");
+            SceneSystem.SceneInstance.RootScene.Entities.Add(hudEntity);
+        }
+
+        // Remove any existing RallyHud component then re-add with the current car
+        foreach (var h in hudEntity.GetAll<LibreRally.HUD.RallyHud>().ToList())
+            hudEntity.Remove(h);
+        hudEntity.Add(new LibreRally.HUD.RallyHud { Car = car });
     }
 
     private void AttachCamera(Entity chassis, RallyCarComponent car)
@@ -96,6 +118,101 @@ public class VehicleSpawner : SyncScript
                 Colliders = { new BoxCollider { Size = new Vector3(500f, 1f, 500f) } }
             }
         });
+
+        // Add checkerboard visual so there's a visual reference for movement
+        AddCheckerboardFloor();
+    }
+
+    /// <summary>
+    /// Creates a large tessellated quad mesh with a procedural checkerboard texture
+    /// so the player has a visual reference while driving.
+    /// </summary>
+    private void AddCheckerboardFloor()
+    {
+        try
+        {
+            var gd = ((Game)Game).GraphicsDevice;
+
+            // ── Procedural 2×2 checkerboard texture ──────────────────────────
+            // Two shades of grey; tiled heavily via UV scaling so tiles are ~8m each.
+            byte dark  = 55;
+            byte light = 115;
+            var pixelBytes = new byte[]
+            {
+                dark,  dark,  dark,  255,   // top-left: dark
+                light, light, light, 255,   // top-right: light
+                light, light, light, 255,   // bottom-left: light
+                dark,  dark,  dark,  255,   // bottom-right: dark
+            };
+            var image = Image.New2D(2, 2, 1, PixelFormat.R8G8B8A8_UNorm);
+            var imageData = image.GetPixelBuffer(0, 0).GetPixels<byte>();
+            for (int i = 0; i < pixelBytes.Length; i++) imageData[i] = pixelBytes[i];
+            var checkerTex = Texture.New(gd, image);
+            image.Dispose();
+
+            // ── Large flat quad (500×500 m), Y = +0.5 so it sits on the top of the box ──
+            // UV 0→125 means each 2×2 pixel tile = 4m. With nearest-neighbour wrap that
+            // creates a clean 4m checkerboard across the whole ground plane.
+            const float Half    = 250f;
+            const float UvScale = 62.5f;   // 500m / 8m per tile
+            const float SurfY   = 0.5f;    // top of the 1m-thick box
+
+            var verts = new VertexPositionNormalTexture[]
+            {
+                new(new Vector3(-Half, SurfY, -Half), Vector3.UnitY, new Vector2(0,       0)),
+                new(new Vector3( Half, SurfY, -Half), Vector3.UnitY, new Vector2(UvScale, 0)),
+                new(new Vector3( Half, SurfY,  Half), Vector3.UnitY, new Vector2(UvScale, UvScale)),
+                new(new Vector3(-Half, SurfY,  Half), Vector3.UnitY, new Vector2(0,       UvScale)),
+            };
+            var indices = new int[] { 0, 1, 2, 0, 2, 3 };
+
+            var mesh = new Mesh
+            {
+                BoundingBox = new BoundingBox(new Vector3(-Half, SurfY - 0.01f, -Half),
+                                              new Vector3( Half, SurfY + 0.01f,  Half)),
+                Draw = new MeshDraw
+                {
+                    PrimitiveType = PrimitiveType.TriangleList,
+                    VertexBuffers = new[]
+                    {
+                        new VertexBufferBinding(
+                            Stride.Graphics.Buffer.Vertex.New(gd, verts, GraphicsResourceUsage.Immutable),
+                            VertexPositionNormalTexture.Layout, verts.Length)
+                    },
+                    IndexBuffer = new IndexBufferBinding(
+                        Stride.Graphics.Buffer.Index.New(gd, indices), true, indices.Length),
+                    DrawCount = indices.Length,
+                }
+            };
+
+            // Nearest-neighbour sampler so checker tiles have crisp edges
+            var samplerDesc = new SamplerStateDescription(TextureFilter.Point, TextureAddressMode.Wrap);
+            var sampler = SamplerState.New(gd, samplerDesc);
+
+            var diffuseMap = new ComputeTextureColor(checkerTex)
+            {
+                AddressModeU = TextureAddressMode.Wrap,
+                AddressModeV = TextureAddressMode.Wrap,
+                Filtering    = TextureFilter.Point,
+            };
+
+            var material = Material.New(gd, new MaterialDescriptor
+            {
+                Attributes = new MaterialAttributes
+                {
+                    Diffuse      = new MaterialDiffuseMapFeature(diffuseMap),
+                    DiffuseModel = new MaterialDiffuseLambertModelFeature(),
+                }
+            });
+
+            var floorEntity = new Entity("ground_checker");
+            floorEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
+            Entity.AddChild(floorEntity);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Could not build checkerboard floor: {ex.Message}");
+        }
     }
 
     public override void Update()
