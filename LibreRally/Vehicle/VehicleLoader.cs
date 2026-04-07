@@ -74,29 +74,42 @@ public class VehicleLoader
         TryAttachMeshes(vehicleFolderPath, result.ChassisEntity, definition);
 
         // 4. Wire up the rally car driving component
-        // DriveMotorForce: use engine torque from vars if available
-        float gearRatio1 = definition.Vars.TryGetValue("gear_1", out float g1) ? g1 : 3.64f;
-        float finalDrive  = definition.Vars.TryGetValue("finaldrive_F", out float fd) ? fd : 4.55f;
-        float wheelRadius  = 0.305f;
-        float peakTorqueNm = 222f; // sunburst2 2.0 engine peak torque at wheel (Nm at crank)
-        float motorForce   = peakTorqueNm * gearRatio1 * finalDrive / wheelRadius;
+        float V(string name, float fallback) =>
+            definition.Vars.TryGetValue(name, out float v) && v > 0 ? v : fallback;
+
+        float finalDrive  = V("finaldrive_F", 4.55f);
+        float wheelRadius = 0.305f;
+        float maxRpm      = V("maxRPM",  7500f);
+        float idleRpm     = V("idleRPM",  900f);
+        float peakTorque  = 222f; // sunburst2 2.0T rally engine peak Nm (crank)
+
+        // Build gear ratio array: index 0 = reverse, 1-6 = forward gears
+        float gearR = V("gear_R", 3.25f);
+        float[] gears = {
+            gearR,
+            V("gear_1", 3.64f), V("gear_2", 2.38f), V("gear_3", 1.76f),
+            V("gear_4", 1.35f), V("gear_5", 1.06f), V("gear_6", 0.84f),
+        };
 
         var car = new RallyCarComponent
         {
             CarBody = result.ChassisEntity,
-            Wheels = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            SteerWheels = { result.WheelFL, result.WheelFR },
-            DriveWheels = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            BreakWheels = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            DriveMotorForce = motorForce,
-            WheelRadius = wheelRadius,
-            DriveRatio = gearRatio1 * finalDrive,
-            MaxRpm = definition.Vars.TryGetValue("maxRPM", out float mr) && mr > 0 ? mr : 7500f,
+            Wheels       = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
+            SteerWheels  = { result.WheelFL, result.WheelFR },
+            DriveWheels  = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
+            BreakWheels  = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
+            WheelRadius  = wheelRadius,
+            GearRatios   = gears,
+            FinalDrive   = finalDrive,
+            PeakTorqueNm = peakTorque,
+            MaxRpm       = maxRpm,
+            IdleRpm      = idleRpm,
         };
         rootEntity.Add(car);
 
-        Log.Info($"[VehicleLoader] DriveMotorForce={motorForce:F0}N " +
-                 $"(torque={peakTorqueNm}Nm × gear1={gearRatio1:F2} × final={finalDrive:F2} / r={wheelRadius:F3})");
+        Log.Info($"[VehicleLoader] Gears: R={gearR:F2} " +
+                 string.Join(" ", gears.Skip(1).Select((g, i) => $"{i+1}={g:F2}")) +
+                 $" | FD={finalDrive:F2} | MaxRPM={maxRpm:F0} | PeakTorque={peakTorque:F0}Nm");
 
         return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR);
     }

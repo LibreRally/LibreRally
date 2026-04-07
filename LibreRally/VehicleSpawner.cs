@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using LibreRally.Camera;
+using LibreRally.HUD;
 using LibreRally.Vehicle;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Definitions.Colliders;
@@ -74,7 +75,28 @@ public class VehicleSpawner : SyncScript
 
         AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
         AttachHud(vehicle.CarComponent);
+        AttachSpeedoGauge(vehicle.CarComponent);
     }
+
+    private SpeedoGauge? _speedoGauge;
+
+    private void AttachSpeedoGauge(RallyCarComponent car)
+    {
+        // Remove old instance if respawning
+        if (_speedoGauge != null)
+        {
+            ((Game)Game).GameSystems.Remove(_speedoGauge);
+            _speedoGauge.Dispose();
+        }
+        _speedoGauge = new SpeedoGauge(Services);
+        ((Game)Game).GameSystems.Add(_speedoGauge);
+
+        // The gauge reads from _speedoGauge properties we update in Update()
+        // Store reference so Update() can push telemetry
+        _car = car;
+    }
+
+    private RallyCarComponent? _car;
 
     private void AttachHud(RallyCarComponent car)
     {
@@ -219,6 +241,17 @@ public class VehicleSpawner : SyncScript
 
     public override void Update()
     {
+        // Push telemetry to gauge each frame
+        if (_speedoGauge != null && _car != null)
+        {
+            _speedoGauge.SpeedKmh      = _car.SpeedKmh;
+            _speedoGauge.EngineRpm     = _car.EngineRpm;
+            _speedoGauge.MaxRpm        = _car.MaxRpm;
+            _speedoGauge.CurrentGear   = _car.CurrentGear;
+            _speedoGauge.ThrottleInput = _car.ThrottleInput;
+            _speedoGauge.BrakeInput    = _car.BrakeInput;
+        }
+
         // Toggle debug info with F3
         if (Input.IsKeyPressed(Keys.F3)) _showDebug = !_showDebug;
 

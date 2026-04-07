@@ -18,14 +18,8 @@ public class RallyCarComponent : SyncScript
     public List<Entity> DriveWheels { get; set; } = new();
     public List<Entity> BreakWheels { get; set; } = new();
 
-    /// <summary>Maximum forward speed in m/s (~180 km/h).</summary>
-    public float MaxSpeedMs { get; set; } = 50f;
-
     /// <summary>Wheel radius used to convert speed to spin rate (m).</summary>
     public float WheelRadius { get; set; } = 0.305f;
-
-    /// <summary>Maximum drive motor torque (N·m). Higher = more torque / acceleration.</summary>
-    public float DriveMotorForce { get; set; } = 8000f;
 
     /// <summary>Brake motor force — how hard wheels resist rotation when braking.</summary>
     public float BrakeMotorForce { get; set; } = 10000f;
@@ -42,16 +36,39 @@ public class RallyCarComponent : SyncScript
     /// <summary>Lateral grip: fraction of sideways velocity removed per second.</summary>
     public float LateralGrip { get; set; } = 6f;
 
-    /// <summary>Combined gear + final drive ratio for RPM estimation (gear1 × finalDrive).</summary>
-    public float DriveRatio { get; set; } = 16.57f;  // 3.64 × 4.55 (rally_pro_asphalt)
+    /// <summary>Forward gear ratios indexed 1–N (index 0 = reverse).</summary>
+    public float[] GearRatios { get; set; } = { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
+
+    /// <summary>Final drive (differential) ratio.</summary>
+    public float FinalDrive { get; set; } = 4.55f;
+
+    /// <summary>Peak engine torque at the crank (N·m).</summary>
+    public float PeakTorqueNm { get; set; } = 222f;
 
     /// <summary>Max engine RPM (redline).</summary>
     public float MaxRpm { get; set; } = 7500f;
 
+    /// <summary>Idle RPM (minimum engine speed).</summary>
+    public float IdleRpm { get; set; } = 900f;
+
+    /// <summary>RPM to upshift at (auto-transmission).</summary>
+    public float ShiftUpRpm { get; set; } = 6500f;
+
+    /// <summary>RPM to downshift at (auto-transmission).</summary>
+    public float ShiftDownRpm { get; set; } = 2200f;
+
+    // ── Read-only telemetry ──────────────────────────────────────────────────
     public float SpeedKmh { get; private set; }
     public float EngineRpm { get; private set; }
     public float ThrottleInput { get; private set; }
     public float BrakeInput { get; private set; }
+    public int CurrentGear { get; private set; } = 1;
+
+    // Only kept for backward compatibility (HUD reads it); computed from current gear
+    public float DriveRatio => EffectiveRatio;
+
+    private float EffectiveRatio => GearRatios[Math.Clamp(CurrentGear, 0, GearRatios.Length - 1)] * FinalDrive;
+    private float _shiftCooldown;
 
     public override void Start() { }
 
@@ -81,9 +98,12 @@ public class RallyCarComponent : SyncScript
         if (Input.IsKeyDown(Keys.Space))                             handbrake = true;
 
         string padInfo = pad != null
-            ? $"Pad | T:{throttle:F2} B:{brake:F2} S:{steer:F2}"
+            ? $"Pad | T:{throttle:F2} B:{brake:F2} S:{steer:F2} G:{CurrentGear}"
             : $"No pad ({Input.GamePads.Count}) — use arrows";
         DebugText.Print($"{padInfo} | {SpeedKmh:F0} km/h", new Int2(10, 30));
+
+        bool isBraking   = brake > 0.05f;
+        bool isHandbrake = handbrake;
 
         // ── Chassis physics ──────────────────────────────────────────────────
         var chassisBody = CarBody.Get<BodyComponent>();
@@ -104,17 +124,46 @@ public class RallyCarComponent : SyncScript
         ThrottleInput = throttle;
         BrakeInput    = brake;
 
-        // Estimate engine RPM from wheel speed × drive ratio
-        float wheelOmega = MathF.Abs(forwardSpeed) / WheelRadius;  // rad/s
-        EngineRpm = Math.Clamp(wheelOmega * DriveRatio * 60f / (2f * MathF.PI), 800f, MaxRpm);
+        // ── Auto transmission ────────────────────────────────────────────────
+        // Compute engine RPM from current wheel speed and active gear ratio.
+        float wheelOmega   = MathF.Abs(forwardSpeed) / WheelRadius;  // rad/s
+        float effectiveRatio = EffectiveRatio;
+        EngineRpm = Math.Clamp(wheelOmega * effectiveRatio * 60f / (2f * MathF.PI), IdleRpm, MaxRpm);
 
-        // ── Drive wheels (motor-based spin → friction → propulsion) ──────────
-        // Nose is at +Z. Positive rotation around chassis +X moves wheel bottom in -Z,
-        // which pushes the car in +Z (forward toward nose). BUT BEPU convention flips this:
-        // positive TargetVelocity actually drives the car in -Z (backward). Negate to go forward.
-        float targetOmega = -(throttle * MaxSpeedMs / WheelRadius);
-        bool isBraking = brake > 0.05f;
-        bool isHandbrake = handbrake;
+        _shiftCooldown = MathF.Max(0f, _shiftCooldown - dt);
+
+        int numForwardGears = GearRatios.Length - 1; // index 0 = reverse
+        if (_shiftCooldown <= 0f && !isBraking && !isHandbrake && throttle > 0.05f)
+        {
+            if (EngineRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
+            {
+                CurrentGear++;
+                _shiftCooldown = 0.4f;
+                effectiveRatio = EffectiveRatio;
+            }
+            else if (EngineRpm <= ShiftDownRpm && CurrentGear > 1)
+            {
+                CurrentGear--;
+                _shiftCooldown = 0.4f;
+                effectiveRatio = EffectiveRatio;
+            }
+        }
+        // Down-shift when braking hard
+        if (_shiftCooldown <= 0f && isBraking && CurrentGear > 1)
+        {
+            float brakingRpm = wheelOmega * EffectiveRatio * 60f / (2f * MathF.PI);
+            if (brakingRpm < ShiftDownRpm)
+            {
+                CurrentGear--;
+                _shiftCooldown = 0.4f;
+                effectiveRatio = EffectiveRatio;
+            }
+        }
+
+        // ── Per-gear motor parameters ────────────────────────────────────────
+        float maxWheelOmega  = MaxRpm / effectiveRatio * (2f * MathF.PI / 60f);
+        float targetOmega    = -(throttle * maxWheelOmega);
+        float gearMotorForce = PeakTorqueNm * effectiveRatio / WheelRadius;
 
         foreach (var wheel in DriveWheels)
         {
@@ -130,7 +179,7 @@ public class RallyCarComponent : SyncScript
             else if (throttle > 0.05f)
             {
                 ws.DriveMotor.TargetVelocity   = targetOmega;
-                ws.DriveMotor.MotorMaximumForce = DriveMotorForce;
+                ws.DriveMotor.MotorMaximumForce = gearMotorForce;
             }
             else
             {
