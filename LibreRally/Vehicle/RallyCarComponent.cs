@@ -147,19 +147,34 @@ public class RallyCarComponent : SyncScript
         BrakeInput    = brake;
 
         // ── Auto transmission ────────────────────────────────────────────────
+        // Use speed-derived RPM for shift decisions — NOT the cosmetic display RPM.
+        // The display RPM free-revs at standstill, which would shift the car to 6th
+        // gear before it even moves.
         float effectiveRatio = EffectiveRatio;
         _shiftCooldown = MathF.Max(0f, _shiftCooldown - dt);
+
+        float wheelOmegaForShift = MathF.Abs(forwardSpeed) / WheelRadius;
+        float speedRpm = wheelOmegaForShift * effectiveRatio * (60f / (2f * MathF.PI));
+        speedRpm = Math.Clamp(speedRpm, IdleRpm, MaxRpm);
+
+        // Force gear 1 when nearly stationary
+        if (SpeedKmh < 2f && CurrentGear > 1 && _shiftCooldown <= 0f)
+        {
+            CurrentGear    = 1;
+            effectiveRatio = EffectiveRatio;
+            _shiftCooldown = 0.4f;
+        }
 
         int numForwardGears = GearRatios.Length - 1;
         if (_shiftCooldown <= 0f && !isBraking && !isHandbrake && throttle > 0.05f)
         {
-            if (_engineRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
+            if (speedRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
             {
                 CurrentGear++;
                 _shiftCooldown = 0.4f;
                 effectiveRatio = EffectiveRatio;
             }
-            else if (_engineRpm <= ShiftDownRpm && CurrentGear > 1)
+            else if (speedRpm <= ShiftDownRpm && CurrentGear > 1)
             {
                 CurrentGear--;
                 _shiftCooldown = 0.4f;
@@ -168,9 +183,7 @@ public class RallyCarComponent : SyncScript
         }
         if (_shiftCooldown <= 0f && isBraking && CurrentGear > 1)
         {
-            // Downshift when braking to keep engine in power band
-            float brakingDemandRpm = (MathF.Abs(forwardSpeed) / WheelRadius) * effectiveRatio * 60f / (2f * MathF.PI);
-            if (brakingDemandRpm < ShiftDownRpm)
+            if (speedRpm < ShiftDownRpm)
             {
                 CurrentGear--;
                 _shiftCooldown = 0.4f;
@@ -189,11 +202,11 @@ public class RallyCarComponent : SyncScript
         //    This gives a realistic rev needle without affecting the driving physics.
 
         // ─ Torque for wheels (based on actual drivetrain state) ──────────────
-        float wheelOmega  = MathF.Abs(forwardSpeed) / WheelRadius;           // rad/s
-        float demandRpm   = wheelOmega * effectiveRatio * (60f / (2f * MathF.PI));
-        float torqueRpm   = Math.Clamp(demandRpm, IdleRpm, MaxRpm);          // working RPM
-        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;    // N·m at crank
+        // speedRpm already computed above for auto-shift; reuse it here.
+        float torqueRpm   = speedRpm;                                          // working RPM (idle–MaxRpm)
+        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;     // N·m at crank
         float engBrake    = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
+        float demandRpm   = speedRpm;
 
         // ─ RPM display (state variable, for gauge and auto-shift) ───────────
         float engineOmega  = _engineRpm * (2f * MathF.PI / 60f);
