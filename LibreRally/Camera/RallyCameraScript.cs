@@ -17,16 +17,19 @@ public class RallyCameraScript : SyncScript
     public Vector3 FollowOffset { get; set; } = new Vector3(0, 3f, -12f);
     public float FollowLerpSpeed { get; set; } = 5f;
 
+    /// <summary>Bonnet/hood camera offset in car-local space (+Z = nose).</summary>
     public Vector3 BonnetOffset { get; set; } = new Vector3(0, 0.8f, 1.5f);
 
-    private enum CameraMode { Follow, Bonnet }
+    /// <summary>Front bumper camera offset in car-local space (+Z = nose).</summary>
+    public Vector3 BumperOffset { get; set; } = new Vector3(0, 0.3f, 2.8f);
+
+    private enum CameraMode { Follow, Bonnet, Bumper }
     private CameraMode _mode = CameraMode.Follow;
 
     public override void Start()
     {
         if (Target == null) return;
         var worldPos = ComputeApproximateWorldPos(Target);
-        // Yaw-only at start (rotation is identity, so offset is applied as-is)
         Entity.Transform.Position = worldPos + FollowOffset;
         ApplyCameraRotation(worldPos);
     }
@@ -50,12 +53,22 @@ public class RallyCameraScript : SyncScript
 
         var pad = Input.GamePads.FirstOrDefault();
         if (pad != null && pad.IsButtonPressed(GamePadButton.Y))
-            _mode = _mode == CameraMode.Follow ? CameraMode.Bonnet : CameraMode.Follow;
+        {
+            // Cycle: Follow → Bonnet → Bumper → Follow
+            _mode = _mode switch
+            {
+                CameraMode.Follow => CameraMode.Bonnet,
+                CameraMode.Bonnet => CameraMode.Bumper,
+                _                 => CameraMode.Follow,
+            };
+        }
 
-        if (_mode == CameraMode.Follow)
-            UpdateFollowCamera();
-        else
-            UpdateBonnetCamera();
+        switch (_mode)
+        {
+            case CameraMode.Follow: UpdateFollowCamera(); break;
+            case CameraMode.Bonnet: UpdateCockpitCamera(BonnetOffset); break;
+            case CameraMode.Bumper: UpdateCockpitCamera(BumperOffset); break;
+        }
     }
 
     private void UpdateFollowCamera()
@@ -63,11 +76,8 @@ public class RallyCameraScript : SyncScript
         var targetTransform = Target!.Transform;
 
         // Use only the car's yaw so the camera stays level even when the chassis pitches/rolls.
-        // WorldMatrix.Backward = local +Z in world space.
-        // For RLA_Evo, the car nose is at local +Z (BeamNG -Y → Stride +Z),
-        // so we track the nose direction here and combine with a -Z FollowOffset
-        // to stay behind the tail.
-        var carNoseDir = targetTransform.WorldMatrix.Backward;  // local +Z = nose direction for this car
+        // WorldMatrix.Backward = local +Z in world space = car nose direction for this car.
+        var carNoseDir = targetTransform.WorldMatrix.Backward;
         carNoseDir.Y = 0f;
         float yaw = carNoseDir.LengthSquared() > 0.001f
             ? MathF.Atan2(carNoseDir.X, carNoseDir.Z)
@@ -87,9 +97,6 @@ public class RallyCameraScript : SyncScript
     /// <summary>
     /// Points the camera toward <paramref name="targetWorldPos"/> using correct Stride conventions.
     /// Stride camera default forward = -Z. After RotationY(yaw), local -Z becomes (-sin yaw, 0, -cos yaw).
-    /// We need that to match lookDir.X and lookDir.Z, so:
-    ///   -sin(yaw) = lookDir.X  →  yaw = atan2(-lookDir.X, -lookDir.Z)
-    /// Pitch = atan2(lookDir.Y, horizontal) — negative when target is below camera.
     /// </summary>
     private void ApplyCameraRotation(Vector3 targetWorldPos)
     {
@@ -103,11 +110,17 @@ public class RallyCameraScript : SyncScript
         Entity.Transform.Rotation = Quaternion.RotationYawPitchRoll(yaw, pitch, 0f);
     }
 
-    private void UpdateBonnetCamera()
+    /// <summary>
+    /// Positions the camera at <paramref name="localOffset"/> in car-local space, looking forward.
+    /// Car nose = local +Z; Stride camera forward = local -Z, so we append a 180° Y rotation
+    /// so that the camera's -Z aligns with the car's +Z (nose direction).
+    /// </summary>
+    private void UpdateCockpitCamera(Vector3 localOffset)
     {
         var targetTransform = Target!.Transform;
-        var worldOffset = Vector3.Transform(BonnetOffset, targetTransform.Rotation);
+        var worldOffset = Vector3.Transform(localOffset, targetTransform.Rotation);
         Entity.Transform.Position = targetTransform.WorldMatrix.TranslationVector + worldOffset;
-        Entity.Transform.Rotation = targetTransform.Rotation;
+        // Stride camera looks along -Z; car nose is +Z. Rotate 180° around Y to flip Z.
+        Entity.Transform.Rotation = targetTransform.Rotation * Quaternion.RotationY(MathF.PI);
     }
 }

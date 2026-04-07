@@ -163,10 +163,10 @@ public class RallyCarComponent : SyncScript
         // ── Per-gear motor parameters ────────────────────────────────────────
         float maxWheelOmega  = MaxRpm / effectiveRatio * (2f * MathF.PI / 60f);
         float targetOmega    = -(throttle * maxWheelOmega);
-        float gearMotorForce = PeakTorqueNm * effectiveRatio / WheelRadius;
-
-        DebugText.Print($"DW:{DriveWheels.Count} tgt:{targetOmega:F1} F:{gearMotorForce:F0} T:{throttle:F2}",
-            new Int2(10, 50));
+        // Divide engine torque evenly across all driven wheels so total wheel force
+        // = PeakTorqueNm × effectiveRatio regardless of how many motors are used.
+        int numDrive = Math.Max(1, DriveWheels.Count);
+        float gearMotorForce = PeakTorqueNm * effectiveRatio / WheelRadius / numDrive;
 
         foreach (var wheel in DriveWheels)
         {
@@ -225,6 +225,17 @@ public class RallyCarComponent : SyncScript
 
         var av = chassisBody.AngularVelocity;
         av.Y = av.Y + (targetYaw - av.Y) * MathF.Min(1f, 6f * dt);
+
+        // ── Anti-roll and anti-wheelie damping ────────────────────────────────
+        // Car local axes: +Z = nose, +Y = up, +X = right.
+        // Pitch (nose up/down, wheelies/endos): AngularVelocity.X
+        // Roll  (sideways tilt):               AngularVelocity.Z
+        // Damp these strongly to simulate chassis rigidity and anti-roll bars.
+        float rollDamp  = MathF.Min(1f, 12f * dt);
+        float pitchDamp = MathF.Min(1f, 10f * dt);
+        av.X *= (1f - pitchDamp);
+        av.Z *= (1f - rollDamp);
+
         chassisBody.AngularVelocity = av;
 
         // ── Lateral grip: bleed sideways velocity to simulate tyre grip ───────
