@@ -27,7 +27,7 @@ Hierarchy:
                         Materials: {}
                     f95fe9a4fea03e57393dc5d52eeaa5b5: !LibreRally.VehicleSpawner,LibreRally
                         Id: e17e8593-c3fd-4c67-9e46-1afe5c90e59d
-                        VehicleFolderPath: Resources\BeamNG Vehicles\sunburst\sunburst2
+                        VehicleFolderPath: Resources\BeamNG Vehicles\sunburst2
                         ConfigFileName: rally_pro_asphalt
                         SpawnPosition: {X: 0.0, Y: 2.0, Z: 0.0}
         -   Entity:

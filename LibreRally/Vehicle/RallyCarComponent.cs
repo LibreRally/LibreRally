@@ -217,12 +217,15 @@ public class RallyCarComponent : SyncScript
         EngineRpm = _engineRpm;
 
         // ── Wheel motor commands ──────────────────────────────────────────────
-        // Target wheel angular velocity is derived from the simulated engine RPM
-        // (engine drives wheels, not the other way around).
+        // Target = redline wheel speed so the motor always pushes forward.
+        // MotorMaximumForce (from the torque curve) is the real limiting factor.
+        // If we targeted _engineRpm instead, the motor would *brake* the wheel
+        // whenever the car is moving faster than idle RPM implies — preventing
+        // re-acceleration after braking.
         int numDrive = Math.Max(1, DriveWheels.Count);
-        float wheelTargetOmega = -((_engineRpm * (2f * MathF.PI / 60f)) / effectiveRatio);
+        float wheelTargetOmega = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
         // Wheel torque = engine net output × gear ratio, distributed to each driven wheel
-        float availableWheelTorque = MathF.Max(0f, netCrankTorque + frictionLoss) * effectiveRatio / numDrive;
+        float availableWheelTorque = MathF.Max(0f, crankTorque) * effectiveRatio / numDrive;
 
         foreach (var wheel in DriveWheels)
         {
