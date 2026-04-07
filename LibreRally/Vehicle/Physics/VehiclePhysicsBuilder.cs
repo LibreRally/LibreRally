@@ -70,61 +70,82 @@ public static class VehiclePhysicsBuilder
         VehicleDefinition def,
         VehiclePart chassisPart)
     {
-        var allChassisNodes = chassisPart.ExclusiveNodeIds
-            .Where(id => def.Nodes.ContainsKey(id))
-            .Select(id => def.Nodes[id])
+        // Detachable parts are currently not spawned as separate rigid bodies, so the single
+        // chassis body must carry the mass of every attached node in the assembled vehicle.
+        // Use the node cloud directly instead of a fallback floor mass.
+        const float MinNodeZ = 0.10f;   // excludes unresolved steelwheel origin nodes
+        const float BodySplitZ = 0.55f; // split floor / upper body
+
+        var rigidNodes = def.Nodes.Values
+            .Where(n => n.Position.Z >= MinNodeZ)
             .ToList();
+        if (rigidNodes.Count < 5)
+            rigidNodes = def.Nodes.Values.ToList();
 
-        // Steelwheel slot nodes (fw1r/fw1rr etc.) sit at BeamNG Z=0 in the jbeam file —
-        // their real positions are resolved by simulation beams in BeamNG, not stored as
-        // absolute coordinates.  Excluding nodes with Z < 0.10 m removes these "floating
-        // origin" nodes so they don't pull the chassis centroid down to ground level.
-        //
-        // We also limit to Z < 0.40 m (below the body sills) for the collision box so that
-        // the box never extends down to ground level and blocks the wheels from landing.
-        const float MinNodeZ  = 0.10f;  // excludes Z=0 steelwheel reference nodes
-        const float BodyMinZ  = 0.55f;  // above sills: cabin-only box doesn't drag on the ground
+        var sprungNodes = rigidNodes
+            .Where(n => !IsWheelLikeNode(n))
+            .ToList();
+        if (sprungNodes.Count < 5)
+            sprungNodes = rigidNodes;
 
-        var structuralNodes = allChassisNodes.Where(n => n.Position.Z >= MinNodeZ).ToList();
-        if (structuralNodes.Count < 5) structuralNodes = allChassisNodes;
+        var upperNodes = sprungNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
+        var lowerNodes = sprungNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
+        if (upperNodes.Count < 5 || lowerNodes.Count < 5)
+        {
+            upperNodes = sprungNodes;
+            lowerNodes = new List<AssembledNode>();
+        }
 
-        var bodyNodes = structuralNodes.Where(n => n.Position.Z >= BodyMinZ).ToList();
-        if (bodyNodes.Count < 5) bodyNodes = structuralNodes;
+        Vector3 centerOfMass = ComputeWeightedCentroid(sprungNodes);
+        var entity = new Entity("chassis") { Transform = { Position = centerOfMass } };
 
-        // Chassis entity position = centroid of body nodes (places origin up in the cabin,
-        // not down in the suspension)
-        Vector3 centroid = ComputeCentroid(bodyNodes.Select(n => n.Position));
-        BoundingBox aabb  = ComputeAABB(bodyNodes.Select(n => n.Position));
+        float totalMass = sprungNodes.Sum(n => n.Weight);
+        float upperMass = upperNodes.Sum(n => n.Weight);
+        float lowerMass = lowerNodes.Sum(n => n.Weight);
 
-        var entity = new Entity("chassis") { Transform = { Position = centroid } };
+        var collider = new CompoundCollider();
 
-        var extents   = aabb.Maximum - aabb.Minimum;
-        // Body-structure nodes alone are ~300-600 kg; engine, gearbox, seats, fuel etc.
-        // from other jbeam files add up to ~1200 kg total for a real rally car.
-        float totalMass = Math.Max(allChassisNodes.Sum(n => n.Weight), 900f);
+        void AddBoxFromNodes(List<AssembledNode> nodes, float mass)
+        {
+            if (nodes.Count == 0 || mass <= 0f)
+                return;
+
+            BoundingBox aabb = ComputeAABB(nodes.Select(n => n.Position));
+            Vector3 extents = aabb.Maximum - aabb.Minimum;
+            Vector3 center = (aabb.Minimum + aabb.Maximum) * 0.5f;
+            collider.Colliders.Add(new BoxCollider
+            {
+                Size = new Vector3(
+                    Math.Max(extents.X, 0.3f),
+                    Math.Max(extents.Y, 0.12f),
+                    Math.Max(extents.Z, 0.3f)),
+                PositionLocal = center - centerOfMass,
+                Mass = mass,
+            });
+        }
+
+        if (lowerNodes.Count > 0 && lowerMass > 1f)
+        {
+            AddBoxFromNodes(lowerNodes, lowerMass);
+            AddBoxFromNodes(upperNodes, Math.Max(upperMass, 1f));
+        }
+        else
+        {
+            AddBoxFromNodes(sprungNodes, Math.Max(totalMass, 1f));
+        }
 
         var body = new BodyComponent
         {
-            Collider = new CompoundCollider
-            {
-                Colliders =
-                {
-                    new BoxCollider
-                    {
-                        Size = new Vector3(
-                            Math.Max(extents.X, 0.3f),
-                            Math.Max(extents.Y, 0.3f),
-                            Math.Max(extents.Z, 0.3f)),
-                        Mass = totalMass,
-                    }
-                }
-            },
+            Collider = collider,
             Gravity = true,
         };
 
-        Console.Error.WriteLine($"[VehiclePhysicsBuilder] Chassis allNodes={allChassisNodes.Count} " +
-                          $"structural={structuralNodes.Count} body={bodyNodes.Count} centroid={centroid:F3} " +
-                          $"boxExtents={extents:F3} mass={totalMass:F0}kg");
+        var upperAabb = upperNodes.Count > 0 ? ComputeAABB(upperNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
+        var lowerAabb = lowerNodes.Count > 0 ? ComputeAABB(lowerNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
+        Console.Error.WriteLine($"[VehiclePhysicsBuilder] Chassis rigid={rigidNodes.Count} sprung={sprungNodes.Count} " +
+                          $"upper={upperNodes.Count} lower={lowerNodes.Count} com={centerOfMass:F3} " +
+                          $"upperExtents={(upperAabb.Maximum - upperAabb.Minimum):F3} " +
+                          $"lowerExtents={(lowerAabb.Maximum - lowerAabb.Minimum):F3} mass={totalMass:F0}kg");
         entity.Add(body);
         return (entity, body);
     }
@@ -306,7 +327,14 @@ public static class VehiclePhysicsBuilder
         // rally_pro_asphalt.pc provides:
         //   spring_F_asphalt=60000 N/m,  damp_bump_F_asphalt=4400,  damp_rebound_F_asphalt=11500
         //   spring_R_asphalt=50000 N/m,  damp_bump_R_asphalt=4400,  damp_rebound_R_asphalt=9000
-        float quarterMass = (float)(def.Nodes.Values.Sum(n => n.Weight) / 4.0);
+        float sprungMass = (float)def.Nodes.Values
+            .Where(n => n.Position.Z >= 0.10f)
+            .Where(n => !IsWheelLikeNode(n))
+            .Sum(n => n.Weight);
+        if (sprungMass <= 0f)
+            sprungMass = (float)def.Nodes.Values.Sum(n => n.Weight);
+
+        float quarterMass = sprungMass / 4.0f;
         quarterMass = Math.Max(quarterMass, 50f);
 
         float GetVar(string name, float fallback) =>
@@ -333,7 +361,7 @@ public static class VehiclePhysicsBuilder
         float springFreqR  = ComputeFreq(springR);
         float dampRatioR   = ComputeRatio(dampR, springR);
 
-        Console.Error.WriteLine($"[VehiclePhysicsBuilder] quarterMass={quarterMass:F0}kg " +
+        Console.Error.WriteLine($"[VehiclePhysicsBuilder] sprungMass={sprungMass:F0}kg quarterMass={quarterMass:F0}kg " +
                           $"F: spring={springF:F0}N/m freq={springFreqF:F2}Hz ratio={dampRatioF:F2} " +
                           $"R: spring={springR:F0}N/m freq={springFreqR:F2}Hz ratio={dampRatioR:F2}");
         Console.Error.WriteLine($"[VehiclePhysicsBuilder] Wheel centres from flexbodies: {string.Join(", ", wheelCentresFromFlexbodies.Keys)}");
@@ -548,9 +576,44 @@ public static class VehiclePhysicsBuilder
     public static Vector3 BeamNGToStride(System.Numerics.Vector3 v)
         => new Vector3(v.X, v.Z, -v.Y);
 
+    private static bool IsWheelLikeNode(AssembledNode node)
+    {
+        foreach (string group in node.Groups)
+        {
+            if (group.StartsWith("wheel", StringComparison.OrdinalIgnoreCase) ||
+                group.Contains("wheelhub", StringComparison.OrdinalIgnoreCase) ||
+                group.StartsWith("hub_", StringComparison.OrdinalIgnoreCase) ||
+                group.Contains("_hub_", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Math helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    private static Vector3 ComputeWeightedCentroid(IEnumerable<AssembledNode> nodes)
+    {
+        var list = nodes.ToList();
+        if (list.Count == 0)
+            return Vector3.Zero;
+
+        System.Numerics.Vector3 weightedSum = System.Numerics.Vector3.Zero;
+        float totalWeight = 0f;
+        foreach (var node in list)
+        {
+            float weight = MathF.Max(node.Weight, 0f);
+            weightedSum += node.Position * weight;
+            totalWeight += weight;
+        }
+
+        if (totalWeight <= 0f)
+            return ComputeCentroid(list.Select(n => n.Position));
+
+        return BeamNGToStride(weightedSum / totalWeight);
+    }
 
     private static Vector3 ComputeCentroid(IEnumerable<System.Numerics.Vector3> beamngPositions)
     {

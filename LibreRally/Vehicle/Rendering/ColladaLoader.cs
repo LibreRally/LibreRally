@@ -162,10 +162,8 @@ public static class ColladaLoader
         var indices = new List<int>();
         var vertexMap = new Dictionary<(int, int, int), int>();
 
-        int vertCount = rawIndices.Length / stride;
-        for (int vi = 0; vi < vertCount; vi++)
+        int GetOrAddVertex(int baseIdx)
         {
-            int baseIdx = vi * stride;
             int pi = rawIndices[baseIdx + posOffset];
             int ni = normOffset >= 0 ? rawIndices[baseIdx + normOffset] : -1;
             int ui = uvOffset >= 0 ? rawIndices[baseIdx + uvOffset] : -1;
@@ -191,7 +189,52 @@ public static class ColladaLoader
                 vertices.Add(new ColladaVertex(pos, norm, uv));
             }
 
-            indices.Add(existingIdx);
+            return existingIdx;
+        }
+
+        if (prim.Name.LocalName.Equals("polylist", StringComparison.OrdinalIgnoreCase))
+        {
+            var vcountElem = prim.Element(Ns + "vcount");
+            if (vcountElem == null) return null;
+
+            int[] polyVertexCounts = ParseIntArray(vcountElem.Value);
+            int cursor = 0;
+
+            foreach (int polyVertCount in polyVertexCounts)
+            {
+                if (polyVertCount < 3)
+                {
+                    cursor += polyVertCount * stride;
+                    continue;
+                }
+
+                int polygonIndexCount = polyVertCount * stride;
+                if (cursor + polygonIndexCount > rawIndices.Length)
+                    break;
+
+                int first = GetOrAddVertex(cursor);
+                int prev = GetOrAddVertex(cursor + stride);
+
+                for (int pv = 2; pv < polyVertCount; pv++)
+                {
+                    int current = GetOrAddVertex(cursor + pv * stride);
+                    indices.Add(first);
+                    indices.Add(prev);
+                    indices.Add(current);
+                    prev = current;
+                }
+
+                cursor += polygonIndexCount;
+            }
+        }
+        else
+        {
+            int vertCount = rawIndices.Length / stride;
+            for (int vi = 0; vi < vertCount; vi++)
+            {
+                int baseIdx = vi * stride;
+                indices.Add(GetOrAddVertex(baseIdx));
+            }
         }
 
         return new ColladaMesh

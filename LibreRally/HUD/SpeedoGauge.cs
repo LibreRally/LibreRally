@@ -23,12 +23,13 @@ public class SpeedoGauge : GameSystemBase
     public float BrakeInput    { get; set; }
 
     // ── Gauge geometry (screen coordinates, updated in Draw from backbuffer size) ──
-    private const float StartDeg  = 225f;   // 7:30 = 0 km/h
-    private const float SweepDeg  = -270f;  // 270° clockwise sweep
-    private const int   SpeedTicks = 11;    // 0,20,40,…,200 km/h
-    private const float ArcOuter  = 88f;
-    private const float ArcInner  = 62f;
-    private const float TickOuter = 86f;
+    private const float StartDeg   = 225f;
+    private const float SweepDeg   = -270f;
+    private const int   SpeedTicks = 11;
+    private const int   RpmTicks   = 8;
+    private const float ArcOuter   = 66f;
+    private const float ArcInner   = 48f;
+    private const float TickOuter  = 64f;
 
     private SpriteBatch? _sb;
     private Texture?     _pixel;
@@ -69,13 +70,17 @@ public class SpeedoGauge : GameSystemBase
         int sw = back.Width;
         int sh = back.Height;
 
-        float cx = sw - 155f;
-        float cy = sh - 155f;
+        float speedCx = sw - 255f;
+        float rpmCx   = sw - 110f;
+        float cy      = sh - 132f;
 
         cmd.SetRenderTargetAndViewport(null, back);
         _sb.Begin(ctx, SpriteSortMode.Deferred, BlendStates.AlphaBlend);
 
-        DrawDial(cx, cy);
+        DrawBackdrop(speedCx - 90f, cy - 82f, 225f, 162f);
+        DrawSpeedDial(speedCx, cy);
+        DrawRpmDial(rpmCx, cy);
+        DrawPedalBars(speedCx - 12f, cy + 86f, 132f, 8f);
 
         _sb.End();
     }
@@ -84,77 +89,125 @@ public class SpeedoGauge : GameSystemBase
     // Drawing routines
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void DrawDial(float cx, float cy)
+    private void DrawBackdrop(float x, float y, float w, float h)
     {
-        // 1. Background circle
-        DrawFilledCircle(cx, cy, ArcOuter + 12f, new Color(30, 30, 30, 210));
+        DrawRect(new RectangleF(x, y, w, h), new Color(16, 18, 22, 210));
+        DrawRect(new RectangleF(x, y, w, 2f), new Color(120, 125, 135, 120));
+        DrawRect(new RectangleF(x, y + h - 2f, w, 2f), new Color(26, 28, 32, 200));
+    }
 
-        // 2. Speed arc background (dark grey track)
-        DrawArc(cx, cy, ArcInner, ArcOuter, StartDeg, SweepDeg, new Color(70, 70, 70, 255), 72);
+    private void DrawSpeedDial(float cx, float cy)
+    {
+        DrawDialBase(cx, cy);
 
-        // 3. Speed fill arc (green → yellow → red)
         float speedFrac  = Math.Clamp(SpeedKmh / MaxSpeedKmh, 0f, 1f);
         float fillSweep  = SweepDeg * speedFrac;
         Color fillColor  = speedFrac < 0.55f
                              ? new Color(50, 220, 80, 255)
                              : speedFrac < 0.80f
-                                 ? new Color(230, 200, 40, 255)
-                                 : new Color(230, 60, 40, 255);
+                                  ? new Color(230, 200, 40, 255)
+                                  : new Color(230, 60, 40, 255);
         if (speedFrac > 0.005f)
-            DrawArc(cx, cy, ArcInner, ArcOuter, StartDeg, fillSweep, fillColor, 72);
+            DrawArc(cx, cy, ArcInner, ArcOuter, StartDeg, fillSweep, fillColor, 96);
 
-        // 4. Tick marks
-        for (int i = 0; i < SpeedTicks; i++)
+        DrawTicks(cx, cy, SpeedTicks);
+        DrawNeedle(cx, cy, speedFrac, new Color(255, 110, 60, 255));
+        DrawCentreCap(cx, cy, new Color(255, 110, 60, 255));
+    }
+
+    private void DrawRpmDial(float cx, float cy)
+    {
+        float rpmFrac = Math.Clamp(EngineRpm / MaxRpm, 0f, 1f);
+        const float redlineFrac = 0.86f;
+
+        DrawDialBase(cx, cy);
+
+        float greenSweep = SweepDeg * MathF.Min(rpmFrac, 0.72f);
+        if (greenSweep < -0.5f)
+            DrawArc(cx, cy, ArcInner, ArcOuter, StartDeg, greenSweep, new Color(80, 180, 255, 255), 96);
+
+        if (rpmFrac > 0.72f)
         {
-            float frac    = (float)i / (SpeedTicks - 1);
-            float angleDeg = StartDeg + SweepDeg * frac;
-            float angleRad = angleDeg * MathF.PI / 180f;
-            bool  major    = (i % 2 == 0);
-            float inner    = major ? TickOuter - 16f : TickOuter - 8f;
-            float thickness = major ? 3f : 1.5f;
-            Color tickColor = major ? Color.White : new Color(180, 180, 180, 200);
+            float amberFrac = MathF.Min(rpmFrac, redlineFrac) - 0.72f;
+            if (amberFrac > 0f)
+            {
+                DrawArc(cx, cy, ArcInner, ArcOuter,
+                    StartDeg + SweepDeg * 0.72f,
+                    SweepDeg * amberFrac,
+                    new Color(245, 190, 55, 255), 48);
+            }
+        }
 
-            var p0 = new Vector2(cx + MathF.Cos(angleRad) * inner,    cy - MathF.Sin(angleRad) * inner);
+        if (rpmFrac > redlineFrac)
+        {
+            DrawArc(cx, cy, ArcInner, ArcOuter,
+                StartDeg + SweepDeg * redlineFrac,
+                SweepDeg * (rpmFrac - redlineFrac),
+                new Color(255, 70, 45, 255), 36);
+        }
+
+        DrawTicks(cx, cy, RpmTicks);
+        DrawNeedle(cx, cy, rpmFrac, new Color(110, 210, 255, 255));
+        DrawCentreCap(cx, cy, new Color(110, 210, 255, 255));
+
+        // Redline marker
+        float redlineAngle = (StartDeg + SweepDeg * redlineFrac) * MathF.PI / 180f;
+        var p0 = new Vector2(cx + MathF.Cos(redlineAngle) * (TickOuter - 18f),
+                             cy - MathF.Sin(redlineAngle) * (TickOuter - 18f));
+        var p1 = new Vector2(cx + MathF.Cos(redlineAngle) * TickOuter,
+                             cy - MathF.Sin(redlineAngle) * TickOuter);
+        DrawLine(p0, p1, new Color(255, 50, 50, 255), 4f);
+    }
+
+    private void DrawDialBase(float cx, float cy)
+    {
+        DrawFilledCircle(cx, cy, ArcInner - 7f, new Color(22, 24, 28, 235));
+        DrawArc(cx, cy, ArcOuter + 3f, ArcOuter + 9f, 0f, 360f, new Color(18, 18, 20, 245), 180);
+        DrawArc(cx, cy, ArcInner, ArcOuter, StartDeg, SweepDeg, new Color(62, 62, 70, 240), 180);
+    }
+
+    private void DrawTicks(float cx, float cy, int tickCount)
+    {
+        for (int i = 0; i < tickCount; i++)
+        {
+            float frac      = tickCount <= 1 ? 0f : (float)i / (tickCount - 1);
+            float angleDeg  = StartDeg + SweepDeg * frac;
+            float angleRad  = angleDeg * MathF.PI / 180f;
+            float inner     = (i % 2 == 0) ? TickOuter - 14f : TickOuter - 8f;
+            float thickness = (i % 2 == 0) ? 2.5f : 1.5f;
+            Color tickColor = (i % 2 == 0) ? Color.White : new Color(185, 185, 195, 180);
+
+            var p0 = new Vector2(cx + MathF.Cos(angleRad) * inner, cy - MathF.Sin(angleRad) * inner);
             var p1 = new Vector2(cx + MathF.Cos(angleRad) * TickOuter, cy - MathF.Sin(angleRad) * TickOuter);
             DrawLine(p0, p1, tickColor, thickness);
         }
-
-        // 5. Needle
-        float needleAngle = (StartDeg + SweepDeg * speedFrac) * MathF.PI / 180f;
-        var   needleTip   = new Vector2(cx + MathF.Cos(needleAngle) * (ArcOuter - 4f),
-                                         cy - MathF.Sin(needleAngle) * (ArcOuter - 4f));
-        var   needleBase  = new Vector2(cx - MathF.Cos(needleAngle) * 18f,
-                                         cy + MathF.Sin(needleAngle) * 18f);
-        DrawLine(needleBase, needleTip, new Color(255, 80, 40, 255), 3.0f);
-
-        // 6. Centre cap
-        DrawFilledCircle(cx, cy, 10f, new Color(200, 200, 200, 255));
-        DrawFilledCircle(cx, cy,  5f, new Color(255, 80, 40, 255));
-
-        // 7. RPM bar — thin horizontal bar below gauge
-        DrawRpmBar(cx - 75f, cy + 95f, 150f, 10f);
     }
 
-    private void DrawRpmBar(float x, float y, float w, float h)
+    private void DrawNeedle(float cx, float cy, float fraction, Color color)
     {
-        // Background
-        DrawRect(new RectangleF(x, y, w, h), new Color(50, 50, 50, 200));
+        float angle = (StartDeg + SweepDeg * Math.Clamp(fraction, 0f, 1f)) * MathF.PI / 180f;
+        var tip  = new Vector2(cx + MathF.Cos(angle) * (ArcOuter - 5f), cy - MathF.Sin(angle) * (ArcOuter - 5f));
+        var basePoint = new Vector2(cx - MathF.Cos(angle) * 16f, cy + MathF.Sin(angle) * 16f);
+        DrawLine(basePoint, tip, color, 3.0f);
+    }
 
-        float rpmFrac = Math.Clamp(EngineRpm / MaxRpm, 0f, 1f);
-        // Redline starts at 85% of max RPM
-        float redFrac = 0.85f;
+    private void DrawCentreCap(float cx, float cy, Color color)
+    {
+        DrawFilledCircle(cx, cy, 8f, new Color(210, 210, 215, 255));
+        DrawFilledCircle(cx, cy, 4f, color);
+    }
 
-        if (rpmFrac > 0f)
-        {
-            float fillW    = w * rpmFrac;
-            Color rpmColor = rpmFrac < redFrac
-                               ? new Color(80, 160, 255, 255)
-                               : new Color(255, 60, 40, 255);
-            DrawRect(new RectangleF(x, y, fillW, h), rpmColor);
-        }
+    private void DrawPedalBars(float x, float y, float w, float h)
+    {
+        DrawRect(new RectangleF(x, y, w, h), new Color(42, 42, 46, 180));
+        if (ThrottleInput > 0.001f)
+            DrawRect(new RectangleF(x, y, w * Math.Clamp(ThrottleInput, 0f, 1f), h),
+                new Color(60, 220, 90, 210));
 
-        // Redline marker line
-        DrawRect(new RectangleF(x + w * redFrac - 1f, y, 2f, h), new Color(255, 40, 40, 255));
+        DrawRect(new RectangleF(x, y + 12f, w, h), new Color(42, 42, 46, 180));
+        if (BrakeInput > 0.001f)
+            DrawRect(new RectangleF(x, y + 12f, w * Math.Clamp(BrakeInput, 0f, 1f), h),
+                new Color(255, 85, 65, 210));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -181,7 +234,7 @@ public class SpeedoGauge : GameSystemBase
     private void DrawFilledCircle(float cx, float cy, float radius, Color color)
     {
         // Approximate circle as 32-segment arc (thin segments that overlap)
-        const int Segments = 32;
+        const int Segments = 96;
         float step = 2f * MathF.PI / Segments;
         for (int i = 0; i < Segments; i++)
         {
