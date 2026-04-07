@@ -10,22 +10,7 @@ Hierarchy:
         - ref!! 99108647-25e4-41c7-a620-63d171305283
         - ref!! f87ddcfd-4fc5-4a3e-a4e0-950e0a585fe3
         - ref!! 5d2f337a-5f17-44a9-8837-bc6cc15f37ff
-        - ref!! 103bb14e-1c35-432f-bfc8-6394cce5f40e
     Parts:
-        -   Entity:
-                Id: 103bb14e-1c35-432f-bfc8-6394cce5f40e
-                Name: Sphere
-                Components:
-                    29828b8fdf1b60772ac677db3b907252: !TransformComponent
-                        Id: 8e77103d-7ba0-4d96-bdd7-14a615525ef6
-                        Position: {X: 0.0, Y: 0.5, Z: 0.0}
-                        Rotation: {X: 0.0, Y: 0.0, Z: 0.0, W: 1.0}
-                        Scale: {X: 1.0, Y: 1.0, Z: 1.0}
-                        Children: {}
-                    0a34cc830b1f56a4b0549defb79d5269: !ModelComponent
-                        Id: 56ef78f2-b62f-4864-916f-14ef68387e7d
-                        Model: e53b226b-e6c6-4ab6-8501-b8f3be3e3991:Sphere
-                        Materials: {}
         -   Entity:
                 Id: 5d2f337a-5f17-44a9-8837-bc6cc15f37ff
                 Name: Ground
@@ -40,6 +25,10 @@ Hierarchy:
                         Id: 6db0d0b3-9a4c-4e28-9130-788ea9837f1c
                         Model: d712b63c-20c3-4887-a071-4ae48f600cff:Ground
                         Materials: {}
+                    f95fe9a4fea03e57393dc5d52eeaa5b5: !LibreRally.VehicleSpawner,LibreRally
+                        Id: e17e8593-c3fd-4c67-9e46-1afe5c90e59d
+                        VehicleFolderPath: Resources\BeamNG Vehicles\sunburst\sunburst2
+                        SpawnPosition: {X: 0.0, Y: 2.0, Z: 0.0}
         -   Entity:
                 Id: 92760995-654a-4869-8fa2-d63c9a9ff02b
                 Name: Camera

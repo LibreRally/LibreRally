@@ -13,7 +13,7 @@ Defaults:
         DefaultBackBufferWidth: 1280
         DefaultBackBufferHeight: 720
         AdaptBackBufferToScreen: false
-        DefaultGraphicsProfile: Level_11_2
+        DefaultGraphicsProfile: Level_11_1
         ColorSpace: Linear
         DisplayOrientation: LandscapeRight
     - !Stride.Streaming.StreamingSettings,Stride.Rendering
@@ -21,6 +21,22 @@ Defaults:
         ResourceLiveTimeout: 0:00:00:08.0000000
     - !Stride.Assets.Textures.TextureSettings,Stride.Assets
         TextureQuality: Fast
+    - !Stride.BepuPhysics.BepuConfiguration,Stride.BepuPhysics
+        BepuSimulations:
+            -   Enabled: true
+                ParallelUpdate: true
+                Deterministic: false
+                FixedTimeStepSeconds: 0.0166666
+                TimeScale: 1.0
+                MaxStepPerFrame: 3
+                UsePerBodyAttributes: true
+                PoseGravity: {X: 0.0, Y: -9.8, Z: 0.0}
+                PoseLinearDamping: 0.05
+                PoseAngularDamping: 0.05
+                SolverIteration: 1
+                SolverSubStep: 8
+                SoftStartDuration: 0:00:00:01.0000000
+                SoftStartSubstepFactor: 4
 Overrides: []
 PlatformFilters:
     - PowerVR SGX 54[0-9]

@@ -25,8 +25,19 @@ public static class JBeamParser
         AllowTrailingCommas = true,
     };
 
-    public static List<JBeamPart> ParseFile(string path)
+    /// <summary>Per-parse variable substitution table. Set before calling Parse*, cleared after.</summary>
+    [ThreadStatic]
+    private static Dictionary<string, float>? _vars;
+
+    /// <summary>
+    /// Sets the active variable table for the current thread. Any $varName values
+    /// encountered during parsing will be resolved from this dictionary.
+    /// </summary>
+    public static void SetVars(Dictionary<string, float>? vars) => _vars = vars;
+
+    public static List<JBeamPart> ParseFile(string path, Dictionary<string, float>? vars = null)
     {
+        _vars = vars;
         string raw = System.IO.File.ReadAllText(path);
         return Parse(raw);
     }
@@ -519,12 +530,20 @@ public static class JBeamParser
 
     private static float GetFloat(JsonElement e)
     {
-        return e.ValueKind switch
+        if (e.ValueKind == JsonValueKind.Number) return e.GetSingle();
+        if (e.ValueKind == JsonValueKind.String)
         {
-            JsonValueKind.Number => e.GetSingle(),
-            JsonValueKind.String => float.TryParse(e.GetString(), out float v) ? v : 0f,
-            _ => 0f,
-        };
+            var s = e.GetString() ?? "";
+            // Resolve $variable references from the active vars table
+            if (s.StartsWith("$") && _vars != null)
+            {
+                string varName = s[1..]; // strip leading $
+                if (_vars.TryGetValue(varName, out float resolved)) return resolved;
+                return 0f;
+            }
+            return float.TryParse(s, out float v) ? v : 0f;
+        }
+        return 0f;
     }
 
     private static float GetFloatOrMax(JsonElement e)

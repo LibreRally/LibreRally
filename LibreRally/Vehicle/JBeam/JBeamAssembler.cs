@@ -17,19 +17,22 @@ namespace LibreRally.Vehicle.JBeam;
 public static class JBeamAssembler
 {
     /// <summary>Loads a vehicle from a folder and all sub-folders (for RLA_Evo Jbeams/ layout).</summary>
-    public static VehicleDefinition Assemble(string vehicleFolder)
+    public static VehicleDefinition Assemble(string vehicleFolder, PcConfig? pcConfig = null)
     {
         // Collect all jbeam files in the folder (and one level down for Jbeams/ subdirectory)
         var jbeamFiles = Directory
             .EnumerateFiles(vehicleFolder, "*.jbeam", SearchOption.AllDirectories)
             .ToList();
 
+        // Variable table from the .pc config (strips leading $ if present)
+        var vars = pcConfig?.Vars;
+
         // Parse all files → flat dictionary: partName → JBeamPart
         var partLibrary = new Dictionary<string, JBeamPart>(StringComparer.OrdinalIgnoreCase);
         foreach (string file in jbeamFiles)
         {
             List<JBeamPart> parts;
-            try { parts = JBeamParser.ParseFile(file); }
+            try { parts = JBeamParser.ParseFile(file, vars); }
             catch (Exception ex)
             {
                 // Log but continue — a single bad file shouldn't prevent loading
@@ -45,16 +48,26 @@ public static class JBeamAssembler
         }
 
         // Find the main part (slotType == "main")
-        JBeamPart? mainPart = partLibrary.Values.FirstOrDefault(p => p.IsMain);
+        JBeamPart? mainPart = null;
+        if (pcConfig != null && !string.IsNullOrEmpty(pcConfig.MainPartName))
+            partLibrary.TryGetValue(pcConfig.MainPartName, out mainPart);
+        mainPart ??= partLibrary.Values.FirstOrDefault(p => p.IsMain);
         if (mainPart == null)
             throw new InvalidOperationException($"No jbeam part with slotType 'main' found in '{vehicleFolder}'.");
 
         // Resolve slot hierarchy depth-first, collecting all active parts in order
         var activeParts = new List<JBeamPart>();
-        ResolveSlots(mainPart, partLibrary, activeParts, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        ResolveSlots(mainPart, partLibrary, activeParts,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            pcConfig?.Parts);
 
         // Merge into VehicleDefinition
-        return Merge(mainPart.Name, vehicleFolder, activeParts);
+        var def = Merge(mainPart.Name, vehicleFolder, activeParts);
+        // Attach vars so physics builder can use them
+        if (vars != null)
+            foreach (var kv in vars)
+                def.Vars[kv.Key] = kv.Value;
+        return def;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -65,17 +78,25 @@ public static class JBeamAssembler
         JBeamPart part,
         Dictionary<string, JBeamPart> library,
         List<JBeamPart> result,
-        HashSet<string> visited)
+        HashSet<string> visited,
+        Dictionary<string, string>? pcParts = null)
     {
         if (!visited.Add(part.Name)) return;
         result.Add(part);
 
         foreach (var slot in part.Slots)
         {
-            if (string.IsNullOrEmpty(slot.Default)) continue;
+            // .pc config overrides the default; empty string = no part
+            string partName = slot.Default;
+            if (pcParts != null && pcParts.TryGetValue(slot.Type, out var pcOverride))
+                partName = pcOverride;
 
-            if (library.TryGetValue(slot.Default, out var child))
-                ResolveSlots(child, library, result, visited);
+            if (string.IsNullOrEmpty(partName)) continue;
+
+            if (library.TryGetValue(partName, out var child))
+                ResolveSlots(child, library, result, visited, pcParts);
+            else
+                Console.WriteLine($"[JBeamAssembler] Slot '{slot.Type}' wants '{partName}' but part not found.");
         }
     }
 
