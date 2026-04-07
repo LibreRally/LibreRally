@@ -70,6 +70,9 @@ public class RallyCarComponent : SyncScript
     /// <summary>Idle RPM (minimum engine speed).</summary>
     public float IdleRpm { get; set; } = 900f;
 
+    /// <summary>Auto-clutch launch hold RPM used to let the engine build torque from a stop.</summary>
+    public float AutoClutchLaunchRpm { get; set; } = 4500f;
+
     /// <summary>RPM to upshift at (auto-transmission).</summary>
     public float ShiftUpRpm { get; set; } = 6500f;
 
@@ -191,6 +194,8 @@ public class RallyCarComponent : SyncScript
             }
         }
 
+        speedRpm = Math.Clamp(wheelOmegaForShift * effectiveRatio * (60f / (2f * MathF.PI)), IdleRpm, MaxRpm);
+
         // ── Engine simulation ─────────────────────────────────────────────────
         // Two separate concerns:
         //
@@ -202,9 +207,12 @@ public class RallyCarComponent : SyncScript
         //    This gives a realistic rev needle without affecting the driving physics.
 
         // ─ Torque for wheels (based on actual drivetrain state) ──────────────
-        // speedRpm already computed above for auto-shift; reuse it here.
-        float torqueRpm   = speedRpm;                                          // working RPM (idle–MaxRpm)
-        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;     // N·m at crank
+        // Launch from a dead stop needs clutch slip; otherwise a locked wheel-speed
+        // model is stuck at idle torque forever. Hold the engine in the launch band
+        // until wheel speed catches up, then hand over to the real speed-derived RPM.
+        float launchRpm   = IdleRpm + (AutoClutchLaunchRpm - IdleRpm) * throttle;
+        float torqueRpm   = throttle > 0.05f ? MathF.Max(speedRpm, launchRpm) : speedRpm;
+        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;
         float engBrake    = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
         float demandRpm   = speedRpm;
 
@@ -219,8 +227,8 @@ public class RallyCarComponent : SyncScript
         _engineRpm += (netDisplay / EngineInertia) * dt * (60f / (2f * MathF.PI));
 
         // Coupling: pull display RPM toward drivetrain demand when moving
-        if (demandRpm > IdleRpm)
-            _engineRpm += (demandRpm - _engineRpm) * 5f * dt;
+        float displayTargetRpm = throttle > 0.05f ? torqueRpm : demandRpm;
+        _engineRpm += (displayTargetRpm - _engineRpm) * 5f * dt;
 
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
         EngineRpm  = _engineRpm;
@@ -228,8 +236,8 @@ public class RallyCarComponent : SyncScript
         // ── Wheel motor commands ──────────────────────────────────────────────
         // Target = redline speed so motor always pushes forward; MaxForce limits torque.
         int   numDrive            = Math.Max(1, DriveWheels.Count);
-        float wheelTargetOmega    = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
-        float availableWheelTorque = MathF.Max(0f, crankTorque) * effectiveRatio / numDrive;
+        float wheelTargetOmega     = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
+        float availableWheelForce  = MathF.Max(0f, crankTorque) * effectiveRatio / WheelRadius / numDrive;
 
         foreach (var wheel in DriveWheels)
         {
@@ -247,14 +255,14 @@ public class RallyCarComponent : SyncScript
             else if (throttle > 0.05f)
             {
                 ws.DriveMotor.TargetVelocity    = wheelTargetOmega;
-                ws.DriveMotor.MotorMaximumForce = availableWheelTorque;
+                ws.DriveMotor.MotorMaximumForce = availableWheelForce;
                 ws.DriveMotor.MotorDamping      = 500f;
             }
             else
             {
                 // Coasting / engine braking
                 ws.DriveMotor.TargetVelocity    = 0f;
-                ws.DriveMotor.MotorMaximumForce = engBrake * effectiveRatio / numDrive;
+                ws.DriveMotor.MotorMaximumForce = engBrake * effectiveRatio / WheelRadius / numDrive;
                 ws.DriveMotor.MotorDamping      = 500f;
             }
         }
