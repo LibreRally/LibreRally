@@ -204,13 +204,14 @@ public class RallyCarComponent : SyncScript
         float alpha = netCrankTorque / EngineInertia;
         _engineRpm += alpha * dt * 60f / (2f * MathF.PI);
 
-        // Drivetrain coupling: once moving, the drivetrain loads the engine
-        // (simulates clutch engagement — engine RPM is pulled toward demand RPM).
+        // Drivetrain coupling: always active when in gear.
+        // At standstill, demandRpm = 0 which fights the engine integration and prevents
+        // free-revving to redline. The idle clamp then keeps the engine alive.
+        // When moving, it pulls/pushes RPM to match wheel speed × gear ratio.
         float demandRpm = (MathF.Abs(forwardSpeed) / WheelRadius) * effectiveRatio * 60f / (2f * MathF.PI);
-        if (demandRpm > IdleRpm)
         {
             float err = demandRpm - _engineRpm;
-            _engineRpm += err * 5f * dt;  // ~200 ms coupling time constant
+            _engineRpm += err * 5f * dt;
         }
 
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
@@ -219,12 +220,8 @@ public class RallyCarComponent : SyncScript
         // ── Wheel motor commands ──────────────────────────────────────────────
         // Target = redline wheel speed so the motor always pushes forward.
         // MotorMaximumForce (from the torque curve) is the real limiting factor.
-        // If we targeted _engineRpm instead, the motor would *brake* the wheel
-        // whenever the car is moving faster than idle RPM implies — preventing
-        // re-acceleration after braking.
         int numDrive = Math.Max(1, DriveWheels.Count);
         float wheelTargetOmega = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
-        // Wheel torque = engine net output × gear ratio, distributed to each driven wheel
         float availableWheelTorque = MathF.Max(0f, crankTorque) * effectiveRatio / numDrive;
 
         foreach (var wheel in DriveWheels)
