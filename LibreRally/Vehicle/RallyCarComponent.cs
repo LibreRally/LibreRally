@@ -179,49 +179,43 @@ public class RallyCarComponent : SyncScript
         }
 
         // ── Engine simulation ─────────────────────────────────────────────────
-        // The engine is the driver of the drivetrain. It produces torque at the crank
-        // based on throttle × torque-curve(RPM), overcomes internal friction, and
-        // feeds torque through gearbox → differential → wheel hubs.
+        // Two separate concerns:
         //
-        // Architecture:
-        //   Engine (inertia + torque curve)
-        //     → Gearbox (ratio = GearRatios[gear])
-        //     → Final drive (ratio = FinalDrive)
-        //     → Open differential (splits equally to DriveWheels)
-        //     → BEPU AngularAxisMotor at each wheel hub
+        // 1. Wheel force (physics): derived from actual wheel/car speed → torque curve.
+        //    This is always well-behaved — no free-revving, no stall, no redline cutoff.
+        //
+        // 2. RPM display / shifting: a state variable that revs up with throttle and
+        //    is pulled toward the drivetrain demand as the car accelerates.
+        //    This gives a realistic rev needle without affecting the driving physics.
 
-        float engineOmega     = _engineRpm * (2f * MathF.PI / 60f);
-        float crankTorque     = InterpolateTorqueCurve(_engineRpm) * throttle;
-        float frictionLoss    = EngineFriction + EngineDynamicFriction * engineOmega;
-        float engBrake        = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
+        // ─ Torque for wheels (based on actual drivetrain state) ──────────────
+        float wheelOmega  = MathF.Abs(forwardSpeed) / WheelRadius;           // rad/s
+        float demandRpm   = wheelOmega * effectiveRatio * (60f / (2f * MathF.PI));
+        float torqueRpm   = Math.Clamp(demandRpm, IdleRpm, MaxRpm);          // working RPM
+        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;    // N·m at crank
+        float engBrake    = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
 
-        // Rev limiter: cut fuel at redline
-        if (_engineRpm >= MaxRpm) crankTorque = 0f;
+        // ─ RPM display (state variable, for gauge and auto-shift) ───────────
+        float engineOmega  = _engineRpm * (2f * MathF.PI / 60f);
+        float frictionLoss = EngineFriction + EngineDynamicFriction * engineOmega;
 
-        float netCrankTorque  = crankTorque - frictionLoss - engBrake;
+        // Rev up with throttle; coupling pulls toward actual drivetrain demand
+        float displayCrank = InterpolateTorqueCurve(_engineRpm) * throttle;
+        if (_engineRpm >= MaxRpm) displayCrank = 0f;
+        float netDisplay   = displayCrank - frictionLoss - engBrake;
+        _engineRpm += (netDisplay / EngineInertia) * dt * (60f / (2f * MathF.PI));
 
-        // Integrate engine RPM with inertia (Euler)
-        float alpha = netCrankTorque / EngineInertia;
-        _engineRpm += alpha * dt * 60f / (2f * MathF.PI);
-
-        // Drivetrain coupling: always active when in gear.
-        // At standstill, demandRpm = 0 which fights the engine integration and prevents
-        // free-revving to redline. The idle clamp then keeps the engine alive.
-        // When moving, it pulls/pushes RPM to match wheel speed × gear ratio.
-        float demandRpm = (MathF.Abs(forwardSpeed) / WheelRadius) * effectiveRatio * 60f / (2f * MathF.PI);
-        {
-            float err = demandRpm - _engineRpm;
-            _engineRpm += err * 5f * dt;
-        }
+        // Coupling: pull display RPM toward drivetrain demand when moving
+        if (demandRpm > IdleRpm)
+            _engineRpm += (demandRpm - _engineRpm) * 5f * dt;
 
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
-        EngineRpm = _engineRpm;
+        EngineRpm  = _engineRpm;
 
         // ── Wheel motor commands ──────────────────────────────────────────────
-        // Target = redline wheel speed so the motor always pushes forward.
-        // MotorMaximumForce (from the torque curve) is the real limiting factor.
-        int numDrive = Math.Max(1, DriveWheels.Count);
-        float wheelTargetOmega = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
+        // Target = redline speed so motor always pushes forward; MaxForce limits torque.
+        int   numDrive            = Math.Max(1, DriveWheels.Count);
+        float wheelTargetOmega    = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
         float availableWheelTorque = MathF.Max(0f, crankTorque) * effectiveRatio / numDrive;
 
         foreach (var wheel in DriveWheels)
@@ -246,9 +240,8 @@ public class RallyCarComponent : SyncScript
             else
             {
                 // Coasting / engine braking
-                float engBrakeWheelTorque = engBrake * effectiveRatio / numDrive;
                 ws.DriveMotor.TargetVelocity    = 0f;
-                ws.DriveMotor.MotorMaximumForce = engBrakeWheelTorque;
+                ws.DriveMotor.MotorMaximumForce = engBrake * effectiveRatio / numDrive;
                 ws.DriveMotor.MotorDamping      = 500f;
             }
         }
