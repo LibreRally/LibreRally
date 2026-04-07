@@ -479,13 +479,17 @@ public static class VehiclePhysicsBuilder
 
         // ── Drive motor ────────────────────────────────────────────────────────
         // Positive TargetVelocity → wheel bottom moves in −Z → car pushed in +Z (forward).
+        // MotorDamping acts as the proportional gain: motor_torque = Damping × velocityError,
+        // clamped to MotorMaximumForce.  We set Damping high (500) so the torque cap
+        // (set per-frame by RallyCarComponent based on the active gear ratio) is always
+        // the binding constraint, not the proportional gain.
         var driveMotor = new AngularAxisMotorConstraintComponent
         {
             A = chassisBody, B = body,
             LocalAxisA        = Vector3.UnitX,
             TargetVelocity    = 0f,
             MotorMaximumForce = 8000f,
-            MotorDamping      = 5f,
+            MotorDamping      = 500f,
         };
         entity.Add(driveMotor);
 

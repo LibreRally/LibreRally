@@ -165,27 +165,34 @@ public class RallyCarComponent : SyncScript
         float targetOmega    = -(throttle * maxWheelOmega);
         float gearMotorForce = PeakTorqueNm * effectiveRatio / WheelRadius;
 
+        DebugText.Print($"DW:{DriveWheels.Count} tgt:{targetOmega:F1} F:{gearMotorForce:F0} T:{throttle:F2}",
+            new Int2(10, 50));
+
         foreach (var wheel in DriveWheels)
         {
-            wheel.Get<BodyComponent>()!.Awake = true;
+            var wb = wheel.Get<BodyComponent>();
+            if (wb != null) wb.Awake = true;
             var ws = wheel.Get<WheelSettings>();
             if (ws?.DriveMotor == null) continue;
 
             if (isBraking || isHandbrake)
             {
-                ws.DriveMotor.TargetVelocity = 0f;
+                ws.DriveMotor.TargetVelocity    = 0f;
                 ws.DriveMotor.MotorMaximumForce = isHandbrake ? BrakeMotorForce * 2f : BrakeMotorForce;
+                ws.DriveMotor.MotorDamping      = 500f;
             }
             else if (throttle > 0.05f)
             {
-                ws.DriveMotor.TargetVelocity   = targetOmega;
+                ws.DriveMotor.TargetVelocity    = targetOmega;
                 ws.DriveMotor.MotorMaximumForce = gearMotorForce;
+                ws.DriveMotor.MotorDamping      = 500f;
             }
             else
             {
                 // Coasting: let wheels free-spin, no drive torque
                 ws.DriveMotor.TargetVelocity    = 0f;
                 ws.DriveMotor.MotorMaximumForce = 0f;
+                ws.DriveMotor.MotorDamping      = 500f;
             }
         }
 
