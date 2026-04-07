@@ -148,23 +148,24 @@ public class RallyCarComponent : SyncScript
             var ws = wheel.Get<WheelSettings>();
             if (ws?.SteerMotor == null) continue;
 
-            // Integrate tracked angle (clamped to ±MaxSteerAngle)
+            // Integrate tracked angle (clamped to ±MaxSteerAngle); negate steer to match physics direction
             float prevAngle = ws.CurrentSteerAngle;
-            ws.CurrentSteerAngle += steer * SteerRate * dt;
+            ws.CurrentSteerAngle += -steer * SteerRate * dt;
             ws.CurrentSteerAngle  = Math.Clamp(ws.CurrentSteerAngle, -MaxSteerAngle, MaxSteerAngle);
 
             // Drive at a rate proportional to the remaining distance to target angle
-            float targetAngle = steer * MaxSteerAngle;
+            float targetAngle = -steer * MaxSteerAngle;
             float error       = targetAngle - ws.CurrentSteerAngle;
             ws.SteerMotor.TargetVelocity = Math.Clamp(error * 8f, -SteerRate, SteerRate);
         }
 
         // ── Chassis yaw assist (blended with motor steering) ─────────────────
-        // Positive steer input = turn right. Positive Y angular velocity (right-hand rule) 
-        // rotates nose from +Z toward +X = rightward. Matches: steer>0 → turn right.
+        // Positive steer input = right thumb = should turn right.
+        // However, positive AngularVelocity.Y in Stride/BEPU actually rotates the nose
+        // toward -X (left), so we negate to get the correct physical direction.
         float speedMs = MathF.Abs(forwardSpeed);
         float steerAuth  = 0.4f + 0.6f * MathF.Min(1f, speedMs / 6f);
-        float targetYaw  = steer * ChassisYawAssist * steerAuth;
+        float targetYaw  = -steer * ChassisYawAssist * steerAuth;
 
         var av = chassisBody.AngularVelocity;
         av.Y = av.Y + (targetYaw - av.Y) * MathF.Min(1f, 6f * dt);

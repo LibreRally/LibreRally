@@ -8,6 +8,7 @@ using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Graphics;
+using Stride.Input;
 using Stride.Rendering;
 using Stride.Rendering.Materials;
 using Stride.Rendering.Materials.ComputeColors;
@@ -31,6 +32,7 @@ public class VehicleSpawner : SyncScript
     private string _status = "Loading...";
     private Entity? _chassis;
     private Entity[] _wheels = Array.Empty<Entity>();
+    private bool _showDebug = false;
 
     public override void Start()
     {
@@ -217,18 +219,22 @@ public class VehicleSpawner : SyncScript
 
     public override void Update()
     {
-        if (_chassis != null)
+        // Toggle debug info with F3
+        if (Input.IsKeyPressed(Keys.F3)) _showDebug = !_showDebug;
+
+        if (_showDebug && _chassis != null)
         {
             var p = _chassis.Transform.WorldMatrix.TranslationVector;
             DebugText.Print($"Car: {p.X:F1}, {p.Y:F1}, {p.Z:F1}  | {_status}", new Int2(10, 10));
             for (int i = 0; i < _wheels.Length; i++)
             {
                 var wp = _wheels[i].Transform.WorldMatrix.TranslationVector;
-                DebugText.Print($"W{i}({_wheels[i].Name}): {wp.X:F2},{wp.Y:F2},{wp.Z:F2}", new Int2(10, 50 + i * 16));
+                DebugText.Print($"W{i}({_wheels[i].Name}): {wp.X:F2},{wp.Y:F2},{wp.Z:F2}", new Int2(10, 30 + i * 16));
             }
         }
-        else
+        else if (_chassis == null)
         {
             DebugText.Print(_status, new Int2(10, 10));
         }
-    }}
+    }
+}
