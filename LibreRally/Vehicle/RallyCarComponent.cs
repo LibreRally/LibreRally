@@ -36,14 +36,33 @@ public class RallyCarComponent : SyncScript
     /// <summary>Lateral grip: fraction of sideways velocity removed per second.</summary>
     public float LateralGrip { get; set; } = 6f;
 
+    // ── Drivetrain ───────────────────────────────────────────────────────────
+
     /// <summary>Forward gear ratios indexed 1–N (index 0 = reverse).</summary>
     public float[] GearRatios { get; set; } = { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
 
     /// <summary>Final drive (differential) ratio.</summary>
     public float FinalDrive { get; set; } = 4.55f;
 
-    /// <summary>Peak engine torque at the crank (N·m).</summary>
-    public float PeakTorqueNm { get; set; } = 222f;
+    /// <summary>RPM axis of the engine torque curve.</summary>
+    public float[] TorqueCurveRpm { get; set; } =
+        {    0,  500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500 };
+
+    /// <summary>Torque (N·m at crank) corresponding to each RPM in <see cref="TorqueCurveRpm"/>.</summary>
+    public float[] TorqueCurveNm { get; set; } =
+        {    0,   62,  105,  142,  176,  198,  210,  216,  221,  222,  221,  218,  210,  199,  186,  168 };
+
+    /// <summary>Engine + flywheel rotational inertia (kg·m²). Governs rev-response speed.</summary>
+    public float EngineInertia { get; set; } = 0.25f;
+
+    /// <summary>Constant engine friction torque (N·m).</summary>
+    public float EngineFriction { get; set; } = 11.5f;
+
+    /// <summary>Friction term proportional to engine angular velocity (N·m per rad/s).</summary>
+    public float EngineDynamicFriction { get; set; } = 0.024f;
+
+    /// <summary>Engine braking torque applied when throttle is lifted (N·m).</summary>
+    public float EngineBrakeTorque { get; set; } = 38f;
 
     /// <summary>Max engine RPM (redline).</summary>
     public float MaxRpm { get; set; } = 7500f;
@@ -64,13 +83,18 @@ public class RallyCarComponent : SyncScript
     public float BrakeInput { get; private set; }
     public int CurrentGear { get; private set; } = 1;
 
-    // Only kept for backward compatibility (HUD reads it); computed from current gear
     public float DriveRatio => EffectiveRatio;
 
     private float EffectiveRatio => GearRatios[Math.Clamp(CurrentGear, 0, GearRatios.Length - 1)] * FinalDrive;
     private float _shiftCooldown;
 
-    public override void Start() { }
+    // Simulated engine RPM — the engine drives the drivetrain, not the other way around.
+    private float _engineRpm;
+
+    public override void Start()
+    {
+        _engineRpm = IdleRpm;
+    }
 
     public override void Update()
     {
@@ -114,45 +138,39 @@ public class RallyCarComponent : SyncScript
         var chassisTransform = CarBody.Transform;
         chassisTransform.UpdateWorldMatrix();
 
-        // Car nose is at Stride +Z (BeamNG -Y → Stride +Z = WorldMatrix.Backward)
-        // Forward = +Z = Backward in Stride's convention
-        var noseDir = chassisTransform.WorldMatrix.Backward;
+        var noseDir = chassisTransform.WorldMatrix.Backward;  // local +Z = nose
         var vel = chassisBody.LinearVelocity;
         float forwardSpeed = Vector3.Dot(vel, noseDir);
 
-        SpeedKmh = MathF.Abs(forwardSpeed) * 3.6f;
+        SpeedKmh     = MathF.Abs(forwardSpeed) * 3.6f;
         ThrottleInput = throttle;
         BrakeInput    = brake;
 
         // ── Auto transmission ────────────────────────────────────────────────
-        // Compute engine RPM from current wheel speed and active gear ratio.
-        float wheelOmega   = MathF.Abs(forwardSpeed) / WheelRadius;  // rad/s
         float effectiveRatio = EffectiveRatio;
-        EngineRpm = Math.Clamp(wheelOmega * effectiveRatio * 60f / (2f * MathF.PI), IdleRpm, MaxRpm);
-
         _shiftCooldown = MathF.Max(0f, _shiftCooldown - dt);
 
-        int numForwardGears = GearRatios.Length - 1; // index 0 = reverse
+        int numForwardGears = GearRatios.Length - 1;
         if (_shiftCooldown <= 0f && !isBraking && !isHandbrake && throttle > 0.05f)
         {
-            if (EngineRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
+            if (_engineRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
             {
                 CurrentGear++;
                 _shiftCooldown = 0.4f;
                 effectiveRatio = EffectiveRatio;
             }
-            else if (EngineRpm <= ShiftDownRpm && CurrentGear > 1)
+            else if (_engineRpm <= ShiftDownRpm && CurrentGear > 1)
             {
                 CurrentGear--;
                 _shiftCooldown = 0.4f;
                 effectiveRatio = EffectiveRatio;
             }
         }
-        // Down-shift when braking hard
         if (_shiftCooldown <= 0f && isBraking && CurrentGear > 1)
         {
-            float brakingRpm = wheelOmega * EffectiveRatio * 60f / (2f * MathF.PI);
-            if (brakingRpm < ShiftDownRpm)
+            // Downshift when braking to keep engine in power band
+            float brakingDemandRpm = (MathF.Abs(forwardSpeed) / WheelRadius) * effectiveRatio * 60f / (2f * MathF.PI);
+            if (brakingDemandRpm < ShiftDownRpm)
             {
                 CurrentGear--;
                 _shiftCooldown = 0.4f;
@@ -160,13 +178,51 @@ public class RallyCarComponent : SyncScript
             }
         }
 
-        // ── Per-gear motor parameters ────────────────────────────────────────
-        float maxWheelOmega  = MaxRpm / effectiveRatio * (2f * MathF.PI / 60f);
-        float targetOmega    = -(throttle * maxWheelOmega);
-        // Divide engine torque evenly across all driven wheels so total wheel force
-        // = PeakTorqueNm × effectiveRatio regardless of how many motors are used.
+        // ── Engine simulation ─────────────────────────────────────────────────
+        // The engine is the driver of the drivetrain. It produces torque at the crank
+        // based on throttle × torque-curve(RPM), overcomes internal friction, and
+        // feeds torque through gearbox → differential → wheel hubs.
+        //
+        // Architecture:
+        //   Engine (inertia + torque curve)
+        //     → Gearbox (ratio = GearRatios[gear])
+        //     → Final drive (ratio = FinalDrive)
+        //     → Open differential (splits equally to DriveWheels)
+        //     → BEPU AngularAxisMotor at each wheel hub
+
+        float engineOmega     = _engineRpm * (2f * MathF.PI / 60f);
+        float crankTorque     = InterpolateTorqueCurve(_engineRpm) * throttle;
+        float frictionLoss    = EngineFriction + EngineDynamicFriction * engineOmega;
+        float engBrake        = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
+
+        // Rev limiter: cut fuel at redline
+        if (_engineRpm >= MaxRpm) crankTorque = 0f;
+
+        float netCrankTorque  = crankTorque - frictionLoss - engBrake;
+
+        // Integrate engine RPM with inertia (Euler)
+        float alpha = netCrankTorque / EngineInertia;
+        _engineRpm += alpha * dt * 60f / (2f * MathF.PI);
+
+        // Drivetrain coupling: once moving, the drivetrain loads the engine
+        // (simulates clutch engagement — engine RPM is pulled toward demand RPM).
+        float demandRpm = (MathF.Abs(forwardSpeed) / WheelRadius) * effectiveRatio * 60f / (2f * MathF.PI);
+        if (demandRpm > IdleRpm)
+        {
+            float err = demandRpm - _engineRpm;
+            _engineRpm += err * 5f * dt;  // ~200 ms coupling time constant
+        }
+
+        _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
+        EngineRpm = _engineRpm;
+
+        // ── Wheel motor commands ──────────────────────────────────────────────
+        // Target wheel angular velocity is derived from the simulated engine RPM
+        // (engine drives wheels, not the other way around).
         int numDrive = Math.Max(1, DriveWheels.Count);
-        float gearMotorForce = PeakTorqueNm * effectiveRatio / WheelRadius / numDrive;
+        float wheelTargetOmega = -((_engineRpm * (2f * MathF.PI / 60f)) / effectiveRatio);
+        // Wheel torque = engine net output × gear ratio, distributed to each driven wheel
+        float availableWheelTorque = MathF.Max(0f, netCrankTorque + frictionLoss) * effectiveRatio / numDrive;
 
         foreach (var wheel in DriveWheels)
         {
@@ -183,66 +239,76 @@ public class RallyCarComponent : SyncScript
             }
             else if (throttle > 0.05f)
             {
-                ws.DriveMotor.TargetVelocity    = targetOmega;
-                ws.DriveMotor.MotorMaximumForce = gearMotorForce;
+                ws.DriveMotor.TargetVelocity    = wheelTargetOmega;
+                ws.DriveMotor.MotorMaximumForce = availableWheelTorque;
                 ws.DriveMotor.MotorDamping      = 500f;
             }
             else
             {
-                // Coasting: let wheels free-spin, no drive torque
+                // Coasting / engine braking
+                float engBrakeWheelTorque = engBrake * effectiveRatio / numDrive;
                 ws.DriveMotor.TargetVelocity    = 0f;
-                ws.DriveMotor.MotorMaximumForce = 0f;
+                ws.DriveMotor.MotorMaximumForce = engBrakeWheelTorque;
                 ws.DriveMotor.MotorDamping      = 500f;
             }
         }
 
-        // ── Steering motors (front wheels, relative to chassis) ───────────────
-        // TargetVelocity drives the wheel to yaw around chassis-Y.
-        // We track the software steering angle and stop driving when at the lock limit.
+        // ── Steering motors (front wheels) ────────────────────────────────────
         foreach (var wheel in SteerWheels)
         {
             var ws = wheel.Get<WheelSettings>();
             if (ws?.SteerMotor == null) continue;
 
-            // Integrate tracked angle (clamped to ±MaxSteerAngle); negate steer to match physics direction
-            float prevAngle = ws.CurrentSteerAngle;
             ws.CurrentSteerAngle += -steer * SteerRate * dt;
             ws.CurrentSteerAngle  = Math.Clamp(ws.CurrentSteerAngle, -MaxSteerAngle, MaxSteerAngle);
 
-            // Drive at a rate proportional to the remaining distance to target angle
             float targetAngle = -steer * MaxSteerAngle;
             float error       = targetAngle - ws.CurrentSteerAngle;
             ws.SteerMotor.TargetVelocity = Math.Clamp(error * 8f, -SteerRate, SteerRate);
         }
 
-        // ── Chassis yaw assist (blended with motor steering) ─────────────────
-        // Positive steer input = right thumb = should turn right.
-        // However, positive AngularVelocity.Y in Stride/BEPU actually rotates the nose
-        // toward -X (left), so we negate to get the correct physical direction.
-        float speedMs = MathF.Abs(forwardSpeed);
+        // ── Chassis yaw assist ────────────────────────────────────────────────
+        float speedMs    = MathF.Abs(forwardSpeed);
         float steerAuth  = 0.4f + 0.6f * MathF.Min(1f, speedMs / 6f);
         float targetYaw  = -steer * ChassisYawAssist * steerAuth;
 
         var av = chassisBody.AngularVelocity;
         av.Y = av.Y + (targetYaw - av.Y) * MathF.Min(1f, 6f * dt);
 
-        // ── Anti-roll and anti-wheelie damping ────────────────────────────────
-        // Car local axes: +Z = nose, +Y = up, +X = right.
-        // Pitch (nose up/down, wheelies/endos): AngularVelocity.X
-        // Roll  (sideways tilt):               AngularVelocity.Z
-        // Damp these strongly to simulate chassis rigidity and anti-roll bars.
-        float rollDamp  = MathF.Min(1f, 12f * dt);
-        float pitchDamp = MathF.Min(1f, 10f * dt);
-        av.X *= (1f - pitchDamp);
-        av.Z *= (1f - rollDamp);
+        // Anti-roll bar / chassis stiffness: damp pitch (X) and roll (Z) angular velocity
+        av.X *= (1f - MathF.Min(1f, 10f * dt));  // pitch (wheelie / endo)
+        av.Z *= (1f - MathF.Min(1f, 12f * dt));  // roll  (tipping)
 
         chassisBody.AngularVelocity = av;
 
-        // ── Lateral grip: bleed sideways velocity to simulate tyre grip ───────
+        // ── Lateral grip ──────────────────────────────────────────────────────
         {
             var right = chassisTransform.WorldMatrix.Right;
             float lateralSpeed = Vector3.Dot(vel, right);
             chassisBody.LinearVelocity -= right * (lateralSpeed * MathF.Min(1f, LateralGrip * dt));
         }
     }
+
+    /// <summary>
+    /// Linearly interpolates the engine torque curve at the given RPM.
+    /// Falls back to <see cref="PeakTorqueNm"/> (set to zero here, overridden by loader) when curve is absent.
+    /// </summary>
+    private float InterpolateTorqueCurve(float rpm)
+    {
+        if (TorqueCurveRpm == null || TorqueCurveRpm.Length < 2 ||
+            TorqueCurveNm  == null || TorqueCurveNm.Length < TorqueCurveRpm.Length)
+            return 222f;  // sunburst peak as fallback
+
+        rpm = Math.Clamp(rpm, TorqueCurveRpm[0], TorqueCurveRpm[^1]);
+        for (int i = 1; i < TorqueCurveRpm.Length; i++)
+        {
+            if (rpm <= TorqueCurveRpm[i])
+            {
+                float t = (rpm - TorqueCurveRpm[i - 1]) / (TorqueCurveRpm[i] - TorqueCurveRpm[i - 1]);
+                return TorqueCurveNm[i - 1] + t * (TorqueCurveNm[i] - TorqueCurveNm[i - 1]);
+            }
+        }
+        return TorqueCurveNm[^1];
+    }
 }
+

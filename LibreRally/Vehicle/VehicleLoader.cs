@@ -101,7 +101,6 @@ public class VehicleLoader
             WheelRadius  = wheelRadius,
             GearRatios   = gears,
             FinalDrive   = finalDrive,
-            PeakTorqueNm = peakTorque,
             MaxRpm       = maxRpm,
             IdleRpm      = idleRpm,
         };

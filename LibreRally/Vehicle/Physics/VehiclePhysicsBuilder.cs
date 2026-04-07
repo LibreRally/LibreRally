@@ -99,7 +99,9 @@ public static class VehiclePhysicsBuilder
         var entity = new Entity("chassis") { Transform = { Position = centroid } };
 
         var extents   = aabb.Maximum - aabb.Minimum;
-        float totalMass = Math.Max(allChassisNodes.Sum(n => n.Weight), 100f);
+        // Body-structure nodes alone are ~300-600 kg; engine, gearbox, seats, fuel etc.
+        // from other jbeam files add up to ~1200 kg total for a real rally car.
+        float totalMass = Math.Max(allChassisNodes.Sum(n => n.Weight), 900f);
 
         var body = new BodyComponent
         {

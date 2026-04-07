@@ -18,7 +18,8 @@ public class RallyCameraScript : SyncScript
     public float FollowLerpSpeed { get; set; } = 5f;
 
     /// <summary>Bonnet/hood camera offset in car-local space (+Z = nose).</summary>
-    public Vector3 BonnetOffset { get; set; } = new Vector3(0, 0.8f, 1.5f);
+    // Derived from sunburst2_body.jbeam camerasInternal: ["hood", 0.0, -0.67, 1.13, ...] → Stride (x, z, -y)
+    public Vector3 BonnetOffset { get; set; } = new Vector3(0, 1.13f, 0.67f);
 
     /// <summary>Front bumper camera offset in car-local space (+Z = nose).</summary>
     public Vector3 BumperOffset { get; set; } = new Vector3(0, 0.3f, 2.8f);
