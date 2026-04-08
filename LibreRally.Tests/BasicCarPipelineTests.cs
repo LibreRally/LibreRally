@@ -154,7 +154,7 @@ public class BasicCarPipelineTests
     {
         string assemblyPath = Path.Combine(GetRepositoryRoot(), "LibreRally", "bin", "Debug", "net10.0-windows", "LibreRally.dll");
         if (!File.Exists(assemblyPath))
-            throw new FileNotFoundException("Build /home/runner/work/LibreRally/LibreRally/LibreRally/LibreRally.csproj before running the basic_car pipeline tests.", assemblyPath);
+            throw new FileNotFoundException("Build LibreRally/LibreRally.csproj before running the basic_car pipeline tests.", assemblyPath);
 
         return AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
     }

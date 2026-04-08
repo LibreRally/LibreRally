@@ -8,7 +8,7 @@ It exists to:
 - validate LibreRally's JBeam loading pipeline against BeamNG tutorial-style content
 - provide a stable fixture for future importer and parser changes
 
-The vehicle lives in `/home/runner/work/LibreRally/LibreRally/LibreRally/Resources/BeamNG Vehicles/basic_car` and keeps the same multi-file layout used by the BeamNG basic car tutorial:
+The vehicle lives in `LibreRally/Resources/BeamNG Vehicles/basic_car` and keeps the same multi-file layout used by the BeamNG basic car tutorial:
 
 - `basic_car.jbeam`
 - `body.jbeam`
