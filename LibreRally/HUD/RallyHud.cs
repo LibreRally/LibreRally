@@ -42,8 +42,6 @@ public class RallyHud : SyncScript
         DebugText.Print(rpmStr, new Int2(rpmCx - rpmStr.Length * 4, cy - 8));
         DebugText.Print("x1000", new Int2(rpmCx - 18, cy + 10));
 
-        DebugText.Print($"G{Car.CurrentGear}", new Int2(midCx - 10, cy + 42));
-
         // Redline flash warning
         if (Car.EngineRpm > Car.MaxRpm * 0.92f)
             DebugText.Print("SHIFT!", new Int2(rpmCx - 18, cy - 30));
