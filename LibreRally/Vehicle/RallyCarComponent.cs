@@ -45,6 +45,9 @@ public class RallyCarComponent : SyncScript
     /// <summary>Brake motor force — how hard wheels resist rotation when braking.</summary>
     public float BrakeMotorForce { get; set; } = 10000f;
 
+    /// <summary>Extra rear brake force multiplier for the handbrake so it can lock the rear axle.</summary>
+    public float HandbrakeForceMultiplier { get; set; } = 4f;
+
     /// <summary>Maximum steering wheel lock angle (radians). ~0.52 rad ≈ 30°.</summary>
     public float MaxSteerAngle { get; set; } = 0.52f;
 
@@ -100,11 +103,15 @@ public class RallyCarComponent : SyncScript
     /// <summary>RPM to downshift at (auto-transmission).</summary>
     public float ShiftDownRpm { get; set; } = 2200f;
 
+    /// <summary>Vehicle speed below which holding brake can select reverse gear.</summary>
+    public float ReverseEngageSpeedKmh { get; set; } = 1.5f;
+
     // ── Read-only telemetry ──────────────────────────────────────────────────
     public float SpeedKmh { get; private set; }
     public float EngineRpm { get; private set; }
     public float ThrottleInput { get; private set; }
     public float BrakeInput { get; private set; }
+    public bool HandbrakeEngaged { get; private set; }
     public int CurrentGear { get; private set; } = 1;
 
     public float DriveRatio => EffectiveRatio;
@@ -141,29 +148,21 @@ public class RallyCarComponent : SyncScript
         var pad = Input.GamePads.FirstOrDefault();
 
         float throttle = 0f, brake = 0f, steer = 0f;
-        bool handbrake = false;
+        bool handbrakeRequested = false;
 
         if (pad != null)
         {
             throttle  = pad.State.RightTrigger;
             brake     = pad.State.LeftTrigger;
             steer     = pad.State.LeftThumb.X;
-            handbrake = pad.IsButtonDown(GamePadButton.A);
+            handbrakeRequested = pad.IsButtonDown(GamePadButton.A);
         }
 
         if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W)) throttle  = MathF.Max(throttle, 1f);
         if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S)) brake     = MathF.Max(brake,    1f);
         if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A)) steer     = MathF.Min(steer,   -1f);
         if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D)) steer     = MathF.Max(steer,    1f);
-        if (Input.IsKeyDown(Keys.Space))                             handbrake = true;
-
-        string padInfo = pad != null
-            ? $"Pad | T:{throttle:F2} B:{brake:F2} S:{steer:F2} G:{CurrentGear}"
-            : $"No pad ({Input.GamePads.Count}) — use arrows";
-        DebugText.Print($"{padInfo} | {SpeedKmh:F0} km/h", new Int2(10, 30));
-
-        bool isBraking   = brake > 0.05f;
-        bool isHandbrake = handbrake;
+        if (Input.IsKeyDown(Keys.Space))                             handbrakeRequested = true;
 
         // ── Chassis physics ──────────────────────────────────────────────────
         var chassisBody = CarBody.Get<BodyComponent>();
@@ -183,51 +182,77 @@ public class RallyCarComponent : SyncScript
         BrakeInput    = brake;
 
         // ── Auto transmission ────────────────────────────────────────────────
-        // Use speed-derived RPM for shift decisions — NOT the cosmetic display RPM.
-        // The display RPM free-revs at standstill, which would shift the car to 6th
-        // gear before it even moves.
+        // Use driven-wheel RPM for shift decisions — NOT the cosmetic display RPM.
+        // This keeps the gearbox tied to the actual driveline (including wheelspin)
+        // without reintroducing the old free-rev-to-6th-at-standstill bug.
         float effectiveRatio = EffectiveRatio;
         _shiftCooldown = MathF.Max(0f, _shiftCooldown - dt);
 
-        float wheelOmegaForShift = MathF.Abs(forwardSpeed) / WheelRadius;
-        float speedRpm = wheelOmegaForShift * effectiveRatio * (60f / (2f * MathF.PI));
-        speedRpm = Math.Clamp(speedRpm, IdleRpm, MaxRpm);
-
-        // Force gear 1 when nearly stationary
-        if (SpeedKmh < 2f && CurrentGear > 1 && _shiftCooldown <= 0f)
+        int standingGear = ResolveStandingGearSelection(
+            CurrentGear,
+            SpeedKmh,
+            forwardSpeed,
+            throttle,
+            brake,
+            handbrakeRequested,
+            _shiftCooldown,
+            ReverseEngageSpeedKmh);
+        if (standingGear != CurrentGear)
         {
-            CurrentGear    = 1;
+            bool changedDirection = standingGear == 0 || CurrentGear == 0;
+            CurrentGear    = standingGear;
             effectiveRatio = EffectiveRatio;
-            _shiftCooldown = 0.4f;
+            _shiftCooldown = changedDirection ? 0.25f : 0.4f;
         }
+
+        bool isReverseGear = CurrentGear == 0;
+        float driveDirection = isReverseGear ? -1f : 1f;
+        float driveInput = isReverseGear ? brake : throttle;
+        float serviceBrakeInput = isReverseGear ? throttle : brake;
+        bool isBraking   = serviceBrakeInput > 0.05f;
+        bool isHandbrake = handbrakeRequested;
+        HandbrakeEngaged = isHandbrake;
+
+        float drivenWheelOmega = MeasureDrivenWheelOmegaForShift(forwardSpeed);
+        float drivelineRpm = drivenWheelOmega * effectiveRatio * (60f / (2f * MathF.PI));
+        drivelineRpm = Math.Clamp(drivelineRpm, IdleRpm, MaxRpm);
 
         int numForwardGears = GearRatios.Length - 1;
-        if (_shiftCooldown <= 0f && !isBraking && !isHandbrake && throttle > 0.05f)
+        if (CurrentGear > 0)
         {
-            if (speedRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
+            if (_shiftCooldown <= 0f && !isBraking && !isHandbrake && driveInput > 0.05f)
             {
-                CurrentGear++;
-                _shiftCooldown = 0.4f;
-                effectiveRatio = EffectiveRatio;
+                if (drivelineRpm >= ShiftUpRpm && CurrentGear < numForwardGears)
+                {
+                    CurrentGear++;
+                    _shiftCooldown = 0.4f;
+                    effectiveRatio = EffectiveRatio;
+                }
+                else if (drivelineRpm <= ShiftDownRpm && CurrentGear > 1)
+                {
+                    CurrentGear--;
+                    _shiftCooldown = 0.4f;
+                    effectiveRatio = EffectiveRatio;
+                }
             }
-            else if (speedRpm <= ShiftDownRpm && CurrentGear > 1)
+            if (_shiftCooldown <= 0f && isBraking && CurrentGear > 1)
             {
-                CurrentGear--;
-                _shiftCooldown = 0.4f;
-                effectiveRatio = EffectiveRatio;
-            }
-        }
-        if (_shiftCooldown <= 0f && isBraking && CurrentGear > 1)
-        {
-            if (speedRpm < ShiftDownRpm)
-            {
-                CurrentGear--;
-                _shiftCooldown = 0.4f;
-                effectiveRatio = EffectiveRatio;
+                if (drivelineRpm < ShiftDownRpm)
+                {
+                    CurrentGear--;
+                    _shiftCooldown = 0.4f;
+                    effectiveRatio = EffectiveRatio;
+                }
             }
         }
 
-        speedRpm = Math.Clamp(wheelOmegaForShift * effectiveRatio * (60f / (2f * MathF.PI)), IdleRpm, MaxRpm);
+        drivelineRpm = Math.Clamp(drivenWheelOmega * effectiveRatio * (60f / (2f * MathF.PI)), IdleRpm, MaxRpm);
+
+        string gearLabel = isReverseGear ? "R" : CurrentGear.ToString();
+        string padInfo = pad != null
+            ? $"Pad | T:{throttle:F2} B:{brake:F2} S:{steer:F2} G:{gearLabel}{(isHandbrake ? " HB" : string.Empty)}"
+            : $"No pad ({Input.GamePads.Count}) — use arrows";
+        DebugText.Print($"{padInfo} | {SpeedKmh:F0} km/h", new Int2(10, 30));
 
         // ── Engine simulation ─────────────────────────────────────────────────
         // Two separate concerns:
@@ -235,33 +260,44 @@ public class RallyCarComponent : SyncScript
         // 1. Wheel force (physics): derived from actual wheel/car speed → torque curve.
         //    This is always well-behaved — no free-revving, no stall, no redline cutoff.
         //
-        // 2. RPM display / shifting: a state variable that revs up with throttle and
-        //    is pulled toward the drivetrain demand as the car accelerates.
-        //    This gives a realistic rev needle without affecting the driving physics.
+        // 2. RPM display: a state variable that revs up with throttle and is pulled
+        //    toward the drivetrain demand as the car accelerates. This gives a
+        //    realistic rev needle without affecting the driving physics.
 
         // ─ Torque for wheels (based on actual drivetrain state) ──────────────
         // Launch from a dead stop needs clutch slip; otherwise a locked wheel-speed
         // model is stuck at idle torque forever. Hold the engine in the launch band
-        // until wheel speed catches up, then hand over to the real speed-derived RPM.
-        float launchRpm   = IdleRpm + (AutoClutchLaunchRpm - IdleRpm) * throttle;
-        float torqueRpm   = throttle > 0.05f ? MathF.Max(speedRpm, launchRpm) : speedRpm;
-        float crankTorque = InterpolateTorqueCurve(torqueRpm) * throttle;
-        float engBrake    = (throttle < 0.05f) ? EngineBrakeTorque : 0f;
-        float demandRpm   = speedRpm;
+        // until wheel speed catches up, then hand over to the real driveline RPM.
+        float launchRpm   = IdleRpm + (AutoClutchLaunchRpm - IdleRpm) * driveInput;
+        float torqueRpm   = driveInput > 0.05f ? MathF.Max(drivelineRpm, launchRpm) : drivelineRpm;
+        float crankTorque = InterpolateTorqueCurve(torqueRpm) * driveInput;
+        bool applyEngineBraking = driveInput < 0.05f && MathF.Abs(forwardSpeed) > 0.25f;
+        float engBrake    = applyEngineBraking ? EngineBrakeTorque : 0f;
+        float demandRpm   = drivelineRpm;
 
-        // ─ RPM display (state variable, for gauge and auto-shift) ───────────
+        // ─ RPM display (state variable for the gauge) ───────────────────────
         float engineOmega  = _engineRpm * (2f * MathF.PI / 60f);
         float frictionLoss = EngineFriction + EngineDynamicFriction * engineOmega;
 
         // Rev up with throttle; coupling pulls toward actual drivetrain demand
-        float displayCrank = InterpolateTorqueCurve(_engineRpm) * throttle;
+        float displayCrank = InterpolateTorqueCurve(_engineRpm) * driveInput;
         if (_engineRpm >= MaxRpm) displayCrank = 0f;
         float netDisplay   = displayCrank - frictionLoss - engBrake;
         _engineRpm += (netDisplay / EngineInertia) * dt * (60f / (2f * MathF.PI));
 
-        // Coupling: pull display RPM toward drivetrain demand when moving
-        float displayTargetRpm = throttle > 0.05f ? torqueRpm : demandRpm;
-        _engineRpm += (displayTargetRpm - _engineRpm) * 5f * dt;
+        // Coupling: pull display RPM toward the actual driveline demand
+        float displayTargetRpm = driveInput > 0.05f ? torqueRpm : demandRpm;
+        float clutchCoupling = driveInput > 0.05f ? 7f : 5f;
+        _engineRpm += (displayTargetRpm - _engineRpm) * clutchCoupling * dt;
+
+        // Allow clutch flare on launch, but stop the display RPM from free-revving
+        // thousands above the actual driveline once the car is rolling.
+        float slipBlend = Math.Clamp(SpeedKmh / 35f, 0f, 1f);
+        float clutchSlipAllowance = driveInput > 0.05f
+            ? MathUtil.Lerp(AutoClutchLaunchRpm - IdleRpm, 250f, slipBlend)
+            : 150f;
+        float maxCoupledRpm = demandRpm + clutchSlipAllowance;
+        _engineRpm = MathF.Min(_engineRpm, MathF.Max(IdleRpm, maxCoupledRpm));
 
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
         EngineRpm  = _engineRpm;
@@ -269,7 +305,7 @@ public class RallyCarComponent : SyncScript
         // ── Steering motors (front wheels) ────────────────────────────────────
         const float SteerServoGain = 12f;
         const float SteerVelocityLimitMultiplier = 2f;
-        float steerTargetAngle = -steer * MaxSteerAngle;
+        float steerTargetAngle = steer * MaxSteerAngle;
         float totalActualSteerAngle = 0f;
         int steerWheelCount = 0;
 
@@ -298,7 +334,7 @@ public class RallyCarComponent : SyncScript
         // double-counting longitudinal forces (the dynamics system is authoritative).
         // Target = redline speed so motor always pushes forward; MaxForce limits torque.
         int   numDrive           = Math.Max(1, DriveWheels.Count);
-        float wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
+        float wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio) * driveDirection;
         float availableWheelForce = MathF.Max(0f, crankTorque) * effectiveRatio / WheelRadius / numDrive;
 
         foreach (var wheel in DriveWheels)
@@ -320,14 +356,21 @@ public class RallyCarComponent : SyncScript
 
             wheel.Transform.UpdateWorldMatrix();
             Vector3 driveAxisLocalA = MeasureWheelAxleAxisLocalA(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
+            bool rearWheel = IsRearWheel(wheel, ws);
 
-            if (isBraking || isHandbrake)
+            if (isHandbrake && rearWheel)
             {
                 ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
-                ws.DriveMotor.MotorMaximumForce    = isHandbrake ? BrakeMotorForce * 2f : BrakeMotorForce;
+                ws.DriveMotor.MotorMaximumForce    = BrakeMotorForce * HandbrakeForceMultiplier;
                 ws.DriveMotor.MotorDamping         = 500f;
             }
-            else if (throttle > 0.05f)
+            else if (isBraking)
+            {
+                ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
+                ws.DriveMotor.MotorMaximumForce    = BrakeMotorForce * serviceBrakeInput;
+                ws.DriveMotor.MotorDamping         = 500f;
+            }
+            else if (driveInput > 0.05f)
             {
                 ws.DriveMotor.TargetVelocityLocalA = driveAxisLocalA * wheelTargetOmega;
                 ws.DriveMotor.MotorMaximumForce    = availableWheelForce;
@@ -347,7 +390,7 @@ public class RallyCarComponent : SyncScript
         float steerAuth = 0.4f + 0.6f * MathF.Min(1f, speedMs / 6f);
         float steerRack = steerWheelCount > 0 && MaxSteerAngle > 0.0001f
             ? Math.Clamp(totalActualSteerAngle / (steerWheelCount * MaxSteerAngle), -1f, 1f)
-            : -steer;
+            : steer;
         float targetYaw = steerRack * ChassisYawAssist * steerAuth;
 
         var av = chassisBody.AngularVelocity;
@@ -369,13 +412,22 @@ public class RallyCarComponent : SyncScript
             GatherWheelData(chassisBody, chassisTransform.WorldMatrix);
 
             // Compute brake torque for dynamics system
+            float serviceBrakeTorque = BrakeMotorForce * WheelRadius * serviceBrakeInput;
+            float handbrakeTorque = BrakeMotorForce * WheelRadius * HandbrakeForceMultiplier;
             for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
             {
-                _brakeTorques[i] = isBraking ? BrakeMotorForce * WheelRadius * brake
-                    : (isHandbrake && i >= VehicleDynamicsSystem.RL ? BrakeMotorForce * WheelRadius * 2f : 0f);
+                _brakeTorques[i] = isBraking ? serviceBrakeTorque : 0f;
+                if (isHandbrake && i >= VehicleDynamicsSystem.RL)
+                    _brakeTorques[i] += handbrakeTorque;
             }
 
             Matrix chassisWorld = chassisTransform.WorldMatrix;
+            float drivetrainTorque = driveInput > 0.05f
+                ? wheelTorqueAtCrank * driveDirection
+                : applyEngineBraking
+                    ? -MathF.Sign(forwardSpeed) * engBrake * effectiveRatio
+                    : 0f;
+
             Dynamics.Update(
                 chassisBody,
                 in chassisWorld,
@@ -384,7 +436,7 @@ public class RallyCarComponent : SyncScript
                 _wheelOrientations,
                 _wheelGrounded,
                 _suspensionCompressions,
-                throttle > 0.05f ? wheelTorqueAtCrank : -engBrake * effectiveRatio,
+                drivetrainTorque,
                 _brakeTorques,
                 _camberAngles,
                 dt);
@@ -459,7 +511,7 @@ public class RallyCarComponent : SyncScript
 
     /// <summary>
     /// Linearly interpolates the engine torque curve at the given RPM.
-    /// Falls back to <see cref="PeakTorqueNm"/> (set to zero here, overridden by loader) when curve is absent.
+    /// Falls back to the sunburst 2.0T peak-torque value when no curve is configured.
     /// </summary>
     private float InterpolateTorqueCurve(float rpm)
     {
@@ -477,6 +529,85 @@ public class RallyCarComponent : SyncScript
             }
         }
         return TorqueCurveNm[^1];
+    }
+
+    private static bool IsRearWheel(Entity wheel, WheelSettings? wheelSettings)
+    {
+        int dynamicsIndex = wheelSettings?.DynamicsIndex ?? -1;
+        if ((uint)dynamicsIndex < VehicleDynamicsSystem.WheelCount)
+            return dynamicsIndex >= VehicleDynamicsSystem.RL;
+
+        return wheel.Name.EndsWith("_RL", StringComparison.OrdinalIgnoreCase)
+            || wheel.Name.EndsWith("_RR", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int ResolveStandingGearSelection(
+        int currentGear,
+        float speedKmh,
+        float forwardSpeed,
+        float throttleInput,
+        float brakeInput,
+        bool handbrakeRequested,
+        float shiftCooldown,
+        float reverseEngageSpeedKmh)
+    {
+        if (shiftCooldown > 0f || handbrakeRequested)
+            return currentGear;
+
+        float reverseEngageSpeedMs = MathF.Max(reverseEngageSpeedKmh / 3.6f, 0.1f);
+        bool nearStandstill = speedKmh < reverseEngageSpeedKmh && MathF.Abs(forwardSpeed) < reverseEngageSpeedMs;
+        bool wantsForward = throttleInput > 0.05f;
+        bool wantsReverse = brakeInput > 0.05f && throttleInput <= 0.05f;
+
+        if (currentGear == 0)
+            return wantsForward && nearStandstill ? 1 : 0;
+
+        if (wantsReverse && nearStandstill)
+            return 0;
+
+        if (speedKmh < 2f && currentGear > 1)
+            return 1;
+
+        return currentGear;
+    }
+
+    private float MeasureDrivenWheelOmegaForShift(float forwardSpeed)
+    {
+        float safeWheelRadius = MathF.Max(WheelRadius, 0.05f);
+        float fallbackOmega = MathF.Abs(forwardSpeed) / safeWheelRadius;
+        if (Dynamics == null || DriveWheels.Count == 0)
+            return fallbackOmega;
+
+        float groundedOmegaSum = 0f;
+        int groundedCount = 0;
+        float sampledOmegaSum = 0f;
+        int sampledCount = 0;
+
+        foreach (var wheel in DriveWheels)
+        {
+            var ws = wheel.Get<WheelSettings>();
+            int dynamicsIndex = ws?.DynamicsIndex ?? -1;
+            if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount)
+                continue;
+
+            float wheelOmega = MathF.Abs(Dynamics.WheelStates[dynamicsIndex].AngularVelocity);
+            sampledOmegaSum += wheelOmega;
+            sampledCount++;
+
+            if (!Dynamics.WheelGrounded[dynamicsIndex])
+                continue;
+
+            groundedOmegaSum += wheelOmega;
+            groundedCount++;
+        }
+
+        if (groundedCount > 0)
+            return groundedOmegaSum / groundedCount;
+
+        if (sampledCount > 0 && MathF.Abs(forwardSpeed) > 0.5f)
+            return sampledOmegaSum / sampledCount;
+
+        return fallbackOmega;
     }
 
     private static float MeasureSteerAngle(Matrix chassisWorld, Matrix wheelWorld)
@@ -501,7 +632,7 @@ public class RallyCarComponent : SyncScript
         float sin = Vector3.Dot(Vector3.Cross(chassisRight, wheelRight), up);
         float cos = Math.Clamp(Vector3.Dot(chassisRight, wheelRight), -1f, 1f);
 
-        // Positive steer angle corresponds to left lock, matching the rest of the vehicle code.
+        // Positive steer angle corresponds to right lock, matching the steering servo target.
         return -MathF.Atan2(sin, cos);
     }
 

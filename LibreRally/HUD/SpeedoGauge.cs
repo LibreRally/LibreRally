@@ -21,6 +21,7 @@ public class SpeedoGauge : GameSystemBase
     public int CurrentGear { get; set; } = 1;
     public float ThrottleInput { get; set; }
     public float BrakeInput { get; set; }
+    public bool HandbrakeEngaged { get; set; }
 
     // ── Gauge geometry (screen coordinates, updated in Draw from backbuffer size) ──
     private const float StartDeg = 225f;
@@ -40,6 +41,10 @@ public class SpeedoGauge : GameSystemBase
     private const float MinorTickInnerRadius = 60f;
     private const float NeedleLength = 56f;
     private const float NeedleTailLength = 14f;
+    private const float GearIndicatorWidth = 54f;
+    private const float GearIndicatorHeight = 76f;
+    private const float GearSegmentLength = 20f;
+    private const float GearSegmentThickness = 6f;
 
     private SpriteBatch? _sb;
     private Texture? _pixel;
@@ -95,8 +100,10 @@ public class SpeedoGauge : GameSystemBase
         _sb.Begin(ctx, SpriteSortMode.Deferred, BlendStates.AlphaBlend);
 
         DrawBackdrop(panelLeft, panelTop, panelRight - panelLeft, panelBottom - panelTop);
+        DrawHandbrakeLamp(midCx, panelTop + 16f);
         DrawSpeedDial(speedCx, cy);
         DrawRpmDial(rpmCx, cy);
+        DrawGearIndicator(midCx, cy + 42f);
         DrawPedalBars(midCx - 72f, cy + 88f, 144f, 8f);
 
         _sb.End();
@@ -225,6 +232,112 @@ public class SpeedoGauge : GameSystemBase
     {
         DrawPedalBar(x, y, w, h, ThrottleInput, new Color(68, 218, 102, 220));
         DrawPedalBar(x, y + 12f, w, h, BrakeInput, new Color(255, 92, 70, 220));
+    }
+
+    private void DrawHandbrakeLamp(float cx, float cy)
+    {
+        DrawFilledCircle(cx + 1.5f, cy + 2f, 12f, new Color(0, 0, 0, 50));
+
+        if (HandbrakeEngaged)
+            DrawFilledCircle(cx, cy, 13f, new Color(255, 76, 60, 26));
+
+        DrawFilledCircle(cx, cy, 10f, new Color(10, 12, 15, 232));
+        DrawCircleStroke(cx, cy, 10f, 1.5f, new Color(150, 156, 166, HandbrakeEngaged ? 86 : 44));
+        DrawFilledCircle(cx, cy, 6.5f, HandbrakeEngaged ? new Color(255, 92, 70, 255) : new Color(72, 26, 24, 170));
+        DrawRect(new RectangleF(cx - 1.1f, cy - 4.3f, 2.2f, 6.8f), new Color(255, 244, 236, HandbrakeEngaged ? 235 : 150));
+        DrawFilledCircle(cx, cy + 4.6f, 1.4f, new Color(255, 244, 236, HandbrakeEngaged ? 235 : 150));
+    }
+
+    private void DrawGearIndicator(float cx, float cy)
+    {
+        float x = cx - GearIndicatorWidth * 0.5f;
+        float y = cy - GearIndicatorHeight * 0.5f;
+
+        DrawRect(new RectangleF(x + 3f, y + 4f, GearIndicatorWidth, GearIndicatorHeight), new Color(0, 0, 0, 52));
+        DrawRect(new RectangleF(x, y, GearIndicatorWidth, GearIndicatorHeight), new Color(10, 12, 15, 226));
+        DrawRect(new RectangleF(x + 2f, y + 2f, GearIndicatorWidth - 4f, GearIndicatorHeight - 4f), new Color(24, 28, 34, 244));
+        DrawRect(new RectangleF(x + 1f, y + 1f, GearIndicatorWidth - 2f, 1f), new Color(255, 255, 255, 18));
+        DrawRect(new RectangleF(x + 1f, y + GearIndicatorHeight - 2f, GearIndicatorWidth - 2f, 1f), new Color(0, 0, 0, 140));
+
+        var onColor = new Color(255, 182, 88, 255);
+        var glowColor = new Color(255, 182, 88, 52);
+        var offColor = new Color(50, 54, 62, 190);
+
+        if (CurrentGear <= 0)
+            DrawReverseGlyph(cx, cy, onColor);
+        else
+            DrawSevenSegmentDigit(cx, cy, Math.Clamp(CurrentGear, 0, 9), onColor, glowColor, offColor);
+    }
+
+    private void DrawSevenSegmentDigit(float cx, float cy, int digit, Color onColor, Color glowColor, Color offColor)
+    {
+        (bool a, bool b, bool c, bool d, bool e, bool f, bool g) = digit switch
+        {
+            0 => (true,  true,  true,  true,  true,  true,  false),
+            1 => (false, true,  true,  false, false, false, false),
+            2 => (true,  true,  false, true,  true,  false, true),
+            3 => (true,  true,  true,  true,  false, false, true),
+            4 => (false, true,  true,  false, false, true,  true),
+            5 => (true,  false, true,  true,  false, true,  true),
+            6 => (true,  false, true,  true,  true,  true,  true),
+            7 => (true,  true,  true,  false, false, false, false),
+            8 => (true,  true,  true,  true,  true,  true,  true),
+            9 => (true,  true,  true,  true,  false, true,  true),
+            _ => (false, false, false, false, false, false, false),
+        };
+
+        float hX = cx - GearSegmentLength * 0.5f;
+        float topY = cy - (GearSegmentLength + GearSegmentThickness);
+        float midY = cy - GearSegmentThickness * 0.5f;
+        float bottomY = cy + GearSegmentLength;
+        float leftX = hX - GearSegmentThickness;
+        float rightX = hX + GearSegmentLength;
+        float upperY = topY + GearSegmentThickness;
+        float lowerY = midY + GearSegmentThickness;
+
+        DrawDigitSegment(new RectangleF(hX, topY, GearSegmentLength, GearSegmentThickness), a, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(rightX, upperY, GearSegmentThickness, GearSegmentLength), b, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(rightX, lowerY, GearSegmentThickness, GearSegmentLength), c, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(hX, bottomY, GearSegmentLength, GearSegmentThickness), d, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(leftX, lowerY, GearSegmentThickness, GearSegmentLength), e, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(leftX, upperY, GearSegmentThickness, GearSegmentLength), f, onColor, glowColor, offColor);
+        DrawDigitSegment(new RectangleF(hX, midY, GearSegmentLength, GearSegmentThickness), g, onColor, glowColor, offColor);
+    }
+
+    private void DrawDigitSegment(RectangleF rect, bool enabled, Color onColor, Color glowColor, Color offColor)
+    {
+        if (enabled)
+        {
+            DrawRect(new RectangleF(rect.X - 1f, rect.Y - 1f, rect.Width + 2f, rect.Height + 2f), glowColor);
+            DrawRect(rect, onColor);
+            DrawRect(new RectangleF(rect.X, rect.Y, rect.Width, 1f), new Color(255, 255, 255, 24));
+            return;
+        }
+
+        DrawRect(rect, offColor);
+    }
+
+    private void DrawReverseGlyph(float cx, float cy, Color color)
+    {
+        var shadow = new Vector2(1.5f, 2f);
+        var top = new Vector2(cx - 11f, cy - 18f);
+        var middle = new Vector2(cx - 11f, cy);
+        var bottom = new Vector2(cx - 11f, cy + 20f);
+        var upperRight = new Vector2(cx + 8f, cy - 10f);
+        var midRight = new Vector2(cx + 8f, cy);
+        var leg = new Vector2(cx + 11f, cy + 20f);
+
+        DrawLine(top + shadow, bottom + shadow, new Color(0, 0, 0, 80), 5f);
+        DrawLine(top + shadow, upperRight + shadow, new Color(0, 0, 0, 80), 5f);
+        DrawLine(middle + shadow, midRight + shadow, new Color(0, 0, 0, 80), 5f);
+        DrawLine(upperRight + shadow, midRight + shadow, new Color(0, 0, 0, 80), 5f);
+        DrawLine(middle + shadow, leg + shadow, new Color(0, 0, 0, 80), 5f);
+
+        DrawLine(top, bottom, color, 3f);
+        DrawLine(top, upperRight, color, 3f);
+        DrawLine(middle, midRight, color, 3f);
+        DrawLine(upperRight, midRight, color, 3f);
+        DrawLine(middle, leg, color, 3f);
     }
 
     private void DrawPedalBar(float x, float y, float w, float h, float value, Color fillColor)
