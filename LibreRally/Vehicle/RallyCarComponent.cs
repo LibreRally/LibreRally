@@ -12,6 +12,8 @@ namespace LibreRally.Vehicle;
 [ComponentCategory("LibreRally")]
 public class RallyCarComponent : SyncScript
 {
+    private const float GroundProbeMargin = 0.05f;
+
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
     public List<Entity> SteerWheels { get; set; } = new();
@@ -33,7 +35,7 @@ public class RallyCarComponent : SyncScript
     /// <summary>Direct chassis yaw assist — keeps steering snappy even without full tire physics.</summary>
     public float ChassisYawAssist { get; set; } = 1.0f;
 
-    /// <summary>Lateral grip: fraction of sideways velocity removed per second.</summary>
+    /// <summary>Legacy grip tuning value, now used as the soft-body tyre model's low-speed damping gain.</summary>
     public float LateralGrip { get; set; } = 6f;
 
     // ── Drivetrain ───────────────────────────────────────────────────────────
@@ -313,12 +315,7 @@ public class RallyCarComponent : SyncScript
 
         chassisBody.AngularVelocity = av;
 
-        // ── Lateral grip ──────────────────────────────────────────────────────
-        {
-            var right = chassisTransform.WorldMatrix.Right;
-            float lateralSpeed = Vector3.Dot(vel, right);
-            chassisBody.LinearVelocity -= right * (lateralSpeed * MathF.Min(1f, LateralGrip * dt));
-        }
+        ApplyTyreForces(chassisBody, chassisTransform.WorldMatrix, dt);
     }
 
     /// <summary>
@@ -390,9 +387,100 @@ public class RallyCarComponent : SyncScript
         return axisLocalA / MathF.Sqrt(axisLengthSq);
     }
 
+    private void ApplyTyreForces(BodyComponent chassisBody, Matrix chassisWorld, float dt)
+    {
+        if (dt <= 0f)
+            return;
+
+        Vector3 chassisPosition = chassisWorld.TranslationVector;
+        Vector3 fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
+
+        foreach (var wheel in Wheels)
+        {
+            var wheelBody = wheel.Get<BodyComponent>();
+            var wheelSettings = wheel.Get<WheelSettings>();
+            if (wheelBody == null || wheelSettings?.TireModel == null)
+                continue;
+
+            wheel.Transform.UpdateWorldMatrix();
+            Matrix wheelWorld = wheel.Transform.WorldMatrix;
+
+            Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
+            Vector3 nonSpinningUp = ProjectOnPlane(fallbackUp, wheelRight);
+            Vector3 wheelUp = SafeNormalize(nonSpinningUp, fallbackUp);
+            Vector3 wheelLongitudinal = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
+
+            Vector3 wheelVelocity = wheelBody.LinearVelocity;
+            float longitudinalSpeed = Vector3.Dot(wheelVelocity, wheelLongitudinal);
+            float lateralSpeed = Vector3.Dot(wheelVelocity, wheelRight);
+            Vector3 wheelPosition = wheelWorld.TranslationVector;
+            float normalLoad = ProbeWheelNormalLoad(chassisBody, wheelBody, wheelSettings, wheelPosition, wheelUp);
+
+            float lateralForce = wheelSettings.TireModel.EvaluateLateralForce(
+                lateralSpeed,
+                longitudinalSpeed,
+                normalLoad,
+                dt,
+                LateralGrip);
+
+            if (MathF.Abs(lateralForce) < 0.01f)
+                continue;
+
+            Vector3 impulse = wheelRight * (lateralForce * dt);
+
+            chassisBody.ApplyImpulse(impulse, wheelPosition - chassisPosition);
+            chassisBody.Awake = true;
+        }
+    }
+
+    private static float ProbeWheelNormalLoad(
+        BodyComponent chassisBody,
+        BodyComponent wheelBody,
+        WheelSettings wheelSettings,
+        Vector3 wheelPosition,
+        Vector3 wheelUp)
+    {
+        var simulation = wheelBody.Simulation;
+        var tireModel = wheelSettings.TireModel;
+        if (simulation == null || tireModel == null)
+            return 0f;
+
+        float staticNormalLoad = Math.Max(wheelSettings.StaticNormalLoad, 0f);
+        if (staticNormalLoad <= 0f)
+            return 0f;
+
+        float wheelRadius = Math.Max(tireModel.WheelRadius, 0.1f);
+        Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + GroundProbeMargin);
+        Vector3 rayDirection = -wheelUp;
+        float rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
+
+        wheelSettings.GroundProbeHits.Clear();
+        simulation.RayCastPenetrating(ref rayOrigin, ref rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
+
+        foreach (var hit in wheelSettings.GroundProbeHits)
+        {
+            if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
+                continue;
+
+            return staticNormalLoad;
+        }
+
+        return 0f;
+    }
+
     private static Vector3 ProjectOnPlane(Vector3 vector, Vector3 planeNormal)
     {
         return vector - planeNormal * Vector3.Dot(vector, planeNormal);
     }
-}
 
+    private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
+    {
+        float lengthSquared = value.LengthSquared();
+        if (lengthSquared < 1e-6f)
+            return fallback;
+
+        return value / MathF.Sqrt(lengthSquared);
+    }
+}

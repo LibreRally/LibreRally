@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
 using Stride.Core;
 using Stride.Engine;
@@ -23,4 +25,16 @@ public class WheelSettings : EntityComponent
     /// <summary>Rate-limited rack command (radians) that the steering servo tracks.</summary>
     [DataMemberIgnore]
     public float CurrentSteerAngle { get; set; }
+
+    /// <summary>Soft-body tyre state and the paper-shaped lateral force curve for this wheel.</summary>
+    [DataMemberIgnore]
+    public SoftBodyTireModel? TireModel { get; set; }
+
+    /// <summary>Nominal wheel load for the tyre model, initialized during vehicle build from quarter-mass × gravity.</summary>
+    [DataMemberIgnore]
+    public float StaticNormalLoad { get; set; }
+
+    /// <summary>Reusable hit buffer for the tyre ground-contact probe.</summary>
+    [DataMemberIgnore]
+    public List<HitInfo> GroundProbeHits { get; } = new();
 }
