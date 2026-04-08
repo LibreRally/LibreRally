@@ -12,6 +12,8 @@ namespace LibreRally.Vehicle;
 [ComponentCategory("LibreRally")]
 public class RallyCarComponent : SyncScript
 {
+    private const float GroundProbeMargin = 0.05f;
+
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
     public List<Entity> SteerWheels { get; set; } = new();
@@ -441,13 +443,14 @@ public class RallyCarComponent : SyncScript
         Vector3 wheelUp)
     {
         var simulation = wheelBody.Simulation;
-        if (simulation == null || wheelSettings.StaticNormalLoad <= 0f || wheelSettings.TireModel == null)
+        var tireModel = wheelSettings.TireModel;
+        if (simulation == null || wheelSettings.StaticNormalLoad <= 0f || tireModel == null)
             return 0f;
 
-        float wheelRadius = Math.Max(wheelSettings.TireModel.WheelRadius, 0.1f);
-        Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + 0.05f);
+        float wheelRadius = Math.Max(tireModel.WheelRadius, 0.1f);
+        Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + GroundProbeMargin);
         Vector3 rayDirection = -wheelUp;
-        float rayLength = wheelRadius * 2f + 0.1f;
+        float rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
 
         wheelSettings.GroundProbeHits.Clear();
         simulation.RayCastPenetrating(ref rayOrigin, ref rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
