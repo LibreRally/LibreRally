@@ -23,4 +23,12 @@ public class WheelSettings : EntityComponent
     /// <summary>Rate-limited rack command (radians) that the steering servo tracks.</summary>
     [DataMemberIgnore]
     public float CurrentSteerAngle { get; set; }
+
+    /// <summary>Soft-body tyre state and the paper-shaped lateral force curve for this wheel.</summary>
+    [DataMemberIgnore]
+    public SoftBodyTireModel? TireModel { get; set; }
+
+    /// <summary>Approximate static wheel load used by the tyre model.</summary>
+    [DataMemberIgnore]
+    public float StaticNormalLoad { get; set; } = 3000f;
 }

@@ -591,7 +591,13 @@ public static class VehiclePhysicsBuilder
             entity.Add(steerMotor);
         }
 
-        entity.Add(new WheelSettings { DriveMotor = driveMotor, SteerMotor = steerMotor });
+        entity.Add(new WheelSettings
+        {
+            DriveMotor = driveMotor,
+            SteerMotor = steerMotor,
+            StaticNormalLoad = 3000f,
+            TireModel = new SoftBodyTireModel(wheelRadius),
+        });
         return entity;
     }
 
