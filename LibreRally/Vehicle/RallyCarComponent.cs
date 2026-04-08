@@ -14,11 +14,30 @@ public class RallyCarComponent : SyncScript
 {
     private const float GroundProbeMargin = 0.05f;
 
+    /// <summary>
+    /// Scale factor for self-aligning torque feedback to steering.
+    /// SAT values are in N·m; this converts to a subtle angular velocity effect
+    /// suitable for chassis-level force feedback without destabilising physics.
+    /// </summary>
+    private const float SelfAligningTorqueScale = 0.001f;
+
+    /// <summary>
+    /// Default suspension compression estimate (m) when full constraint data is unavailable.
+    /// Represents typical static sag under quarter-car weight.
+    /// </summary>
+    private const float DefaultSuspensionCompression = 0.02f;
+
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
     public List<Entity> SteerWheels { get; set; } = new();
     public List<Entity> DriveWheels { get; set; } = new();
     public List<Entity> BreakWheels { get; set; } = new();
+
+    /// <summary>
+    /// Vehicle dynamics system computing tyre forces, load transfer, differentials,
+    /// and anti-roll bar effects. Created during <see cref="Start"/> and updated each frame.
+    /// </summary>
+    public VehicleDynamicsSystem? Dynamics { get; set; }
 
     /// <summary>Wheel radius used to convert speed to spin rate (m).</summary>
     public float WheelRadius { get; set; } = 0.305f;
@@ -96,9 +115,21 @@ public class RallyCarComponent : SyncScript
     // Simulated engine RPM — the engine drives the drivetrain, not the other way around.
     private float _engineRpm;
 
+    // ── Cached arrays for VehicleDynamicsSystem (avoid per-frame allocations) ─
+    private readonly Vector3[] _wheelPositions = new Vector3[VehicleDynamicsSystem.WheelCount];
+    private readonly Vector3[] _wheelVelocities = new Vector3[VehicleDynamicsSystem.WheelCount];
+    private readonly Matrix[] _wheelOrientations = new Matrix[VehicleDynamicsSystem.WheelCount];
+    private readonly bool[] _wheelGrounded = new bool[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _suspensionCompressions = new float[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _brakeTorques = new float[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _camberAngles = new float[VehicleDynamicsSystem.WheelCount];
+
     public override void Start()
     {
         _engineRpm = IdleRpm;
+
+        // Create default dynamics system if none was injected by VehicleLoader
+        Dynamics ??= new VehicleDynamicsSystem();
     }
 
     public override void Update()
@@ -262,6 +293,9 @@ public class RallyCarComponent : SyncScript
         }
 
         // ── Wheel motor commands ──────────────────────────────────────────────
+        // When VehicleDynamicsSystem is active, it applies tyre forces (Fx, Fy) directly
+        // as impulses to the chassis. Disable BEPU wheel drive/brake motors to avoid
+        // double-counting longitudinal forces (the dynamics system is authoritative).
         // Target = redline speed so motor always pushes forward; MaxForce limits torque.
         int   numDrive           = Math.Max(1, DriveWheels.Count);
         float wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
@@ -273,6 +307,16 @@ public class RallyCarComponent : SyncScript
             if (wb != null) wb.Awake = true;
             var ws = wheel.Get<WheelSettings>();
             if (ws?.DriveMotor == null) continue;
+
+            // When dynamics system is active, zero out motor forces to prevent
+            // BEPU and VehicleDynamicsSystem from both generating tyre forces.
+            if (Dynamics != null)
+            {
+                ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
+                ws.DriveMotor.MotorMaximumForce    = 0f;
+                ws.DriveMotor.MotorDamping         = 0f;
+                continue;
+            }
 
             wheel.Transform.UpdateWorldMatrix();
             Vector3 driveAxisLocalA = MeasureWheelAxleAxisLocalA(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
@@ -315,7 +359,102 @@ public class RallyCarComponent : SyncScript
 
         chassisBody.AngularVelocity = av;
 
-        ApplyTyreForces(chassisBody, chassisTransform.WorldMatrix, dt);
+        // ── Vehicle dynamics system ──────────────────────────────────────────
+        // Computes tyre forces (slip-based), load transfer, anti-roll bars,
+        // differential torque split, and applies impulses to BEPU bodies.
+        if (Dynamics != null)
+        {
+            // Gather per-wheel data into cached arrays (zero allocation)
+            float wheelTorqueAtCrank = MathF.Max(0f, crankTorque) * effectiveRatio;
+            GatherWheelData(chassisBody, chassisTransform.WorldMatrix);
+
+            // Compute brake torque for dynamics system
+            for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+            {
+                _brakeTorques[i] = isBraking ? BrakeMotorForce * WheelRadius * brake
+                    : (isHandbrake && i >= VehicleDynamicsSystem.RL ? BrakeMotorForce * WheelRadius * 2f : 0f);
+            }
+
+            Matrix chassisWorld = chassisTransform.WorldMatrix;
+            Dynamics.Update(
+                chassisBody,
+                in chassisWorld,
+                _wheelPositions,
+                _wheelVelocities,
+                _wheelOrientations,
+                _wheelGrounded,
+                _suspensionCompressions,
+                throttle > 0.05f ? wheelTorqueAtCrank : -engBrake * effectiveRatio,
+                _brakeTorques,
+                _camberAngles,
+                dt);
+
+            // Feed self-aligning torque back to steering (opposes steering input)
+            float sat = Dynamics.GetTotalSelfAligningTorque();
+            if (MathF.Abs(sat) > 0.1f)
+            {
+                var satAv = chassisBody.AngularVelocity;
+                satAv.Y += sat * dt * SelfAligningTorqueScale;
+                chassisBody.AngularVelocity = satAv;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gathers per-wheel position, velocity, orientation, and ground contact data
+    /// into cached arrays for the <see cref="VehicleDynamicsSystem"/>.
+    /// </summary>
+    private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld)
+    {
+        Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
+        Vector3 fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+
+        for (int i = 0; i < Wheels.Count && i < VehicleDynamicsSystem.WheelCount; i++)
+        {
+            var wheel = Wheels[i];
+            var wheelBody = wheel.Get<BodyComponent>();
+            var wheelSettings = wheel.Get<WheelSettings>();
+
+            if (wheelBody == null || wheelSettings == null)
+            {
+                _wheelGrounded[i] = false;
+                continue;
+            }
+
+            wheel.Transform.UpdateWorldMatrix();
+            Matrix wheelWorld = wheel.Transform.WorldMatrix;
+
+            // Wheel coordinate frame (excluding spin rotation)
+            Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
+            Vector3 nonSpinUp = ProjectOnPlane(fallbackUp, wheelRight);
+            Vector3 wheelUp = SafeNormalize(nonSpinUp, fallbackUp);
+            Vector3 wheelFwd = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
+
+            _wheelPositions[i] = wheelWorld.TranslationVector;
+            _wheelVelocities[i] = wheelBody.LinearVelocity;
+
+            // Build orientation matrix from non-spinning axes
+            _wheelOrientations[i] = new Matrix
+            {
+                Row1 = new Vector4(wheelRight, 0),
+                Row2 = new Vector4(wheelUp, 0),
+                Row3 = new Vector4(wheelFwd, 0),
+                Row4 = new Vector4(0, 0, 0, 1),
+            };
+
+            // Ground probe for contact detection
+            float normalLoad = ProbeWheelNormalLoad(chassisBody, wheelBody, wheelSettings, _wheelPositions[i], wheelUp);
+            _wheelGrounded[i] = normalLoad > 0f;
+
+            // Suspension compression: estimated from distance to ground vs rest length
+            // This is a simplified approximation — full suspension travel would require
+            // reading the LinearAxisServo constraint position.
+            _suspensionCompressions[i] = _wheelGrounded[i] ? DefaultSuspensionCompression : 0f;
+
+            // Camber is currently zero (vertical wheels) — could be extended from constraint geometry
+            _camberAngles[i] = 0f;
+        }
     }
 
     /// <summary>
@@ -387,54 +526,6 @@ public class RallyCarComponent : SyncScript
         return axisLocalA / MathF.Sqrt(axisLengthSq);
     }
 
-    private void ApplyTyreForces(BodyComponent chassisBody, Matrix chassisWorld, float dt)
-    {
-        if (dt <= 0f)
-            return;
-
-        Vector3 chassisPosition = chassisWorld.TranslationVector;
-        Vector3 fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
-        Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
-
-        foreach (var wheel in Wheels)
-        {
-            var wheelBody = wheel.Get<BodyComponent>();
-            var wheelSettings = wheel.Get<WheelSettings>();
-            if (wheelBody == null || wheelSettings?.TireModel == null)
-                continue;
-
-            wheel.Transform.UpdateWorldMatrix();
-            Matrix wheelWorld = wheel.Transform.WorldMatrix;
-
-            Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
-            Vector3 nonSpinningUp = ProjectOnPlane(fallbackUp, wheelRight);
-            Vector3 wheelUp = SafeNormalize(nonSpinningUp, fallbackUp);
-            Vector3 wheelLongitudinal = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
-
-            Vector3 wheelVelocity = wheelBody.LinearVelocity;
-            float longitudinalSpeed = Vector3.Dot(wheelVelocity, wheelLongitudinal);
-            float lateralSpeed = Vector3.Dot(wheelVelocity, wheelRight);
-            Vector3 wheelPosition = wheelWorld.TranslationVector;
-            float normalLoad = ProbeWheelNormalLoad(chassisBody, wheelBody, wheelSettings, wheelPosition, wheelUp);
-
-            float lateralForce = wheelSettings.TireModel.EvaluateLateralForce(
-                lateralSpeed,
-                longitudinalSpeed,
-                normalLoad,
-                dt,
-                LateralGrip);
-
-            if (MathF.Abs(lateralForce) < 0.01f)
-                continue;
-
-            Vector3 impulse = wheelRight * (lateralForce * dt);
-
-            chassisBody.ApplyImpulse(impulse, wheelPosition - chassisPosition);
-            chassisBody.Awake = true;
-        }
-    }
-
     private static float ProbeWheelNormalLoad(
         BodyComponent chassisBody,
         BodyComponent wheelBody,
@@ -443,15 +534,15 @@ public class RallyCarComponent : SyncScript
         Vector3 wheelUp)
     {
         var simulation = wheelBody.Simulation;
-        var tireModel = wheelSettings.TireModel;
-        if (simulation == null || tireModel == null)
+        var tyreModel = wheelSettings.TyreModel;
+        if (simulation == null || tyreModel == null)
             return 0f;
 
         float staticNormalLoad = Math.Max(wheelSettings.StaticNormalLoad, 0f);
         if (staticNormalLoad <= 0f)
             return 0f;
 
-        float wheelRadius = Math.Max(tireModel.WheelRadius, 0.1f);
+        float wheelRadius = Math.Max(tyreModel.Radius, 0.1f);
         Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + GroundProbeMargin);
         Vector3 rayDirection = -wheelUp;
         float rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
