@@ -143,6 +143,7 @@ public class VehicleLoader
             if (ws != null)
             {
                 ws.TyreModel = tyreModel;
+                ws.StaticNormalLoad = quarterLoad;
                 ws.DynamicsIndex = i;
             }
         }

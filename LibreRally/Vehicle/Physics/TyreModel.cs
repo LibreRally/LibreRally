@@ -293,9 +293,27 @@ public sealed class TyreModel
         lateralForce = 0f;
         selfAligningTorque = 0f;
 
-        if (dt < 1e-6f || normalLoad <= 0f)
+        if (dt < 1e-6f)
         {
             state.LateralDeflection = 0f;
+            return;
+        }
+
+        // When airborne (normalLoad ≤ 0), skip force computation but still integrate
+        // angular velocity from drive/brake torque so wheels spin up in the air.
+        // This is important for AWD diffs and realistic landing behaviour.
+        bool airborne = normalLoad <= 0f;
+        if (airborne)
+        {
+            state.LateralDeflection = 0f;
+
+            // Integrate angular velocity from torque even without ground contact
+            float airInertia = WheelInertia > 0f
+                ? WheelInertia
+                : MathF.Max(0.5f, Radius * Radius * InertiaScalar);
+            float airBrakeDir = state.AngularVelocity > 0f ? -1f : (state.AngularVelocity < 0f ? 1f : 0f);
+            float airNetTorque = driveTorque + brakeTorque * airBrakeDir;
+            state.AngularVelocity += (airNetTorque / airInertia) * dt;
             return;
         }
 
@@ -387,9 +405,16 @@ public sealed class TyreModel
 
         // ── Rolling resistance ───────────────────────────────────────────────
         // Frr = Crr · Fz, opposing wheel direction of travel.
+        // Use a small deadband near zero longitudinal speed so rolling resistance
+        // does not inject a non-zero force at rest due to floating-point noise.
         // Reference: Milliken, "Race Car Vehicle Dynamics", §2.2.
         float rollingResistance = (RollingResistanceCoefficient + surface.RollingResistance) * normalLoad;
-        float rrForce = longitudinalVelocity > 0f ? -rollingResistance : rollingResistance;
+        const float rollingResistanceDeadband = 0.01f;
+        float rrForce = 0f;
+        if (MathF.Abs(longitudinalVelocity) > rollingResistanceDeadband)
+        {
+            rrForce = longitudinalVelocity > 0f ? -rollingResistance : rollingResistance;
+        }
 
         longitudinalForce = rawFx + rrForce;
         lateralForce = blendedFy;

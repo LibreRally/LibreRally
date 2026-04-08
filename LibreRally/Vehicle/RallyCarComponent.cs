@@ -293,6 +293,9 @@ public class RallyCarComponent : SyncScript
         }
 
         // ── Wheel motor commands ──────────────────────────────────────────────
+        // When VehicleDynamicsSystem is active, it applies tyre forces (Fx, Fy) directly
+        // as impulses to the chassis. Disable BEPU wheel drive/brake motors to avoid
+        // double-counting longitudinal forces (the dynamics system is authoritative).
         // Target = redline speed so motor always pushes forward; MaxForce limits torque.
         int   numDrive           = Math.Max(1, DriveWheels.Count);
         float wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
@@ -304,6 +307,16 @@ public class RallyCarComponent : SyncScript
             if (wb != null) wb.Awake = true;
             var ws = wheel.Get<WheelSettings>();
             if (ws?.DriveMotor == null) continue;
+
+            // When dynamics system is active, zero out motor forces to prevent
+            // BEPU and VehicleDynamicsSystem from both generating tyre forces.
+            if (Dynamics != null)
+            {
+                ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
+                ws.DriveMotor.MotorMaximumForce    = 0f;
+                ws.DriveMotor.MotorDamping         = 0f;
+                continue;
+            }
 
             wheel.Transform.UpdateWorldMatrix();
             Vector3 driveAxisLocalA = MeasureWheelAxleAxisLocalA(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
@@ -353,7 +366,7 @@ public class RallyCarComponent : SyncScript
         {
             // Gather per-wheel data into cached arrays (zero allocation)
             float wheelTorqueAtCrank = MathF.Max(0f, crankTorque) * effectiveRatio;
-            GatherWheelData(chassisBody, chassisTransform.WorldMatrix, isBraking, isHandbrake, dt);
+            GatherWheelData(chassisBody, chassisTransform.WorldMatrix);
 
             // Compute brake torque for dynamics system
             for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
@@ -391,8 +404,7 @@ public class RallyCarComponent : SyncScript
     /// Gathers per-wheel position, velocity, orientation, and ground contact data
     /// into cached arrays for the <see cref="VehicleDynamicsSystem"/>.
     /// </summary>
-    private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld,
-        bool isBraking, bool isHandbrake, float dt)
+    private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld)
     {
         Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
         Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);

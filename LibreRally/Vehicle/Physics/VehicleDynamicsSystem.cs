@@ -54,10 +54,10 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Left-to-right wheel centre distance (m). Used for lateral load transfer.</summary>
     public float TrackWidth { get; set; } = 1.50f;
 
-    /// <summary>Front anti-roll bar stiffness (N·m/rad). 0 = disabled.</summary>
+    /// <summary>Front anti-roll bar stiffness (N/m of compression difference). 0 = disabled.</summary>
     public float FrontAntiRollStiffness { get; set; } = 8000f;
 
-    /// <summary>Rear anti-roll bar stiffness (N·m/rad). 0 = disabled.</summary>
+    /// <summary>Rear anti-roll bar stiffness (N/m of compression difference). 0 = disabled.</summary>
     public float RearAntiRollStiffness { get; set; } = 5000f;
 
     /// <summary>Front axle differential configuration.</summary>
@@ -330,14 +330,32 @@ public sealed class VehicleDynamicsSystem
         for (int i = 0; i < WheelCount; i++)
         {
             var tyreModel = TyreModels[i];
-            if (tyreModel == null || !WheelGrounded[i])
+            if (tyreModel == null)
             {
                 LongitudinalForces[i] = 0f;
                 LateralForces[i] = 0f;
                 SelfAligningTorques[i] = 0f;
+                continue;
+            }
 
-                if (tyreModel != null)
-                    WheelStates[i].LateralDeflection = 0f;
+            if (!WheelGrounded[i])
+            {
+                LongitudinalForces[i] = 0f;
+                LateralForces[i] = 0f;
+                SelfAligningTorques[i] = 0f;
+                WheelStates[i].LateralDeflection = 0f;
+
+                // Still call Update with normalLoad=0 so angular velocity integrates
+                // from drive/brake torque while airborne (important for AWD diffs and landing).
+                tyreModel.Update(
+                    ref WheelStates[i],
+                    0f, 0f, 0f,
+                    WheelDriveTorques[i],
+                    brakeTorques[i],
+                    0f,
+                    in WheelSurfaces[i],
+                    dt,
+                    out _, out _, out _);
                 continue;
             }
 
