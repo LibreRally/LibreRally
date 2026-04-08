@@ -31,7 +31,7 @@ public sealed class SoftBodyTireModel
 
     public float EvaluateLateralForce(float lateralVelocity, float longitudinalVelocity, float normalLoad, float dt, float lowSpeedGrip)
     {
-        if (dt <= 0f || normalLoad <= 0f)
+        if (dt < 1e-4f || normalLoad <= 0f)
         {
             ResetTransientState();
             return 0f;
@@ -47,10 +47,10 @@ public sealed class SoftBodyTireModel
         float deflectionRate = lateralVelocity - (LateralDeflection * relaxationSpeed / MathF.Max(RelaxationLength, 0.05f));
         LateralDeflection += deflectionRate * dt;
 
-        float loadScale = Math.Clamp(normalLoad / ReferenceWheelLoad, 0.8f, 1.25f);
+        float loadScale = Math.Clamp(normalLoad / MathF.Max(ReferenceWheelLoad, 1f), 0.8f, 1.25f);
         LateralDeflection = Math.Clamp(LateralDeflection, -MaxDeflection * loadScale, MaxDeflection * loadScale);
 
-        float deflectionVelocity = (LateralDeflection - previousDeflection) / MathF.Max(dt, 1e-4f);
+        float deflectionVelocity = (LateralDeflection - previousDeflection) / dt;
         float softBodyForce = (-ContactPatchStiffness * LateralDeflection) - (ContactPatchDamping * deflectionVelocity);
         float gripEnvelope = EvaluateGripEnvelope(slipAngleDegrees) * normalLoad;
         float lowSpeedForce = -lateralVelocity * normalLoad * MathF.Max(0f, lowSpeedGrip) * 0.15f;
@@ -72,12 +72,14 @@ public sealed class SoftBodyTireModel
 
     private float EvaluateGripEnvelope(float slipAngleDegrees)
     {
-        float limitedSlip = Math.Clamp(slipAngleDegrees, 0f, Math.Max(PeakSlipAngleDegrees, MaxSlipAngleDegrees));
-        if (limitedSlip <= PeakSlipAngleDegrees)
-            return PeakFrictionCoefficient * (limitedSlip / MathF.Max(PeakSlipAngleDegrees, 0.01f));
+        float peakSlip = Math.Clamp(PeakSlipAngleDegrees, 0.01f, MathF.Max(MaxSlipAngleDegrees, 0.01f));
+        float maxSlip = MathF.Max(MaxSlipAngleDegrees, peakSlip);
+        float limitedSlip = Math.Clamp(slipAngleDegrees, 0f, maxSlip);
+        if (limitedSlip <= peakSlip)
+            return PeakFrictionCoefficient * (limitedSlip / peakSlip);
 
-        float tailRange = MathF.Max(MaxSlipAngleDegrees - PeakSlipAngleDegrees, 0.01f);
-        float tailT = Math.Clamp((limitedSlip - PeakSlipAngleDegrees) / tailRange, 0f, 1f);
+        float tailRange = MathF.Max(maxSlip - peakSlip, 0.01f);
+        float tailT = Math.Clamp((limitedSlip - peakSlip) / tailRange, 0f, 1f);
         return PeakFrictionCoefficient + (SlidingFrictionCoefficient - PeakFrictionCoefficient) * tailT;
     }
 }

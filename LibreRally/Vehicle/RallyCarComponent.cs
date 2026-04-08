@@ -33,7 +33,7 @@ public class RallyCarComponent : SyncScript
     /// <summary>Direct chassis yaw assist — keeps steering snappy even without full tire physics.</summary>
     public float ChassisYawAssist { get; set; } = 1.0f;
 
-    /// <summary>Low-speed damping gain used by the tyre contact patch model.</summary>
+    /// <summary>Legacy grip tuning value, now used as the soft-body tyre model's low-speed damping gain.</summary>
     public float LateralGrip { get; set; } = 6f;
 
     // ── Drivetrain ───────────────────────────────────────────────────────────
