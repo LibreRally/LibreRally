@@ -599,7 +599,7 @@ public static class VehiclePhysicsBuilder
             DriveMotor = driveMotor,
             SteerMotor = steerMotor,
             StaticNormalLoad = staticNormalLoad,
-            TireModel = new SoftBodyTireModel(wheelRadius),
+            TyreModel = new TyreModel(wheelRadius),
         });
         return entity;
     }

@@ -9,7 +9,7 @@ namespace LibreRally.Vehicle.Physics;
 /// <summary>
 /// Holds references to wheel motor constraints so <see cref="Vehicle.RallyCarComponent"/> can
 /// drive throttle, brake, and steering each frame.
-/// Also stores references to the new tyre model and dynamics system.
+/// Also stores references to the tyre model and dynamics system.
 /// </summary>
 [DataContract]
 [ComponentCategory("LibreRally")]
@@ -27,13 +27,9 @@ public class WheelSettings : EntityComponent
     [DataMemberIgnore]
     public float CurrentSteerAngle { get; set; }
 
-    /// <summary>Soft-body tyre state and the paper-shaped lateral force curve for this wheel.</summary>
-    [DataMemberIgnore]
-    public SoftBodyTireModel? TireModel { get; set; }
-
     /// <summary>Slip-based tyre model with Pacejka/brush physics for this wheel.</summary>
     [DataMemberIgnore]
-    public TyreModel? AdvancedTyreModel { get; set; }
+    public TyreModel? TyreModel { get; set; }
 
     /// <summary>Nominal wheel load for the tyre model, initialized during vehicle build from quarter-mass × gravity.</summary>
     [DataMemberIgnore]

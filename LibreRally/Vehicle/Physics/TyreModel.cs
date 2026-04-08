@@ -70,6 +70,55 @@ public sealed class TyreModel
     /// <summary>Tyre width (m), used for contact patch size estimation.</summary>
     public float Width { get; set; } = 0.205f;
 
+    // ── Tyre construction parameters ─────────────────────────────────────────
+    // These properties support BeamNG-style tyre definitions and can be loaded
+    // from JBeam tyre data. They influence vertical stiffness, contact patch
+    // geometry, transient response, and steering feel.
+
+    /// <summary>
+    /// Tyre inflation pressure (kPa). Affects vertical stiffness and contact patch size.
+    /// Higher pressure → stiffer tyre, smaller contact patch, less grip.
+    /// Reference pressure for defaults: 220 kPa (~32 psi), typical rally tarmac tyre.
+    /// <para>verticalStiffness = baseStiffness × (TyrePressure / referencePressure)</para>
+    /// <para>contactPatchLength = basePatchLength × √(referencePressure / TyrePressure)</para>
+    /// </summary>
+    public float TyrePressure { get; set; } = 220f;
+
+    /// <summary>
+    /// Sidewall stiffness multiplier (dimensionless, 1.0 = baseline).
+    /// Controls how quickly slip angle builds and affects steering response.
+    /// Higher stiffness → sharper lateral response, less compliant ride.
+    /// Applied as a multiplier to the lateral cornering stiffness (LateralB).
+    /// <para>corneringStiffness *= SidewallStiffness</para>
+    /// </summary>
+    public float SidewallStiffness { get; set; } = 1.0f;
+
+    /// <summary>
+    /// Carcass stiffness multiplier (dimensionless, 1.0 = baseline).
+    /// Controls deformation of the tyre body and transient response.
+    /// Higher carcass stiffness → shorter relaxation length → faster transient buildup.
+    /// <para>effectiveRelaxationLength = RelaxationLength / CarcassStiffness</para>
+    /// </summary>
+    public float CarcassStiffness { get; set; } = 1.0f;
+
+    /// <summary>
+    /// Contact patch length (m). Used by the brush model to determine force buildup
+    /// and slip saturation. Shorter patch → quicker saturation, less progressive feel.
+    /// Dynamically adjusted by tyre pressure: actual = base × √(refPressure / pressure).
+    /// <para>brushStiffness = normalLoad / ContactPatchLength</para>
+    /// Reference: Pacejka, "Tire and Vehicle Dynamics", §3.2, contact patch geometry.
+    /// </summary>
+    public float ContactPatchLength { get; set; } = 0.15f;
+
+    /// <summary>
+    /// Wheel rotational inertia (kg·m²). Governs spin-up/spin-down response.
+    /// Typical values: 0.5–1.5 kg·m² for passenger/rally tyres.
+    /// When set to 0 (default), inertia is estimated from normal load and radius.
+    /// <para>angularAccel = appliedTorque / WheelInertia</para>
+    /// Reference: Milliken, RCVD §2.3, wheel inertia.
+    /// </summary>
+    public float WheelInertia { get; set; } = 0f;
+
     // ── Pacejka Magic Formula coefficients ───────────────────────────────────
     // F = D * sin(C * atan(B*x - E*(B*x - atan(B*x))))
     // B = stiffness factor, C = shape factor, D = peak factor, E = curvature
@@ -184,6 +233,7 @@ public sealed class TyreModel
     private const float MinSpeed = 0.5f;       // velocity floor for slip calculations (m/s)
     private const float MaxSlipRatio = 1.5f;    // clamp slip ratio to prevent numerical blow-up
     private const float MaxSlipAngle = 1.2f;    // ~69° — beyond this we clamp
+
     /// <summary>
     /// Approximate wheel rotational inertia scalar.
     /// Wheel inertia ≈ effective_mass × R² × scalar.
@@ -192,6 +242,12 @@ public sealed class TyreModel
     /// Reference: Milliken, RCVD §2.3, approximate wheel inertia.
     /// </summary>
     private const float InertiaScalar = 1.2f;
+
+    /// <summary>
+    /// Reference tyre pressure (kPa) used to normalise pressure-dependent effects.
+    /// 220 kPa ≈ 32 psi, a typical rally tarmac cold-start pressure.
+    /// </summary>
+    private const float ReferencePressure = 220f;
 
     public TyreModel(float radius)
     {
@@ -274,25 +330,42 @@ public sealed class TyreModel
         float effectiveLongB = LongitudinalB * (1f - surface.DeformationFactor * 0.3f);
         float rawFx = MagicFormula(slipRatio, effectiveLongB, LongitudinalC, peakForce, LongitudinalE);
 
-        // Lateral force Fy(α) — with rally high-slip extension
-        float effectiveLatB = LateralB * (1f - surface.DeformationFactor * 0.2f);
+        // Lateral force Fy(α) — with rally high-slip extension.
+        // SidewallStiffness scales the lateral cornering stiffness B:
+        //   corneringStiffness *= SidewallStiffness
+        // Higher sidewall stiffness → sharper response.
+        float effectiveLatB = LateralB * SidewallStiffness * (1f - surface.DeformationFactor * 0.2f);
         float rawFy = MagicFormulaRally(slipAngle, effectiveLatB, LateralC, peakForce, LateralE);
 
         // ── Contact-patch brush model (lateral transient) ────────────────────
         // The brush model smooths lateral force buildup through a deflection state.
         // dδ/dt = Vy − δ · |Vx| / L     (L = relaxation length)
+        // CarcassStiffness modifies relaxation length: stiffer carcass → shorter relaxation.
+        //   effectiveRelaxationLength = RelaxationLength / CarcassStiffness
         // Reference: Pacejka §5.4, Eq. 5.31 (relaxation length model).
+        float effectiveRelaxation = RelaxationLength / MathF.Max(CarcassStiffness, 0.1f);
         float relaxSpeed = MathF.Max(absVx, 2f);
         float deflectionRate = lateralVelocity -
-            (state.LateralDeflection * relaxSpeed / MathF.Max(RelaxationLength, 0.05f));
+            (state.LateralDeflection * relaxSpeed / MathF.Max(effectiveRelaxation, 0.05f));
         state.LateralDeflection += deflectionRate * dt;
 
-        // Clamp deflection to contact-patch limit (brush saturation)
-        float maxDeflection = Radius * 0.12f * Math.Clamp(normalLoad / MathF.Max(ReferenceLoad, 1f), 0.8f, 1.25f);
+        // Clamp deflection to contact-patch limit (brush saturation).
+        // TyrePressure affects contact patch size: lower pressure → larger patch → more deflection.
+        //   effectivePatchLength = ContactPatchLength × √(ReferencePressure / TyrePressure)
+        // Reference: Pacejka §3.2, contact patch geometry.
+        float pressureRatio = MathF.Max(TyrePressure, 50f) / ReferencePressure;
+        float effectivePatchLength = ContactPatchLength * MathF.Sqrt(1f / pressureRatio);
+        float maxDeflection = MathF.Max(effectivePatchLength * 0.5f, 0.01f)
+            * Math.Clamp(normalLoad / MathF.Max(ReferenceLoad, 1f), 0.8f, 1.25f);
         state.LateralDeflection = Math.Clamp(state.LateralDeflection, -maxDeflection, maxDeflection);
 
-        // Blend brush-model transient force with steady-state Pacejka
-        float brushForce = -ContactPatchStiffness * state.LateralDeflection;
+        // Blend brush-model transient force with steady-state Pacejka.
+        // Brush stiffness derived from contact patch: brushStiffness = normalLoad / ContactPatchLength.
+        // TyrePressure increases vertical stiffness: stiffness scales with pressureRatio.
+        float effectiveBrushStiffness = normalLoad > 0f
+            ? normalLoad / MathF.Max(effectivePatchLength, 0.01f) * pressureRatio
+            : ContactPatchStiffness;
+        float brushForce = -effectiveBrushStiffness * state.LateralDeflection;
         float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
         float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
 
@@ -331,8 +404,11 @@ public sealed class TyreModel
 
         // ── Wheel angular velocity integration ───────────────────────────────
         // Iω̇ = T_drive − T_brake − Fx·R
+        // Use explicit WheelInertia if set (> 0), otherwise estimate from load and geometry.
         // Reference: basic rotational dynamics, F = ma analogy for rotation.
-        float wheelInertia = MathF.Max(0.5f, (normalLoad / 9.81f * 0.05f) * Radius * Radius * InertiaScalar);
+        float wheelInertia = WheelInertia > 0f
+            ? WheelInertia
+            : MathF.Max(0.5f, (normalLoad / 9.81f * 0.05f) * Radius * Radius * InertiaScalar);
         float brakeDir = state.AngularVelocity > 0f ? -1f : (state.AngularVelocity < 0f ? 1f : 0f);
         float netTorque = driveTorque + brakeTorque * brakeDir - rawFx * Radius;
         state.AngularVelocity += (netTorque / wheelInertia) * dt;

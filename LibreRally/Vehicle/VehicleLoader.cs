@@ -142,7 +142,7 @@ public class VehicleLoader
             var ws = wheelEntities[i].Get<WheelSettings>();
             if (ws != null)
             {
-                ws.AdvancedTyreModel = tyreModel;
+                ws.TyreModel = tyreModel;
                 ws.DynamicsIndex = i;
             }
         }
