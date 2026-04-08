@@ -1,0 +1,37 @@
+{
+  "mainPartName": "basic_car",
+  "parts": {
+    "basic_car_body": "basic_car_body",
+    "basic_car_suspension_F": "basic_car_suspension_F",
+    "basic_car_suspension_R": "basic_car_suspension_R",
+    "basic_car_wheels": "basic_car_wheels",
+    "basic_car_powertrain": "basic_car_powertrain"
+  },
+  "vars": {
+    "$spring_F_asphalt": 52000,
+    "$spring_R_asphalt": 46000,
+    "$damp_bump_F_asphalt": 4200,
+    "$damp_rebound_F_asphalt": 8200,
+    "$damp_bump_R_asphalt": 3800,
+    "$damp_rebound_R_asphalt": 7600,
+    "$gear_R": 3.60,
+    "$gear_1": 3.12,
+    "$gear_2": 2.05,
+    "$gear_3": 1.44,
+    "$gear_4": 1.10,
+    "$gear_5": 0.89,
+    "$gear_6": 0.73,
+    "$finaldrive_F": 4.10,
+    "$maxRPM": 6500,
+    "$idleRPM": 900,
+    "$cg_height": 0.42,
+    "$antiroll_front": 6500,
+    "$antiroll_rear": 4200,
+    "$diff_front_bias": 2.0,
+    "$diff_front_locking": 0.20,
+    "$diff_rear_bias": 2.5,
+    "$diff_rear_locking": 0.25,
+    "$diff_center_bias": 1.8,
+    "$diff_center_locking": 0.20
+  }
+}

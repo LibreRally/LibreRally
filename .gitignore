@@ -13,3 +13,6 @@ _ReSharper*
 obj/
 Cache/
 LibreRally/Resources/BeamNG Vehicles/
+!LibreRally/Resources/BeamNG Vehicles/basic_car/
+!LibreRally/Resources/BeamNG Vehicles/basic_car/**
+!LibreRally.Windows/app.manifest

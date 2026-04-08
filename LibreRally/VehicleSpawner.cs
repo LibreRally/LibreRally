@@ -19,14 +19,14 @@ namespace LibreRally;
 [ComponentCategory("LibreRally")]
 public class VehicleSpawner : SyncScript
 {
-    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\sunburst\sunburst2";
+    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\basic_car";
 
     /// <summary>
     /// Name of the .pc config file to load (with or without .pc extension).
     /// E.g. "rally_pro_asphalt" or "rally_pro_asphalt.pc".
     /// Leave empty to auto-detect (prefers rally_pro_asphalt.pc if present).
     /// </summary>
-    public string ConfigFileName { get; set; } = "rally_pro_asphalt";
+    public string ConfigFileName { get; set; } = "basic_car";
 
     public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
 
