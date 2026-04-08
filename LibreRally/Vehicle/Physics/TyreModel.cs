@@ -233,7 +233,6 @@ public sealed class TyreModel
     private const float MinSpeed = 0.5f;       // velocity floor for slip calculations (m/s)
     private const float MaxSlipRatio = 1.5f;    // clamp slip ratio to prevent numerical blow-up
     private const float MaxSlipAngle = 1.2f;    // ~69° — beyond this we clamp
-
     /// <summary>
     /// Approximate wheel rotational inertia scalar.
     /// Wheel inertia ≈ effective_mass × R² × scalar.
@@ -353,8 +352,9 @@ public sealed class TyreModel
         // TyrePressure affects contact patch size: lower pressure → larger patch → more deflection.
         //   effectivePatchLength = ContactPatchLength × √(ReferencePressure / TyrePressure)
         // Reference: Pacejka §3.2, contact patch geometry.
-        float pressureRatio = MathF.Max(TyrePressure, 50f) / ReferencePressure;
-        float effectivePatchLength = ContactPatchLength * MathF.Sqrt(1f / pressureRatio);
+        float clampedPressure = MathF.Max(TyrePressure, 50f);
+        float pressureRatio = clampedPressure / ReferencePressure;
+        float effectivePatchLength = ContactPatchLength * MathF.Sqrt(ReferencePressure / clampedPressure);
         float maxDeflection = MathF.Max(effectivePatchLength * 0.5f, 0.01f)
             * Math.Clamp(normalLoad / MathF.Max(ReferenceLoad, 1f), 0.8f, 1.25f);
         state.LateralDeflection = Math.Clamp(state.LateralDeflection, -maxDeflection, maxDeflection);
