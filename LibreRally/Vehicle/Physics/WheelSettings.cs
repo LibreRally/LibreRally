@@ -30,7 +30,7 @@ public class WheelSettings : EntityComponent
     [DataMemberIgnore]
     public SoftBodyTireModel? TireModel { get; set; }
 
-    /// <summary>Approximate static wheel load used by the tyre model.</summary>
+    /// <summary>Nominal wheel load for the tyre model, initialized during vehicle build from quarter-mass × gravity.</summary>
     [DataMemberIgnore]
     public float StaticNormalLoad { get; set; }
 

@@ -444,7 +444,11 @@ public class RallyCarComponent : SyncScript
     {
         var simulation = wheelBody.Simulation;
         var tireModel = wheelSettings.TireModel;
-        if (simulation == null || wheelSettings.StaticNormalLoad <= 0f || tireModel == null)
+        if (simulation == null || tireModel == null)
+            return 0f;
+
+        float staticNormalLoad = Math.Max(wheelSettings.StaticNormalLoad, 0f);
+        if (staticNormalLoad <= 0f)
             return 0f;
 
         float wheelRadius = Math.Max(tireModel.WheelRadius, 0.1f);
@@ -460,7 +464,7 @@ public class RallyCarComponent : SyncScript
             if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
                 continue;
 
-            return wheelSettings.StaticNormalLoad;
+            return staticNormalLoad;
         }
 
         return 0f;
