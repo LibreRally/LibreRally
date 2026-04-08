@@ -94,6 +94,59 @@ public class VehicleLoader
             V("gear_4", 1.35f), V("gear_5", 1.06f), V("gear_6", 0.84f),
         };
 
+        // ── Vehicle dynamics system ──────────────────────────────────────────
+        // Create the slip-based tyre model for all wheels and configure the
+        // dynamics system with vehicle geometry and differential settings.
+        var tyreModel = new TyreModel(wheelRadius)
+        {
+            Width = 0.205f,
+            PeakFrictionCoefficient = 1.05f,
+            RollingResistanceCoefficient = 0.012f,
+        };
+
+        // Estimate vehicle geometry from JBeam nodes (wheelbase, track width, CG height)
+        float wheelbase = EstimateWheelbase(result);
+        float trackWidth = EstimateTrackWidth(result);
+        float vehicleMass = EstimateVehicleMass(definition);
+        float cgHeight = V("cg_height", 0.45f);
+        float quarterLoad = vehicleMass * 9.81f / 4f;
+
+        // Configure differentials from JBeam vars if available
+        var frontDiff = DifferentialConfig.CreateLimitedSlip(
+            V("diff_front_bias", 2.0f), V("diff_front_locking", 0.25f));
+        var rearDiff = DifferentialConfig.CreateLimitedSlip(
+            V("diff_rear_bias", 3.0f), V("diff_rear_locking", 0.35f));
+        var centerDiff = DifferentialConfig.CreateLimitedSlip(
+            V("diff_center_bias", 1.8f), V("diff_center_locking", 0.3f));
+
+        var dynamics = new VehicleDynamicsSystem
+        {
+            VehicleMass = vehicleMass,
+            CgHeight = cgHeight,
+            Wheelbase = wheelbase,
+            TrackWidth = trackWidth,
+            FrontAntiRollStiffness = V("antiroll_front", 8000f),
+            RearAntiRollStiffness = V("antiroll_rear", 5000f),
+            FrontDiff = frontDiff,
+            RearDiff = rearDiff,
+            CenterDiff = centerDiff,
+        };
+
+        // Assign tyre models and static loads to each wheel
+        Entity[] wheelEntities = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR };
+        for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+        {
+            dynamics.TyreModels[i] = tyreModel;
+            dynamics.StaticNormalLoads[i] = quarterLoad;
+
+            var ws = wheelEntities[i].Get<WheelSettings>();
+            if (ws != null)
+            {
+                ws.AdvancedTyreModel = tyreModel;
+                ws.DynamicsIndex = i;
+            }
+        }
+
         var car = new RallyCarComponent
         {
             CarBody = result.ChassisEntity,
@@ -106,12 +159,14 @@ public class VehicleLoader
             FinalDrive   = finalDrive,
             MaxRpm       = maxRpm,
             IdleRpm      = idleRpm,
+            Dynamics     = dynamics,
         };
         rootEntity.Add(car);
 
         Log.Info($"[VehicleLoader] Gears: R={gearR:F2} " +
                  string.Join(" ", gears.Skip(1).Select((g, i) => $"{i+1}={g:F2}")) +
                  $" | FD={finalDrive:F2} | MaxRPM={maxRpm:F0} | PeakTorque={peakTorque:F0}Nm");
+        Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
 
         return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR);
     }
@@ -936,6 +991,45 @@ public class VehicleLoader
             idx.AddRange(new[] { b, b+1, b+2, b, b+2, b+3 });
         }
         return idx.ToArray();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Vehicle geometry estimation for dynamics system
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Estimates the wheelbase (front-to-rear axle distance in metres) from wheel entity positions.
+    /// Falls back to a typical rally car wheelbase if positions are not yet available.
+    /// </summary>
+    private static float EstimateWheelbase(VehicleBuilderResult result)
+    {
+        var fl = result.WheelFL.Transform.Position;
+        var rl = result.WheelRL.Transform.Position;
+        // Wheelbase is the Z-distance (forward axis) between front and rear
+        float wb = MathF.Abs(fl.Z - rl.Z);
+        return wb > 0.5f ? wb : 2.55f; // fallback
+    }
+
+    /// <summary>
+    /// Estimates the track width (left-to-right wheel distance in metres) from wheel entity positions.
+    /// </summary>
+    private static float EstimateTrackWidth(VehicleBuilderResult result)
+    {
+        var fl = result.WheelFL.Transform.Position;
+        var fr = result.WheelFR.Transform.Position;
+        float tw = MathF.Abs(fl.X - fr.X);
+        return tw > 0.5f ? tw : 1.50f; // fallback
+    }
+
+    /// <summary>
+    /// Estimates vehicle mass from the total node weights in the definition.
+    /// </summary>
+    private static float EstimateVehicleMass(VehicleDefinition definition)
+    {
+        float totalMass = 0f;
+        foreach (var node in definition.Nodes.Values)
+            totalMass += node.Weight;
+        return totalMass > 100f ? totalMass : 1200f; // fallback
     }
 }
 

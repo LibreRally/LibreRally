@@ -20,6 +20,12 @@ public class RallyCarComponent : SyncScript
     public List<Entity> DriveWheels { get; set; } = new();
     public List<Entity> BreakWheels { get; set; } = new();
 
+    /// <summary>
+    /// Vehicle dynamics system computing tyre forces, load transfer, differentials,
+    /// and anti-roll bar effects. Created during <see cref="Start"/> and updated each frame.
+    /// </summary>
+    public VehicleDynamicsSystem? Dynamics { get; set; }
+
     /// <summary>Wheel radius used to convert speed to spin rate (m).</summary>
     public float WheelRadius { get; set; } = 0.305f;
 
@@ -96,9 +102,21 @@ public class RallyCarComponent : SyncScript
     // Simulated engine RPM — the engine drives the drivetrain, not the other way around.
     private float _engineRpm;
 
+    // ── Cached arrays for VehicleDynamicsSystem (avoid per-frame allocations) ─
+    private readonly Vector3[] _wheelPositions = new Vector3[VehicleDynamicsSystem.WheelCount];
+    private readonly Vector3[] _wheelVelocities = new Vector3[VehicleDynamicsSystem.WheelCount];
+    private readonly Matrix[] _wheelOrientations = new Matrix[VehicleDynamicsSystem.WheelCount];
+    private readonly bool[] _wheelGrounded = new bool[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _suspensionCompressions = new float[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _brakeTorques = new float[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _camberAngles = new float[VehicleDynamicsSystem.WheelCount];
+
     public override void Start()
     {
         _engineRpm = IdleRpm;
+
+        // Create default dynamics system if none was injected by VehicleLoader
+        Dynamics ??= new VehicleDynamicsSystem();
     }
 
     public override void Update()
@@ -315,7 +333,108 @@ public class RallyCarComponent : SyncScript
 
         chassisBody.AngularVelocity = av;
 
-        ApplyTyreForces(chassisBody, chassisTransform.WorldMatrix, dt);
+        // ── Vehicle dynamics system ──────────────────────────────────────────
+        // Computes tyre forces (slip-based), load transfer, anti-roll bars,
+        // differential torque split, and applies impulses to BEPU bodies.
+        if (Dynamics != null)
+        {
+            // Gather per-wheel data into cached arrays (zero allocation)
+            float wheelTorqueAtCrank = MathF.Max(0f, crankTorque) * effectiveRatio;
+            GatherWheelData(chassisBody, chassisTransform.WorldMatrix, isBraking, isHandbrake, dt);
+
+            // Compute brake torque for dynamics system
+            for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+            {
+                _brakeTorques[i] = isBraking ? BrakeMotorForce * WheelRadius * brake
+                    : (isHandbrake && i >= VehicleDynamicsSystem.RL ? BrakeMotorForce * WheelRadius * 2f : 0f);
+            }
+
+            Matrix chassisWorld = chassisTransform.WorldMatrix;
+            Dynamics.Update(
+                chassisBody,
+                in chassisWorld,
+                _wheelPositions,
+                _wheelVelocities,
+                _wheelOrientations,
+                _wheelGrounded,
+                _suspensionCompressions,
+                throttle > 0.05f ? wheelTorqueAtCrank : -engBrake * effectiveRatio,
+                _brakeTorques,
+                _camberAngles,
+                dt);
+
+            // Feed self-aligning torque back to steering (opposes steering input)
+            float sat = Dynamics.GetTotalSelfAligningTorque();
+            if (MathF.Abs(sat) > 0.1f)
+            {
+                var satAv = chassisBody.AngularVelocity;
+                satAv.Y += sat * dt * 0.001f; // scale down — SAT is a feel effect
+                chassisBody.AngularVelocity = satAv;
+            }
+        }
+        else
+        {
+            // Fallback to legacy tyre force model
+            ApplyTyreForces(chassisBody, chassisTransform.WorldMatrix, dt);
+        }
+    }
+
+    /// <summary>
+    /// Gathers per-wheel position, velocity, orientation, and ground contact data
+    /// into cached arrays for the <see cref="VehicleDynamicsSystem"/>.
+    /// </summary>
+    private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld,
+        bool isBraking, bool isHandbrake, float dt)
+    {
+        Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
+        Vector3 fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+
+        for (int i = 0; i < Wheels.Count && i < VehicleDynamicsSystem.WheelCount; i++)
+        {
+            var wheel = Wheels[i];
+            var wheelBody = wheel.Get<BodyComponent>();
+            var wheelSettings = wheel.Get<WheelSettings>();
+
+            if (wheelBody == null || wheelSettings == null)
+            {
+                _wheelGrounded[i] = false;
+                continue;
+            }
+
+            wheel.Transform.UpdateWorldMatrix();
+            Matrix wheelWorld = wheel.Transform.WorldMatrix;
+
+            // Wheel coordinate frame (excluding spin rotation)
+            Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
+            Vector3 nonSpinUp = ProjectOnPlane(fallbackUp, wheelRight);
+            Vector3 wheelUp = SafeNormalize(nonSpinUp, fallbackUp);
+            Vector3 wheelFwd = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
+
+            _wheelPositions[i] = wheelWorld.TranslationVector;
+            _wheelVelocities[i] = wheelBody.LinearVelocity;
+
+            // Build orientation matrix from non-spinning axes
+            _wheelOrientations[i] = new Matrix
+            {
+                Row1 = new Vector4(wheelRight, 0),
+                Row2 = new Vector4(wheelUp, 0),
+                Row3 = new Vector4(wheelFwd, 0),
+                Row4 = new Vector4(0, 0, 0, 1),
+            };
+
+            // Ground probe for contact detection
+            float normalLoad = ProbeWheelNormalLoad(chassisBody, wheelBody, wheelSettings, _wheelPositions[i], wheelUp);
+            _wheelGrounded[i] = normalLoad > 0f;
+
+            // Suspension compression: estimated from distance to ground vs rest length
+            // This is a simplified approximation — full suspension travel would require
+            // reading the LinearAxisServo constraint position.
+            _suspensionCompressions[i] = _wheelGrounded[i] ? 0.02f : 0f;
+
+            // Camber is currently zero (vertical wheels) — could be extended from constraint geometry
+            _camberAngles[i] = 0f;
+        }
     }
 
     /// <summary>

@@ -9,6 +9,7 @@ namespace LibreRally.Vehicle.Physics;
 /// <summary>
 /// Holds references to wheel motor constraints so <see cref="Vehicle.RallyCarComponent"/> can
 /// drive throttle, brake, and steering each frame.
+/// Also stores references to the new tyre model and dynamics system.
 /// </summary>
 [DataContract]
 [ComponentCategory("LibreRally")]
@@ -30,9 +31,21 @@ public class WheelSettings : EntityComponent
     [DataMemberIgnore]
     public SoftBodyTireModel? TireModel { get; set; }
 
+    /// <summary>Slip-based tyre model with Pacejka/brush physics for this wheel.</summary>
+    [DataMemberIgnore]
+    public TyreModel? AdvancedTyreModel { get; set; }
+
     /// <summary>Nominal wheel load for the tyre model, initialized during vehicle build from quarter-mass × gravity.</summary>
     [DataMemberIgnore]
     public float StaticNormalLoad { get; set; }
+
+    /// <summary>Index of this wheel in the <see cref="VehicleDynamicsSystem"/> arrays (0=FL, 1=FR, 2=RL, 3=RR).</summary>
+    [DataMemberIgnore]
+    public int DynamicsIndex { get; set; } = -1;
+
+    /// <summary>Current surface type under this wheel. Updated by raycast/contact detection.</summary>
+    [DataMemberIgnore]
+    public SurfaceType CurrentSurface { get; set; } = SurfaceType.Tarmac;
 
     /// <summary>Reusable hit buffer for the tyre ground-contact probe.</summary>
     [DataMemberIgnore]
