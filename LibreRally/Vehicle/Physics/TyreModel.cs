@@ -162,6 +162,18 @@ public sealed class TyreModel
     /// </summary>
     public float HighSlipForceRetention { get; set; } = 0.65f;
 
+    /// <summary>
+    /// Slip angle (rad) at which the rally high-slip retention curve begins blending.
+    /// Below this angle the standard Pacejka curve applies fully. ~15° by default.
+    /// Adjust per surface type or tyre compound for different drift-entry behaviour.
+    /// </summary>
+    public float HighSlipTransitionStart { get; set; } = 0.26f;
+
+    /// <summary>
+    /// Slip angle (rad) at which the rally high-slip retention curve is fully active. ~40° by default.
+    /// </summary>
+    public float HighSlipTransitionEnd { get; set; } = 0.70f;
+
     // ── Rolling resistance ───────────────────────────────────────────────────
 
     /// <summary>Base rolling-resistance coefficient (dimensionless). Typical 0.01–0.015 for tarmac tyres.</summary>
@@ -172,7 +184,14 @@ public sealed class TyreModel
     private const float MinSpeed = 0.5f;       // velocity floor for slip calculations (m/s)
     private const float MaxSlipRatio = 1.5f;    // clamp slip ratio to prevent numerical blow-up
     private const float MaxSlipAngle = 1.2f;    // ~69° — beyond this we clamp
-    private const float InertiaScalar = 1.2f;   // wheel rotational inertia ≈ mass * r² * scalar
+    /// <summary>
+    /// Approximate wheel rotational inertia scalar.
+    /// Wheel inertia ≈ effective_mass × R² × scalar.
+    /// The 1.2 factor accounts for the distribution of tyre mass (annular ring rather than
+    /// point mass). Typical road-tyre I ≈ 0.5–1.5 kg·m²; this scalar yields values in that range.
+    /// Reference: Milliken, RCVD §2.3, approximate wheel inertia.
+    /// </summary>
+    private const float InertiaScalar = 1.2f;
 
     public TyreModel(float radius)
     {
@@ -401,10 +420,9 @@ public sealed class TyreModel
         float signX = x >= 0f ? 1f : -1f;
         float retentionFloor = HighSlipForceRetention * d * signX;
 
-        // Transition: beyond ~15° (0.26 rad), start blending toward the retention floor.
-        const float TransitionStart = 0.26f;  // ~15 degrees
-        const float TransitionEnd = 0.70f;    // ~40 degrees
-        float t = Math.Clamp((absX - TransitionStart) / (TransitionEnd - TransitionStart), 0f, 1f);
+        // Transition: uses configurable HighSlipTransitionStart and HighSlipTransitionEnd.
+        float transitionRange = MathF.Max(HighSlipTransitionEnd - HighSlipTransitionStart, 0.01f);
+        float t = Math.Clamp((absX - HighSlipTransitionStart) / transitionRange, 0f, 1f);
 
         // Use the higher-magnitude force: normal Pacejka at low slip, retention floor at high slip.
         if (t <= 0f)

@@ -14,6 +14,19 @@ public class RallyCarComponent : SyncScript
 {
     private const float GroundProbeMargin = 0.05f;
 
+    /// <summary>
+    /// Scale factor for self-aligning torque feedback to steering.
+    /// SAT values are in N·m; this converts to a subtle angular velocity effect
+    /// suitable for chassis-level force feedback without destabilising physics.
+    /// </summary>
+    private const float SelfAligningTorqueScale = 0.001f;
+
+    /// <summary>
+    /// Default suspension compression estimate (m) when full constraint data is unavailable.
+    /// Represents typical static sag under quarter-car weight.
+    /// </summary>
+    private const float DefaultSuspensionCompression = 0.02f;
+
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
     public List<Entity> SteerWheels { get; set; } = new();
@@ -368,7 +381,7 @@ public class RallyCarComponent : SyncScript
             if (MathF.Abs(sat) > 0.1f)
             {
                 var satAv = chassisBody.AngularVelocity;
-                satAv.Y += sat * dt * 0.001f; // scale down — SAT is a feel effect
+                satAv.Y += sat * dt * SelfAligningTorqueScale;
                 chassisBody.AngularVelocity = satAv;
             }
         }
@@ -430,7 +443,7 @@ public class RallyCarComponent : SyncScript
             // Suspension compression: estimated from distance to ground vs rest length
             // This is a simplified approximation — full suspension travel would require
             // reading the LinearAxisServo constraint position.
-            _suspensionCompressions[i] = _wheelGrounded[i] ? 0.02f : 0f;
+            _suspensionCompressions[i] = _wheelGrounded[i] ? DefaultSuspensionCompression : 0f;
 
             // Camber is currently zero (vertical wheels) — could be extended from constraint geometry
             _camberAngles[i] = 0f;

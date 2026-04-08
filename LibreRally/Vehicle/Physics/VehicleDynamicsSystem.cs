@@ -159,10 +159,11 @@ public sealed class VehicleDynamicsSystem
         Vector3 acceleration = (chassisVelocity - _previousVelocity) / dt;
         _previousVelocity = chassisVelocity;
 
-        // Project acceleration into chassis-local frame
-        Vector3 noseDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        // Project acceleration into chassis-local frame.
+        // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
+        Vector3 forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         Vector3 rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        float longitudinalAccel = Vector3.Dot(acceleration, noseDir);
+        float longitudinalAccel = Vector3.Dot(acceleration, forwardDir);
         float lateralAccel = Vector3.Dot(acceleration, rightDir);
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
