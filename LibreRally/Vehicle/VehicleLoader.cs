@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
 using LibreRally.Vehicle.Rendering;
@@ -21,6 +22,8 @@ namespace LibreRally.Vehicle;
 public class VehicleLoader
 {
     private static readonly Logger Log = GlobalLogger.GetLogger("VehicleLoader");
+    private sealed record ColladaSource(string DaePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
+    private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
 
     public VehicleLoader(Game game)
@@ -71,7 +74,7 @@ public class VehicleLoader
         Entity rootEntity = result.RootEntity;
 
         // 3. Attach visual meshes (best-effort — falls back to a visible box)
-        TryAttachMeshes(vehicleFolderPath, result.ChassisEntity, definition);
+        TryAttachMeshes(vehicleFolderPath, result, definition, pcConfig);
 
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
@@ -117,47 +120,322 @@ public class VehicleLoader
     // Mesh attachment
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void TryAttachMeshes(string folder, Entity chassisEntity, VehicleDefinition definition)
+    private void TryAttachMeshes(
+        string folder,
+        VehicleBuilderResult result,
+        VehicleDefinition definition,
+        PcConfig? pcConfig)
     {
-        var daeFiles = Directory.GetFiles(folder, "*.dae", SearchOption.TopDirectoryOnly);
-        if (daeFiles.Length > 0)
+        try
         {
-            string daeFile = daeFiles[0];
+            var daeSources = LoadColladaSources(folder);
+            if (daeSources.Count == 0)
+            {
+                AttachFallbackChassis(result.ChassisEntity, definition);
+                AttachFallbackTires(result, pcConfig, null);
+                return;
+            }
+
+            string vehiclesRoot = Path.GetDirectoryName(folder)!;
+            var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(folder, vehiclesRoot);
+            var mainSource = daeSources[0];
+            var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wheel_FL"] = result.WheelFL,
+                ["wheel_FR"] = result.WheelFR,
+                ["wheel_RL"] = result.WheelRL,
+                ["wheel_RR"] = result.WheelRR,
+            };
+
+            var wheelMeshNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var tireLikeAttachments = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["wheel_FL"] = 0,
+                ["wheel_FR"] = 0,
+                ["wheel_RL"] = 0,
+                ["wheel_RR"] = 0,
+            };
+            var missingWheelMeshes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            int wheelVisualCount = AttachWheelFlexBodyMeshes(
+                definition,
+                daeSources,
+                wheelEntities,
+                wheelMeshNames,
+                tireLikeAttachments,
+                jsonMaterials,
+                folder,
+                vehiclesRoot,
+                missingWheelMeshes);
+
+            if (missingWheelMeshes.Count > 0)
+            {
+                Log.Warning($"Wheel visual meshes missing from local DAEs: {string.Join(", ", missingWheelMeshes.OrderBy(x => x))}");
+            }
+
+            AttachFallbackTires(result, pcConfig, tireLikeAttachments);
+
+            var chassisMeshes = mainSource.Meshes
+                .Where(cm => !wheelMeshNames.Contains(cm.GeometryName))
+                .ToList();
+
+            var meshEntity = BuildMeshEntity(
+                chassisMeshes,
+                definition.VehicleName,
+                folder,
+                vehiclesRoot,
+                jsonMaterials,
+                mainSource.TextureMap);
+
+            if (meshEntity != null)
+            {
+                // DAE vertices are in BeamNG world space (converted to Stride coords).
+                // The chassis entity sits at its node centroid, so counter-offset the mesh
+                // entity so its vertex positions map to the correct world locations.
+                meshEntity.Transform.Position = -result.ChassisEntity.Transform.Position;
+                result.ChassisEntity.AddChild(meshEntity);
+                Log.Info($"Wheel visuals: attached {wheelVisualCount} flexbody instances.");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Could not load mesh: {ex.Message}");
+        }
+
+        AttachFallbackChassis(result.ChassisEntity, definition);
+        AttachFallbackTires(result, pcConfig, null);
+    }
+
+    private List<ColladaSource> LoadColladaSources(string folder)
+    {
+        var daeFiles = Directory.GetFiles(folder, "*.dae", SearchOption.AllDirectories)
+            .OrderBy(path => Path.GetDirectoryName(path)?.Equals(folder, StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
+            .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var result = new List<ColladaSource>();
+        foreach (string daeFile in daeFiles)
+        {
             try
             {
-                // Level 1: BeamNG *.materials.json — most accurate, full path resolution
-                string vehiclesRoot = Path.GetDirectoryName(folder)!;
-                var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(folder, vehiclesRoot);
-
-                // Level 2: Collada library_images chain — filename-based fallback
-                var colladaTextureMap = ColladaLoader.LoadTextureMap(daeFile);
-
+                var textureMap = ColladaLoader.LoadTextureMap(daeFile);
                 var colladaMeshes = ColladaLoader.Load(daeFile);
-                Log.Info($"DAE: {colladaMeshes.Count} sub-meshes | " +
-                         $"JSON materials: {jsonMaterials.Count} | " +
-                         $"Collada textures: {colladaTextureMap.Count}");
-
-                var meshEntity = BuildMeshEntity(
-                    colladaMeshes, definition.VehicleName,
-                    folder, vehiclesRoot,
-                    jsonMaterials, colladaTextureMap);
-
-                if (meshEntity != null)
-                {
-                    // DAE vertices are in BeamNG world space (converted to Stride coords).
-                    // The chassis entity sits at its node centroid, so counter-offset the mesh
-                    // entity so its vertex positions map to the correct world locations.
-                    meshEntity.Transform.Position = -chassisEntity.Transform.Position;
-                    chassisEntity.AddChild(meshEntity);
-                    return;
-                }
+                result.Add(new ColladaSource(daeFile, colladaMeshes, textureMap));
+                Log.Info($"DAE: {Path.GetFileName(daeFile)} | {colladaMeshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
             }
             catch (Exception ex)
             {
-                Log.Error($"Could not load mesh: {ex.Message}");
+                Log.Warning($"Could not load DAE '{Path.GetFileName(daeFile)}': {ex.Message}");
             }
         }
 
+        return result;
+    }
+
+    private int AttachWheelFlexBodyMeshes(
+        VehicleDefinition definition,
+        List<ColladaSource> daeSources,
+        Dictionary<string, Entity> wheelEntities,
+        HashSet<string> wheelMeshNames,
+        Dictionary<string, int> tireLikeAttachments,
+        Dictionary<string, string> jsonMaterials,
+        string vehicleFolder,
+        string vehiclesRoot,
+        HashSet<string> missingWheelMeshes)
+    {
+        int attached = 0;
+        foreach (var flexBody in GetWheelVisualFlexBodies(definition))
+        {
+            if (!TryResolveWheelKey(flexBody, out string? wheelKey) ||
+                !wheelEntities.TryGetValue(wheelKey, out Entity? wheelEntity))
+            {
+                continue;
+            }
+
+            if (!TryFindGeometry(daeSources, flexBody.MeshName, out var source, out var sourceMeshes))
+            {
+                missingWheelMeshes.Add(flexBody.MeshName);
+                continue;
+            }
+
+            var meshEntity = BuildMeshEntity(
+                sourceMeshes,
+                $"{flexBody.MeshName}_{wheelKey}",
+                vehicleFolder,
+                vehiclesRoot,
+                jsonMaterials,
+                source.TextureMap);
+
+            if (meshEntity == null)
+                continue;
+
+            ApplyWheelFlexBodyTransform(meshEntity, wheelEntity, flexBody, sourceMeshes);
+            wheelEntity.AddChild(meshEntity);
+            wheelMeshNames.Add(flexBody.MeshName);
+            if (IsTireLikeFlexBody(flexBody))
+                tireLikeAttachments[wheelKey]++;
+            attached++;
+        }
+
+        return attached;
+    }
+
+    private static IEnumerable<AssembledFlexBody> GetWheelVisualFlexBodies(VehicleDefinition definition)
+    {
+        return definition.FlexBodies.Where(fb =>
+            TryResolveWheelKey(fb, out _) &&
+            (ContainsWheelVisualToken(fb.MeshName) ||
+             ContainsWheelVisualToken(fb.SourcePartName) ||
+             ContainsWheelVisualToken(fb.SourceSlotType)));
+    }
+
+    private static bool TryResolveWheelKey(AssembledFlexBody flexBody, out string? wheelKey)
+    {
+        foreach (string group in flexBody.NodeGroups)
+        {
+            if (group.Equals("wheel_FL", StringComparison.OrdinalIgnoreCase) ||
+                group.Equals("wheelhub_FL", StringComparison.OrdinalIgnoreCase))
+            {
+                wheelKey = "wheel_FL";
+                return true;
+            }
+
+            if (group.Equals("wheel_FR", StringComparison.OrdinalIgnoreCase) ||
+                group.Equals("wheelhub_FR", StringComparison.OrdinalIgnoreCase))
+            {
+                wheelKey = "wheel_FR";
+                return true;
+            }
+
+            if (group.Equals("wheel_RL", StringComparison.OrdinalIgnoreCase) ||
+                group.Equals("wheelhub_RL", StringComparison.OrdinalIgnoreCase))
+            {
+                wheelKey = "wheel_RL";
+                return true;
+            }
+
+            if (group.Equals("wheel_RR", StringComparison.OrdinalIgnoreCase) ||
+                group.Equals("wheelhub_RR", StringComparison.OrdinalIgnoreCase))
+            {
+                wheelKey = "wheel_RR";
+                return true;
+            }
+        }
+
+        wheelKey = null;
+        return false;
+    }
+
+    private static bool TryFindGeometry(
+        IEnumerable<ColladaSource> daeSources,
+        string geometryName,
+        out ColladaSource source,
+        out List<ColladaMesh> meshes)
+    {
+        foreach (var candidate in daeSources)
+        {
+            meshes = candidate.Meshes
+                .Where(cm => cm.GeometryName.Equals(geometryName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (meshes.Count > 0)
+            {
+                source = candidate;
+                return true;
+            }
+        }
+
+        source = null!;
+        meshes = null!;
+        return false;
+    }
+
+    private static bool ContainsWheelVisualToken(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        return value.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("hubcap", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("rim", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("brake", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("caliper", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("disc", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsTireLikeFlexBody(AssembledFlexBody flexBody)
+    {
+        return flexBody.MeshName.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.MeshName.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.MeshName.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.MeshName.Contains("hubcap", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.MeshName.Contains("rim", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.SourcePartName.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.SourcePartName.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.SourcePartName.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               flexBody.SourcePartName.Contains("hubcap", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ApplyWheelFlexBodyTransform(
+        Entity meshEntity,
+        Entity wheelEntity,
+        AssembledFlexBody flexBody,
+        List<ColladaMesh> sourceMeshes)
+    {
+        bool geometryAlreadyPositioned = flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
+
+        meshEntity.Transform.Position = geometryAlreadyPositioned || !flexBody.Position.HasValue
+            ? -wheelEntity.Transform.Position
+            : VehiclePhysicsBuilder.BeamNGToStride(flexBody.Position.Value) - wheelEntity.Transform.Position;
+
+        if (!geometryAlreadyPositioned && flexBody.Rotation.HasValue)
+            meshEntity.Transform.Rotation = BeamNGRotationToStride(flexBody.Rotation.Value);
+
+        if (!geometryAlreadyPositioned && flexBody.Scale.HasValue)
+            meshEntity.Transform.Scale = BeamNGScaleToStride(flexBody.Scale.Value);
+    }
+
+    private static bool GeometryMatchesPosition(List<ColladaMesh> sourceMeshes, System.Numerics.Vector3 expectedPosition)
+    {
+        if (sourceMeshes.Count == 0)
+            return false;
+
+        var sum = System.Numerics.Vector3.Zero;
+        int count = 0;
+        foreach (var mesh in sourceMeshes)
+        {
+            foreach (var vertex in mesh.Vertices)
+            {
+                sum += vertex.Position;
+                count++;
+            }
+        }
+
+        if (count == 0)
+            return false;
+
+        var centroid = sum / count;
+        return System.Numerics.Vector3.Distance(centroid, expectedPosition) < 0.25f;
+    }
+
+    private static Quaternion BeamNGRotationToStride(System.Numerics.Vector3 rotationDegrees)
+    {
+        float rx = MathUtil.DegreesToRadians(rotationDegrees.X);
+        float ry = MathUtil.DegreesToRadians(rotationDegrees.Y);
+        float rz = MathUtil.DegreesToRadians(rotationDegrees.Z);
+
+        var rotX = Quaternion.RotationX(rx);
+        var rotY = Quaternion.RotationAxis(-Vector3.UnitZ, ry);
+        var rotZ = Quaternion.RotationY(rz);
+        return Quaternion.Normalize(rotX * rotY * rotZ);
+    }
+
+    private static Vector3 BeamNGScaleToStride(System.Numerics.Vector3 scale)
+        => new(scale.X, scale.Z, scale.Y);
+
+    private void AttachFallbackChassis(Entity chassisEntity, VehicleDefinition definition)
+    {
         Log.Warning("Using fallback orange box mesh.");
         var fallback = BuildFallbackChassisModel(definition);
         if (fallback != null)
@@ -166,6 +444,202 @@ public class VehicleLoader
             fallbackEntity.Add(new ModelComponent { Model = fallback });
             chassisEntity.AddChild(fallbackEntity);
         }
+    }
+
+    private void AttachFallbackTires(
+        VehicleBuilderResult result,
+        PcConfig? pcConfig,
+        Dictionary<string, int>? tireLikeAttachments)
+    {
+        var frontSpec = TryGetTireSpec(pcConfig, front: true, out TireSpec parsedFront)
+            ? parsedFront
+            : new TireSpec(0.305f, 0.205f);
+        var rearSpec = TryGetTireSpec(pcConfig, front: false, out TireSpec parsedRear)
+            ? parsedRear
+            : frontSpec;
+
+        var wheelSpecs = new Dictionary<string, (Entity Wheel, TireSpec Spec)>
+        {
+            ["wheel_FL"] = (result.WheelFL, frontSpec),
+            ["wheel_FR"] = (result.WheelFR, frontSpec),
+            ["wheel_RL"] = (result.WheelRL, rearSpec),
+            ["wheel_RR"] = (result.WheelRR, rearSpec),
+        };
+
+        foreach (var (wheelKey, data) in wheelSpecs)
+        {
+            if (tireLikeAttachments != null &&
+                tireLikeAttachments.TryGetValue(wheelKey, out int count) &&
+                count > 0)
+            {
+                continue;
+            }
+
+            if (data.Wheel.GetChildren().Any(child => child.Name == $"{wheelKey}_fallback_tire"))
+                continue;
+
+            var tireEntity = BuildFallbackTireEntity($"{wheelKey}_fallback_tire", data.Spec);
+            data.Wheel.AddChild(tireEntity);
+        }
+    }
+
+    private bool TryGetTireSpec(PcConfig? pcConfig, bool front, out TireSpec spec)
+    {
+        spec = default;
+        if (pcConfig == null)
+            return false;
+
+        string slotPrefix = front ? "tire_F" : "tire_R";
+        string? partName = pcConfig.Parts
+            .Where(kv => kv.Key.StartsWith(slotPrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(kv => kv.Value)
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+        if (string.IsNullOrWhiteSpace(partName))
+            return false;
+
+        var match = Regex.Match(partName, @"(?<width>\d{3})_(?<aspect>\d{2})_(?<rim>\d{2})");
+        if (!match.Success)
+            return false;
+
+        float widthMetres = int.Parse(match.Groups["width"].Value) / 1000f;
+        float aspectRatio = int.Parse(match.Groups["aspect"].Value) / 100f;
+        float rimDiameterMetres = int.Parse(match.Groups["rim"].Value) * 0.0254f;
+        float radius = rimDiameterMetres * 0.5f + (widthMetres * aspectRatio);
+
+        spec = new TireSpec(radius, widthMetres);
+        return true;
+    }
+
+    private Entity BuildFallbackTireEntity(string name, TireSpec spec)
+    {
+        var entity = new Entity(name);
+        entity.Add(new ModelComponent
+        {
+            Model = BuildWheelCylinderModel(
+                spec.Radius,
+                spec.Width,
+                new Color4(0.09f, 0.09f, 0.09f, 1f))
+        });
+
+        float rimRadius = Math.Max(spec.Radius * 0.62f, 0.12f);
+        float rimWidth = spec.Width * 0.68f;
+        var rimEntity = new Entity($"{name}_rim");
+        rimEntity.Add(new ModelComponent
+        {
+            Model = BuildWheelCylinderModel(
+                rimRadius,
+                rimWidth,
+                new Color4(0.68f, 0.70f, 0.74f, 1f))
+        });
+        entity.AddChild(rimEntity);
+
+        float hubRadius = rimRadius * 0.26f;
+        float hubWidth = rimWidth * 0.42f;
+        var hubEntity = new Entity($"{name}_hub");
+        hubEntity.Add(new ModelComponent
+        {
+            Model = BuildWheelCylinderModel(
+                hubRadius,
+                hubWidth,
+                new Color4(0.26f, 0.28f, 0.31f, 1f))
+        });
+        entity.AddChild(hubEntity);
+
+        return entity;
+    }
+
+    private Model BuildWheelCylinderModel(float radius, float width, Color4 color)
+    {
+        var halfWidth = width * 0.5f;
+        const int Segments = 24;
+
+        var vertices = new List<VertexPositionNormalTexture>();
+        var indices = new List<int>();
+
+        void AddVertex(float x, float y, float z, Vector3 normal, Vector2 uv)
+            => vertices.Add(new VertexPositionNormalTexture(new Vector3(x, y, z), normal, uv));
+
+        for (int i = 0; i <= Segments; i++)
+        {
+            float t = i / (float)Segments;
+            float angle = MathUtil.TwoPi * t;
+            float y = MathF.Cos(angle) * radius;
+            float z = MathF.Sin(angle) * radius;
+            var normal = Vector3.Normalize(new Vector3(0f, y, z));
+            AddVertex(-halfWidth, y, z, normal, new Vector2(t, 1f));
+            AddVertex(halfWidth, y, z, normal, new Vector2(t, 0f));
+        }
+
+        for (int i = 0; i < Segments; i++)
+        {
+            int baseIndex = i * 2;
+            indices.AddRange(new[]
+            {
+                baseIndex, baseIndex + 1, baseIndex + 2,
+                baseIndex + 1, baseIndex + 3, baseIndex + 2,
+            });
+        }
+
+        int leftCenter = vertices.Count;
+        AddVertex(-halfWidth, 0f, 0f, -Vector3.UnitX, new Vector2(0.5f, 0.5f));
+        int rightCenter = vertices.Count;
+        AddVertex(halfWidth, 0f, 0f, Vector3.UnitX, new Vector2(0.5f, 0.5f));
+
+        int leftStart = rightCenter + 1;
+        for (int i = 0; i <= Segments; i++)
+        {
+            float t = i / (float)Segments;
+            float angle = MathUtil.TwoPi * t;
+            float y = MathF.Cos(angle) * radius;
+            float z = MathF.Sin(angle) * radius;
+            AddVertex(-halfWidth, y, z, -Vector3.UnitX, new Vector2(0.5f + (y / (radius * 2f)), 0.5f + (z / (radius * 2f))));
+        }
+
+        int rightStart = vertices.Count;
+        for (int i = 0; i <= Segments; i++)
+        {
+            float t = i / (float)Segments;
+            float angle = MathUtil.TwoPi * t;
+            float y = MathF.Cos(angle) * radius;
+            float z = MathF.Sin(angle) * radius;
+            AddVertex(halfWidth, y, z, Vector3.UnitX, new Vector2(0.5f + (y / (radius * 2f)), 0.5f + (z / (radius * 2f))));
+        }
+
+        for (int i = 0; i < Segments; i++)
+        {
+            indices.AddRange(new[] { leftCenter, leftStart + i + 1, leftStart + i });
+            indices.AddRange(new[] { rightCenter, rightStart + i, rightStart + i + 1 });
+        }
+
+        var mesh = new Mesh
+        {
+            BoundingBox = new BoundingBox(
+                new Vector3(-halfWidth, -radius, -radius),
+                new Vector3(halfWidth, radius, radius)),
+            Draw = new MeshDraw
+            {
+                PrimitiveType = PrimitiveType.TriangleList,
+                VertexBuffers = new[]
+                {
+                    new VertexBufferBinding(
+                        Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, vertices.ToArray(), GraphicsResourceUsage.Immutable),
+                        VertexPositionNormalTexture.Layout,
+                        vertices.Count)
+                },
+                IndexBuffer = new IndexBufferBinding(
+                    Stride.Graphics.Buffer.Index.New(_graphicsDevice, indices.ToArray()),
+                    true,
+                    indices.Count),
+                DrawCount = indices.Count,
+            }
+        };
+
+        return new Model
+        {
+            mesh,
+            BuildMaterial(null, color),
+        };
     }
 
     /// <summary>
@@ -265,11 +739,11 @@ public class VehicleLoader
         return s;
     }
 
-    private Material BuildMaterial(Texture? texture)
+    private Material BuildMaterial(Texture? texture, Color4? fallbackColor = null)
     {
         IComputeColor diffuse = texture != null
             ? new ComputeTextureColor(texture)
-            : new ComputeColor(new Color4(0.55f, 0.55f, 0.55f, 1f));
+            : new ComputeColor(fallbackColor ?? new Color4(0.55f, 0.55f, 0.55f, 1f));
 
         return Material.New(_graphicsDevice, new MaterialDescriptor
         {

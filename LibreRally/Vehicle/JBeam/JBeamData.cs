@@ -63,14 +63,17 @@ public record JBeamBeam(
 public record JBeamFlexBody(
     string Mesh,
     List<string> Groups,
-    System.Numerics.Vector3? Position = null);
+    System.Numerics.Vector3? Position = null,
+    System.Numerics.Vector3? Rotation = null,
+    System.Numerics.Vector3? Scale = null);
 
 /// <summary>A slot definition: type, default filler, description.</summary>
 public record JBeamSlot(
     string Type,
     string Default,
     string Description,
-    bool CoreSlot);
+    bool CoreSlot,
+    System.Numerics.Vector3? NodeOffset = null);
 
 /// <summary>All raw data parsed from a single .jbeam section (one named object within a file).</summary>
 public class JBeamPart

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -256,10 +257,17 @@ public static class JBeamParser
             string type = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
 
             bool core = false;
+            Vector3? nodeOffset = null;
             if (items.Count > optionsIdx && items[optionsIdx].ValueKind == JsonValueKind.Object)
             {
                 if (items[optionsIdx].TryGetProperty("coreSlot", out var cs))
                     core = cs.ValueKind == JsonValueKind.True;
+
+                if (items[optionsIdx].TryGetProperty("nodeOffset", out var no) &&
+                    no.ValueKind == JsonValueKind.Object)
+                {
+                    nodeOffset = ParseVector3(no);
+                }
             }
 
             slots.Add(new JBeamSlot(
@@ -268,7 +276,8 @@ public static class JBeamParser
                 Description: items.Count > descIdx && items[descIdx].ValueKind == JsonValueKind.String
                     ? items[descIdx].GetString() ?? ""
                     : "",
-                CoreSlot: core));
+                CoreSlot: core,
+                NodeOffset: nodeOffset));
         }
     }
 
@@ -452,6 +461,8 @@ public static class JBeamParser
                 string mesh = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
                 var groups = new List<string>();
                 System.Numerics.Vector3? flexPos = null;
+                System.Numerics.Vector3? flexRot = null;
+                System.Numerics.Vector3? flexScale = null;
 
                 if (items[1].ValueKind == JsonValueKind.Array)
                 {
@@ -470,19 +481,24 @@ public static class JBeamParser
                     if (items[i].TryGetProperty("pos", out var posObj)
                         && posObj.ValueKind == JsonValueKind.Object)
                     {
-                        posObj.TryGetProperty("x", out var px);
-                        posObj.TryGetProperty("y", out var py);
-                        posObj.TryGetProperty("z", out var pz);
-                        flexPos = new System.Numerics.Vector3(
-                            (float)(px.ValueKind == JsonValueKind.Number ? px.GetDouble() : 0),
-                            (float)(py.ValueKind == JsonValueKind.Number ? py.GetDouble() : 0),
-                            (float)(pz.ValueKind == JsonValueKind.Number ? pz.GetDouble() : 0));
-                        break;
+                        flexPos = ParseVector3(posObj);
+                    }
+
+                    if (items[i].TryGetProperty("rot", out var rotObj)
+                        && rotObj.ValueKind == JsonValueKind.Object)
+                    {
+                        flexRot = ParseVector3(rotObj);
+                    }
+
+                    if (items[i].TryGetProperty("scale", out var scaleObj)
+                        && scaleObj.ValueKind == JsonValueKind.Object)
+                    {
+                        flexScale = ParseVector3(scaleObj);
                     }
                 }
 
                 if (!string.IsNullOrEmpty(mesh))
-                    flexBodies.Add(new JBeamFlexBody(mesh, groups, flexPos));
+                    flexBodies.Add(new JBeamFlexBody(mesh, groups, flexPos, flexRot, flexScale));
             }
         }
         return flexBodies;
@@ -533,15 +549,19 @@ public static class JBeamParser
         if (e.ValueKind == JsonValueKind.Number) return e.GetSingle();
         if (e.ValueKind == JsonValueKind.String)
         {
-            var s = e.GetString() ?? "";
+            var s = (e.GetString() ?? "").Trim();
             // Resolve $variable references from the active vars table
-            if (s.StartsWith("$") && _vars != null)
+            if (s.StartsWith("$") && !s.StartsWith("$=") && _vars != null)
             {
                 string varName = s[1..]; // strip leading $
                 if (_vars.TryGetValue(varName, out float resolved)) return resolved;
                 return 0f;
             }
-            return float.TryParse(s, out float v) ? v : 0f;
+
+            if (TryEvaluateArithmeticExpression(s, out float expr))
+                return expr;
+
+            return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
         }
         return 0f;
     }
@@ -562,6 +582,166 @@ public static class JBeamParser
     /// </summary>
     private static string SafeGetString(JsonElement e)
         => e.ValueKind == JsonValueKind.String ? e.GetString() ?? "" : "";
+
+    private static Vector3 ParseVector3(JsonElement obj)
+    {
+        obj.TryGetProperty("x", out var x);
+        obj.TryGetProperty("y", out var y);
+        obj.TryGetProperty("z", out var z);
+        return new Vector3(GetFloat(x), GetFloat(y), GetFloat(z));
+    }
+
+    private static bool TryEvaluateArithmeticExpression(string raw, out float value)
+    {
+        value = 0f;
+        if (!raw.StartsWith("$=", StringComparison.Ordinal))
+            return false;
+
+        string expr = ReplaceVariablesWithValues(raw[2..].Trim());
+        if (string.IsNullOrWhiteSpace(expr))
+            return false;
+
+        try
+        {
+            var parser = new ArithmeticParser(expr);
+            value = parser.ParseExpression();
+            parser.SkipWhitespace();
+            return parser.AtEnd;
+        }
+        catch
+        {
+            value = 0f;
+            return false;
+        }
+    }
+
+    private static string ReplaceVariablesWithValues(string expr)
+    {
+        if (string.IsNullOrEmpty(expr))
+            return expr;
+
+        var sb = new StringBuilder(expr.Length + 16);
+        for (int i = 0; i < expr.Length; i++)
+        {
+            if (expr[i] != '$')
+            {
+                sb.Append(expr[i]);
+                continue;
+            }
+
+            int start = i + 1;
+            int end = start;
+            while (end < expr.Length &&
+                   (char.IsLetterOrDigit(expr[end]) || expr[end] == '_'))
+            {
+                end++;
+            }
+
+            string varName = expr[start..end];
+            float resolved = 0f;
+            if (!string.IsNullOrEmpty(varName) && _vars != null)
+                _vars.TryGetValue(varName, out resolved);
+
+            sb.Append(resolved.ToString(CultureInfo.InvariantCulture));
+            i = end - 1;
+        }
+
+        return sb.ToString();
+    }
+
+    private sealed class ArithmeticParser
+    {
+        private readonly string _text;
+        private int _index;
+
+        public ArithmeticParser(string text) => _text = text;
+
+        public bool AtEnd => _index >= _text.Length;
+
+        public void SkipWhitespace()
+        {
+            while (_index < _text.Length && char.IsWhiteSpace(_text[_index]))
+                _index++;
+        }
+
+        public float ParseExpression()
+        {
+            float value = ParseTerm();
+            while (true)
+            {
+                SkipWhitespace();
+                if (Match('+')) value += ParseTerm();
+                else if (Match('-')) value -= ParseTerm();
+                else break;
+            }
+
+            return value;
+        }
+
+        private float ParseTerm()
+        {
+            float value = ParseFactor();
+            while (true)
+            {
+                SkipWhitespace();
+                if (Match('*')) value *= ParseFactor();
+                else if (Match('/')) value /= ParseFactor();
+                else break;
+            }
+
+            return value;
+        }
+
+        private float ParseFactor()
+        {
+            SkipWhitespace();
+            if (Match('+')) return ParseFactor();
+            if (Match('-')) return -ParseFactor();
+
+            if (Match('('))
+            {
+                float value = ParseExpression();
+                SkipWhitespace();
+                Expect(')');
+                return value;
+            }
+
+            return ParseNumber();
+        }
+
+        private float ParseNumber()
+        {
+            SkipWhitespace();
+            int start = _index;
+            while (_index < _text.Length &&
+                   (char.IsDigit(_text[_index]) || _text[_index] == '.'))
+            {
+                _index++;
+            }
+
+            if (start == _index)
+                throw new FormatException("Expected number.");
+
+            return float.Parse(_text[start.._index], NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        private bool Match(char ch)
+        {
+            if (_index < _text.Length && _text[_index] == ch)
+            {
+                _index++;
+                return true;
+            }
+
+            return false;
+        }
+
+        private void Expect(char ch)
+        {
+            if (!Match(ch))
+                throw new FormatException($"Expected '{ch}'.");
+        }
+    }
 
     /// <summary>
     /// Some jbeam files contain multiple adjacent top-level JSON objects, e.g.:

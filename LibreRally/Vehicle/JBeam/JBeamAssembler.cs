@@ -16,6 +16,8 @@ namespace LibreRally.Vehicle.JBeam;
 /// </summary>
 public static class JBeamAssembler
 {
+    private sealed record ResolvedPartInstance(JBeamPart Part, Vector3 VisualOffset);
+
     /// <summary>Loads a vehicle from a folder and all sub-folders (for RLA_Evo Jbeams/ layout).</summary>
     public static VehicleDefinition Assemble(string vehicleFolder, PcConfig? pcConfig = null)
     {
@@ -56,10 +58,11 @@ public static class JBeamAssembler
             throw new InvalidOperationException($"No jbeam part with slotType 'main' found in '{vehicleFolder}'.");
 
         // Resolve slot hierarchy depth-first, collecting all active parts in order
-        var activeParts = new List<JBeamPart>();
+        var activeParts = new List<ResolvedPartInstance>();
         ResolveSlots(mainPart, partLibrary, activeParts,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
-            pcConfig?.Parts);
+            pcConfig?.Parts,
+            Vector3.Zero);
 
         // Merge into VehicleDefinition
         var def = Merge(mainPart.Name, vehicleFolder, activeParts);
@@ -77,12 +80,13 @@ public static class JBeamAssembler
     private static void ResolveSlots(
         JBeamPart part,
         Dictionary<string, JBeamPart> library,
-        List<JBeamPart> result,
+        List<ResolvedPartInstance> result,
         HashSet<string> visited,
-        Dictionary<string, string>? pcParts = null)
+        Dictionary<string, string>? pcParts = null,
+        Vector3 visualOffset = default)
     {
         if (!visited.Add(part.Name)) return;
-        result.Add(part);
+        result.Add(new ResolvedPartInstance(part, visualOffset));
 
         foreach (var slot in part.Slots)
         {
@@ -94,7 +98,13 @@ public static class JBeamAssembler
             if (string.IsNullOrEmpty(partName)) continue;
 
             if (library.TryGetValue(partName, out var child))
-                ResolveSlots(child, library, result, visited, pcParts);
+                ResolveSlots(
+                    child,
+                    library,
+                    result,
+                    visited,
+                    pcParts,
+                    visualOffset + (slot.NodeOffset ?? Vector3.Zero));
             // Missing parts (e.g. common.zip parts not shipped with the mod) are silently ignored.
         }
     }
@@ -106,23 +116,25 @@ public static class JBeamAssembler
     private static VehicleDefinition Merge(
         string vehicleName,
         string folderPath,
-        List<JBeamPart> parts)
+        List<ResolvedPartInstance> parts)
     {
         var allNodes = new Dictionary<string, AssembledNode>(StringComparer.OrdinalIgnoreCase);
         var allBeams = new List<AssembledBeam>();
         var allFlexBodies = new List<AssembledFlexBody>();
+        var resolvedParts = parts.Select(p => p.Part).ToList();
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
         var slotTypeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var p in parts)
+        foreach (var p in resolvedParts)
             if (!string.IsNullOrEmpty(p.SlotType))
                 slotTypeToPartName[p.SlotType] = p.Name;
 
         // Merge nodes and beams from all resolved parts
         var nodeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var part in parts)
+        foreach (var resolved in parts)
         {
+            var part = resolved.Part;
             foreach (var node in part.Nodes)
             {
                 if (allNodes.ContainsKey(node.Id)) continue;
@@ -146,15 +158,22 @@ public static class JBeamAssembler
                     beam.Properties.DeformGroup));
 
             foreach (var fb in part.FlexBodies)
-                allFlexBodies.Add(new AssembledFlexBody(fb.Mesh, fb.Groups, fb.Position));
+                allFlexBodies.Add(new AssembledFlexBody(
+                    fb.Mesh,
+                    fb.Groups,
+                    CombineFlexBodyPosition(fb.Position, resolved.VisualOffset),
+                    fb.Rotation,
+                    fb.Scale,
+                    part.Name,
+                    part.SlotType));
         }
 
         // Build logical parts:
         // - Part 0 = chassis (all nodes not exclusively owned by a detachable slot)
         // - Parts 1..N = detachable pieces identified by slot type patterns
-        var logicalParts = BuildLogicalParts(parts, allNodes, allBeams, nodeToPartName, allFlexBodies);
+        var logicalParts = BuildLogicalParts(resolvedParts, allNodes, allBeams, nodeToPartName, allFlexBodies);
 
-        var refNodes = parts
+        var refNodes = resolvedParts
             .Where(p => p.RefNodes.Count > 0)
             .Select(p => p.RefNodes)
             .FirstOrDefault() ?? new Dictionary<string, string>();
@@ -169,6 +188,14 @@ public static class JBeamAssembler
             FolderPath = folderPath,
             RefNodes = refNodes,
         };
+    }
+
+    private static Vector3? CombineFlexBodyPosition(Vector3? basePosition, Vector3 slotOffset)
+    {
+        if (basePosition == null && slotOffset == Vector3.Zero)
+            return null;
+
+        return (basePosition ?? Vector3.Zero) + slotOffset;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

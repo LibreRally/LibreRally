@@ -26,6 +26,21 @@ public class RallyCameraScript : SyncScript
 
     private enum CameraMode { Follow, Bonnet, Bumper }
     private CameraMode _mode = CameraMode.Follow;
+    private const float LookDeadZone = 0.15f;
+    private const float FollowOrbitYawSpeed = 2.5f;
+    private const float FollowOrbitPitchSpeed = 1.75f;
+    private const float FollowOrbitRecentreSpeed = 4f;
+    private const float CockpitLookYawSpeed = 2.5f;
+    private const float CockpitLookPitchSpeed = 1.75f;
+    private const float CockpitLookRecentreSpeed = 5f;
+    private static readonly float FollowOrbitYawLimit = DegreesToRadians(160f);
+    private static readonly float FollowOrbitPitchUpLimit = DegreesToRadians(45f);
+    private static readonly float FollowOrbitPitchDownLimit = DegreesToRadians(20f);
+    private static readonly float CockpitLookYawLimit = DegreesToRadians(80f);
+    private static readonly float CockpitLookPitchUpLimit = DegreesToRadians(40f);
+    private static readonly float CockpitLookPitchDownLimit = DegreesToRadians(30f);
+    private Vector2 _followLookAngles;
+    private Vector2 _cockpitLookAngles;
 
     public override void Start()
     {
@@ -51,6 +66,8 @@ public class RallyCameraScript : SyncScript
     public override void Update()
     {
         if (Target == null) return;
+        float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+        if (dt <= 0f || dt > 0.1f) dt = 0.016f;
 
         var pad = Input.GamePads.FirstOrDefault();
         if (pad != null && pad.IsButtonPressed(GamePadButton.Y))
@@ -64,17 +81,40 @@ public class RallyCameraScript : SyncScript
             };
         }
 
+        var lookInput = pad != null ? ApplyLookDeadZone(pad.State.RightThumb) : Vector2.Zero;
+        _followLookAngles = UpdateLookAngles(
+            _followLookAngles,
+            lookInput,
+            FollowOrbitYawSpeed,
+            FollowOrbitPitchSpeed,
+            FollowOrbitYawLimit,
+            -FollowOrbitPitchDownLimit,
+            FollowOrbitPitchUpLimit,
+            FollowOrbitRecentreSpeed,
+            dt);
+        _cockpitLookAngles = UpdateLookAngles(
+            _cockpitLookAngles,
+            lookInput,
+            CockpitLookYawSpeed,
+            CockpitLookPitchSpeed,
+            CockpitLookYawLimit,
+            -CockpitLookPitchDownLimit,
+            CockpitLookPitchUpLimit,
+            CockpitLookRecentreSpeed,
+            dt);
+
         switch (_mode)
         {
-            case CameraMode.Follow: UpdateFollowCamera(); break;
+            case CameraMode.Follow: UpdateFollowCamera(dt); break;
             case CameraMode.Bonnet: UpdateCockpitCamera(BonnetOffset); break;
             case CameraMode.Bumper: UpdateCockpitCamera(BumperOffset); break;
         }
     }
 
-    private void UpdateFollowCamera()
+    private void UpdateFollowCamera(float dt)
     {
         var targetTransform = Target!.Transform;
+        var targetWorldPos = targetTransform.WorldMatrix.TranslationVector;
 
         // Use only the car's yaw so the camera stays level even when the chassis pitches/rolls.
         // WorldMatrix.Backward = local +Z in world space = car nose direction for this car.
@@ -85,14 +125,16 @@ public class RallyCameraScript : SyncScript
             : 0f;
         var yawOnly = Quaternion.RotationY(yaw);
 
-        var worldOffset = Vector3.Transform(FollowOffset, yawOnly);
-        var desiredPos = targetTransform.WorldMatrix.TranslationVector + worldOffset;
+        var orbitOffset = Vector3.Transform(
+            FollowOffset,
+            Quaternion.RotationYawPitchRoll(-_followLookAngles.X, _followLookAngles.Y, 0f));
+        var worldOffset = Vector3.Transform(orbitOffset, yawOnly);
+        var desiredPos = targetWorldPos + worldOffset;
 
-        var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
         Entity.Transform.Position = Vector3.Lerp(
             Entity.Transform.Position, desiredPos, MathF.Min(1f, FollowLerpSpeed * dt));
 
-        ApplyCameraRotation(targetTransform.WorldMatrix.TranslationVector);
+        ApplyCameraRotation(targetWorldPos);
     }
 
     /// <summary>
@@ -121,7 +163,45 @@ public class RallyCameraScript : SyncScript
         var targetTransform = Target!.Transform;
         var worldOffset = Vector3.Transform(localOffset, targetTransform.Rotation);
         Entity.Transform.Position = targetTransform.WorldMatrix.TranslationVector + worldOffset;
-        // Stride camera looks along -Z; car nose is +Z. Rotate 180° around Y to flip Z.
-        Entity.Transform.Rotation = targetTransform.Rotation * Quaternion.RotationY(MathF.PI);
+        var lookOffset = Quaternion.RotationYawPitchRoll(_cockpitLookAngles.X, -_cockpitLookAngles.Y, 0f);
+        // Rotate into the car's +Z-facing frame, then apply the look offset in that car-facing space.
+        Entity.Transform.Rotation = targetTransform.Rotation * lookOffset * Quaternion.RotationY(MathF.PI);
     }
+
+    private static Vector2 ApplyLookDeadZone(Vector2 thumb)
+    {
+        float magnitude = thumb.Length();
+        if (magnitude <= LookDeadZone || magnitude <= float.Epsilon) return Vector2.Zero;
+
+        float scaledMagnitude = MathF.Min(1f, (magnitude - LookDeadZone) / (1f - LookDeadZone));
+        return thumb * (scaledMagnitude / magnitude);
+    }
+
+    private static Vector2 UpdateLookAngles(
+        Vector2 currentAngles,
+        Vector2 lookInput,
+        float yawSpeed,
+        float pitchSpeed,
+        float yawLimit,
+        float minPitch,
+        float maxPitch,
+        float recentreSpeed,
+        float dt)
+    {
+        if (lookInput.LengthSquared() > 0f)
+        {
+            currentAngles.X = MathUtil.Clamp(currentAngles.X + lookInput.X * yawSpeed * dt, -yawLimit, yawLimit);
+            currentAngles.Y = MathUtil.Clamp(currentAngles.Y + lookInput.Y * pitchSpeed * dt, minPitch, maxPitch);
+            return currentAngles;
+        }
+
+        float t = MathF.Min(1f, recentreSpeed * dt);
+        currentAngles.X = MathUtil.Lerp(currentAngles.X, 0f, t);
+        currentAngles.Y = MathUtil.Lerp(currentAngles.Y, 0f, t);
+        if (MathF.Abs(currentAngles.X) < 0.001f) currentAngles.X = 0f;
+        if (MathF.Abs(currentAngles.Y) < 0.001f) currentAngles.Y = 0f;
+        return currentAngles;
+    }
+
+    private static float DegreesToRadians(float degrees) => degrees * (MathF.PI / 180f);
 }

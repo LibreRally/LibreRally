@@ -14,6 +14,7 @@ public record ColladaVertex(Vector3 Position, Vector3 Normal, Vector2 TexCoord);
 public class ColladaMesh
 {
     public string Name { get; init; } = "";
+    public string GeometryName { get; init; } = "";
     public string MaterialName { get; init; } = "";
     public List<ColladaVertex> Vertices { get; init; } = new();
     public List<int> Indices { get; init; } = new();
@@ -111,6 +112,7 @@ public static class ColladaLoader
         {
             string material = prim.Attribute("material")?.Value ?? "";
             var colladaMesh = BuildPrimitiveMesh(
+                geometryName,
                 $"{geometryName}_{material}",
                 material,
                 prim,
@@ -123,6 +125,7 @@ public static class ColladaLoader
     }
 
     private static ColladaMesh? BuildPrimitiveMesh(
+        string geometryName,
         string name,
         string material,
         XElement prim,
@@ -240,6 +243,7 @@ public static class ColladaLoader
         return new ColladaMesh
         {
             Name = name,
+            GeometryName = geometryName,
             MaterialName = material,
             Vertices = vertices,
             Indices = indices,

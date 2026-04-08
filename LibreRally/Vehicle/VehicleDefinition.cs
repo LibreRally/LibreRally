@@ -34,7 +34,11 @@ public record AssembledBeam(
 public record AssembledFlexBody(
     string MeshName,
     List<string> NodeGroups,
-    System.Numerics.Vector3? Position = null);
+    System.Numerics.Vector3? Position = null,
+    System.Numerics.Vector3? Rotation = null,
+    System.Numerics.Vector3? Scale = null,
+    string SourcePartName = "",
+    string SourceSlotType = "");
 
 /// <summary>
 /// A logical car part derived from a jbeam slot, containing all its nodes and mesh info.

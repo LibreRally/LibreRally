@@ -233,11 +233,37 @@ public class RallyCarComponent : SyncScript
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
         EngineRpm  = _engineRpm;
 
+        // ── Steering motors (front wheels) ────────────────────────────────────
+        const float SteerServoGain = 12f;
+        const float SteerVelocityLimitMultiplier = 2f;
+        float steerTargetAngle = -steer * MaxSteerAngle;
+        float totalActualSteerAngle = 0f;
+        int steerWheelCount = 0;
+
+        foreach (var wheel in SteerWheels)
+        {
+            var ws = wheel.Get<WheelSettings>();
+            if (ws?.SteerMotor == null) continue;
+
+            ws.CurrentSteerAngle += Math.Clamp(steerTargetAngle - ws.CurrentSteerAngle, -SteerRate * dt, SteerRate * dt);
+
+            wheel.Transform.UpdateWorldMatrix();
+            float actualSteerAngle = MeasureSteerAngle(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
+            float error            = ws.CurrentSteerAngle - actualSteerAngle;
+            ws.SteerMotor.TargetVelocity = Math.Clamp(
+                error * SteerServoGain,
+                -SteerRate * SteerVelocityLimitMultiplier,
+                SteerRate * SteerVelocityLimitMultiplier);
+
+            totalActualSteerAngle += actualSteerAngle;
+            steerWheelCount++;
+        }
+
         // ── Wheel motor commands ──────────────────────────────────────────────
         // Target = redline speed so motor always pushes forward; MaxForce limits torque.
-        int   numDrive            = Math.Max(1, DriveWheels.Count);
-        float wheelTargetOmega     = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
-        float availableWheelForce  = MathF.Max(0f, crankTorque) * effectiveRatio / WheelRadius / numDrive;
+        int   numDrive           = Math.Max(1, DriveWheels.Count);
+        float wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio);
+        float availableWheelForce = MathF.Max(0f, crankTorque) * effectiveRatio / WheelRadius / numDrive;
 
         foreach (var wheel in DriveWheels)
         {
@@ -246,45 +272,37 @@ public class RallyCarComponent : SyncScript
             var ws = wheel.Get<WheelSettings>();
             if (ws?.DriveMotor == null) continue;
 
+            wheel.Transform.UpdateWorldMatrix();
+            Vector3 driveAxisLocalA = MeasureWheelAxleAxisLocalA(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
+
             if (isBraking || isHandbrake)
             {
-                ws.DriveMotor.TargetVelocity    = 0f;
-                ws.DriveMotor.MotorMaximumForce = isHandbrake ? BrakeMotorForce * 2f : BrakeMotorForce;
-                ws.DriveMotor.MotorDamping      = 500f;
+                ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
+                ws.DriveMotor.MotorMaximumForce    = isHandbrake ? BrakeMotorForce * 2f : BrakeMotorForce;
+                ws.DriveMotor.MotorDamping         = 500f;
             }
             else if (throttle > 0.05f)
             {
-                ws.DriveMotor.TargetVelocity    = wheelTargetOmega;
-                ws.DriveMotor.MotorMaximumForce = availableWheelForce;
-                ws.DriveMotor.MotorDamping      = 500f;
+                ws.DriveMotor.TargetVelocityLocalA = driveAxisLocalA * wheelTargetOmega;
+                ws.DriveMotor.MotorMaximumForce    = availableWheelForce;
+                ws.DriveMotor.MotorDamping         = 500f;
             }
             else
             {
                 // Coasting / engine braking
-                ws.DriveMotor.TargetVelocity    = 0f;
-                ws.DriveMotor.MotorMaximumForce = engBrake * effectiveRatio / WheelRadius / numDrive;
-                ws.DriveMotor.MotorDamping      = 500f;
+                ws.DriveMotor.TargetVelocityLocalA = Vector3.Zero;
+                ws.DriveMotor.MotorMaximumForce    = engBrake * effectiveRatio / WheelRadius / numDrive;
+                ws.DriveMotor.MotorDamping         = 500f;
             }
         }
 
-        // ── Steering motors (front wheels) ────────────────────────────────────
-        foreach (var wheel in SteerWheels)
-        {
-            var ws = wheel.Get<WheelSettings>();
-            if (ws?.SteerMotor == null) continue;
-
-            ws.CurrentSteerAngle += -steer * SteerRate * dt;
-            ws.CurrentSteerAngle  = Math.Clamp(ws.CurrentSteerAngle, -MaxSteerAngle, MaxSteerAngle);
-
-            float targetAngle = -steer * MaxSteerAngle;
-            float error       = targetAngle - ws.CurrentSteerAngle;
-            ws.SteerMotor.TargetVelocity = Math.Clamp(error * 8f, -SteerRate, SteerRate);
-        }
-
         // ── Chassis yaw assist ────────────────────────────────────────────────
-        float speedMs    = MathF.Abs(forwardSpeed);
-        float steerAuth  = 0.4f + 0.6f * MathF.Min(1f, speedMs / 6f);
-        float targetYaw  = -steer * ChassisYawAssist * steerAuth;
+        float speedMs   = MathF.Abs(forwardSpeed);
+        float steerAuth = 0.4f + 0.6f * MathF.Min(1f, speedMs / 6f);
+        float steerRack = steerWheelCount > 0 && MaxSteerAngle > 0.0001f
+            ? Math.Clamp(totalActualSteerAngle / (steerWheelCount * MaxSteerAngle), -1f, 1f)
+            : -steer;
+        float targetYaw = steerRack * ChassisYawAssist * steerAuth;
 
         var av = chassisBody.AngularVelocity;
         av.Y = av.Y + (targetYaw - av.Y) * MathF.Min(1f, 6f * dt);
@@ -323,6 +341,58 @@ public class RallyCarComponent : SyncScript
             }
         }
         return TorqueCurveNm[^1];
+    }
+
+    private static float MeasureSteerAngle(Matrix chassisWorld, Matrix wheelWorld)
+    {
+        Vector3 up = chassisWorld.Up;
+        float upLengthSq = up.LengthSquared();
+        if (upLengthSq < 1e-6f)
+            return 0f;
+
+        up /= MathF.Sqrt(upLengthSq);
+
+        Vector3 chassisRight = ProjectOnPlane(chassisWorld.Right, up);
+        Vector3 wheelRight = ProjectOnPlane(wheelWorld.Right, up);
+        float chassisRightLengthSq = chassisRight.LengthSquared();
+        float wheelRightLengthSq = wheelRight.LengthSquared();
+        if (chassisRightLengthSq < 1e-6f || wheelRightLengthSq < 1e-6f)
+            return 0f;
+
+        chassisRight /= MathF.Sqrt(chassisRightLengthSq);
+        wheelRight /= MathF.Sqrt(wheelRightLengthSq);
+
+        float sin = Vector3.Dot(Vector3.Cross(chassisRight, wheelRight), up);
+        float cos = Math.Clamp(Vector3.Dot(chassisRight, wheelRight), -1f, 1f);
+
+        // Positive steer angle corresponds to left lock, matching the rest of the vehicle code.
+        return -MathF.Atan2(sin, cos);
+    }
+
+    private static Vector3 MeasureWheelAxleAxisLocalA(Matrix bodyAWorld, Matrix wheelWorld)
+    {
+        Vector3 wheelAxleWorld = wheelWorld.Right;
+        float axleLengthSq = wheelAxleWorld.LengthSquared();
+        if (axleLengthSq < 1e-6f)
+            return Vector3.UnitX;
+
+        wheelAxleWorld /= MathF.Sqrt(axleLengthSq);
+
+        Vector3 axisLocalA = new(
+            Vector3.Dot(wheelAxleWorld, bodyAWorld.Right),
+            Vector3.Dot(wheelAxleWorld, bodyAWorld.Up),
+            Vector3.Dot(wheelAxleWorld, bodyAWorld.Backward));
+
+        float axisLengthSq = axisLocalA.LengthSquared();
+        if (axisLengthSq < 1e-6f)
+            return Vector3.UnitX;
+
+        return axisLocalA / MathF.Sqrt(axisLengthSq);
+    }
+
+    private static Vector3 ProjectOnPlane(Vector3 vector, Vector3 planeNormal)
+    {
+        return vector - planeNormal * Vector3.Dot(vector, planeNormal);
     }
 }
 

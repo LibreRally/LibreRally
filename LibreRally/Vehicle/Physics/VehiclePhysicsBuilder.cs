@@ -72,40 +72,67 @@ public static class VehiclePhysicsBuilder
     {
         // Detachable parts are currently not spawned as separate rigid bodies, so the single
         // chassis body must carry the mass of every attached node in the assembled vehicle.
-        // Use the node cloud directly instead of a fallback floor mass.
-        const float MinNodeZ = 0.10f;   // excludes unresolved steelwheel origin nodes
-        const float BodySplitZ = 0.55f; // split floor / upper body
+        //
+        // Keep mass derived from the full sprung node cloud, but build the *collision* proxy from
+        // body-shell nodes only. Suspension/pickup/skid nodes that sit very low in the jbeam should
+        // influence mass and COM, but should not make the rigid chassis hull drag on the ground.
+        const float MinNodeZ = 0.10f;        // excludes unresolved steelwheel origin nodes
+        const float CollisionMinZ = 0.35f;   // floor pan / sill region, safely above the wheels' contact patch
+        const float BodySplitZ = 0.55f;      // split lower body / upper cabin
 
-        var rigidNodes = def.Nodes.Values
+        var chassisNodes = chassisPart.ExclusiveNodeIds
+            .Where(id => def.Nodes.ContainsKey(id))
+            .Select(id => def.Nodes[id])
+            .ToList();
+
+        var rigidNodes = chassisNodes
             .Where(n => n.Position.Z >= MinNodeZ)
+            .Where(n => !IsWheelLikeNode(n))
             .ToList();
         if (rigidNodes.Count < 5)
-            rigidNodes = def.Nodes.Values.ToList();
+        {
+            rigidNodes = def.Nodes.Values
+                .Where(n => n.Position.Z >= MinNodeZ)
+                .Where(n => !IsWheelLikeNode(n))
+                .ToList();
+        }
 
-        var sprungNodes = rigidNodes
+        var sprungNodes = def.Nodes.Values
+            .Where(n => n.Position.Z >= MinNodeZ)
             .Where(n => !IsWheelLikeNode(n))
             .ToList();
         if (sprungNodes.Count < 5)
             sprungNodes = rigidNodes;
 
-        var upperNodes = sprungNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
-        var lowerNodes = sprungNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
-        if (upperNodes.Count < 5 || lowerNodes.Count < 5)
-        {
-            upperNodes = sprungNodes;
-            lowerNodes = new List<AssembledNode>();
-        }
+        var upperMassNodes = sprungNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
+        var lowerMassNodes = sprungNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
 
-        Vector3 centerOfMass = ComputeWeightedCentroid(sprungNodes);
-        var entity = new Entity("chassis") { Transform = { Position = centerOfMass } };
+        var collisionNodes = sprungNodes.Where(n => n.Position.Z >= CollisionMinZ).ToList();
+        if (collisionNodes.Count < 5)
+            collisionNodes = sprungNodes;
+
+        var upperCollisionNodes = collisionNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
+        var lowerCollisionNodes = collisionNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
 
         float totalMass = sprungNodes.Sum(n => n.Weight);
-        float upperMass = upperNodes.Sum(n => n.Weight);
-        float lowerMass = lowerNodes.Sum(n => n.Weight);
+        float upperMass = upperMassNodes.Sum(n => n.Weight);
+        float lowerMass = lowerMassNodes.Sum(n => n.Weight);
+        if (upperCollisionNodes.Count < 5)
+        {
+            upperCollisionNodes = collisionNodes;
+            upperMass = totalMass;
+            lowerCollisionNodes = new List<AssembledNode>();
+            lowerMass = 0f;
+        }
+        else if (lowerCollisionNodes.Count < 5)
+        {
+            upperMass = totalMass;
+            lowerMass = 0f;
+        }
 
-        var collider = new CompoundCollider();
+        var boxSpecs = new List<(Vector3 Center, Vector3 Size, float Mass)>();
 
-        void AddBoxFromNodes(List<AssembledNode> nodes, float mass)
+        void AddBoxSpec(List<AssembledNode> nodes, float mass, bool centralFloorProxy = false)
         {
             if (nodes.Count == 0 || mass <= 0f)
                 return;
@@ -113,25 +140,49 @@ public static class VehiclePhysicsBuilder
             BoundingBox aabb = ComputeAABB(nodes.Select(n => n.Position));
             Vector3 extents = aabb.Maximum - aabb.Minimum;
             Vector3 center = (aabb.Minimum + aabb.Maximum) * 0.5f;
-            collider.Colliders.Add(new BoxCollider
+            if (centralFloorProxy)
             {
-                Size = new Vector3(
+                // Keep the low mass in the middle of the car instead of spanning into the
+                // wheel wells. This approximates the engine / tunnel / floor pan without
+                // letting the rigid lower hull occupy the tyres' sweep volume.
+                extents.X *= 0.65f;
+                extents.Z *= 0.50f;
+            }
+            boxSpecs.Add((
+                center,
+                new Vector3(
                     Math.Max(extents.X, 0.3f),
                     Math.Max(extents.Y, 0.12f),
                     Math.Max(extents.Z, 0.3f)),
-                PositionLocal = center - centerOfMass,
-                Mass = mass,
-            });
+                mass));
         }
 
-        if (lowerNodes.Count > 0 && lowerMass > 1f)
+        if (lowerMass > 1f)
+            AddBoxSpec(lowerCollisionNodes, lowerMass, centralFloorProxy: true);
+        AddBoxSpec(upperCollisionNodes, Math.Max(upperMass, 1f));
+        if (boxSpecs.Count == 0)
+            AddBoxSpec(collisionNodes, Math.Max(totalMass, 1f));
+
+        Vector3 centerOfMass = Vector3.Zero;
+        float boxMassSum = 0f;
+        foreach (var spec in boxSpecs)
         {
-            AddBoxFromNodes(lowerNodes, lowerMass);
-            AddBoxFromNodes(upperNodes, Math.Max(upperMass, 1f));
+            centerOfMass += spec.Center * spec.Mass;
+            boxMassSum += spec.Mass;
         }
-        else
+        centerOfMass /= Math.Max(boxMassSum, 1f);
+
+        var entity = new Entity("chassis") { Transform = { Position = centerOfMass } };
+
+        var collider = new CompoundCollider();
+        foreach (var spec in boxSpecs)
         {
-            AddBoxFromNodes(sprungNodes, Math.Max(totalMass, 1f));
+            collider.Colliders.Add(new BoxCollider
+            {
+                Size = spec.Size,
+                PositionLocal = spec.Center - centerOfMass,
+                Mass = spec.Mass,
+            });
         }
 
         var body = new BodyComponent
@@ -140,10 +191,11 @@ public static class VehiclePhysicsBuilder
             Gravity = true,
         };
 
-        var upperAabb = upperNodes.Count > 0 ? ComputeAABB(upperNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
-        var lowerAabb = lowerNodes.Count > 0 ? ComputeAABB(lowerNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
-        Console.Error.WriteLine($"[VehiclePhysicsBuilder] Chassis rigid={rigidNodes.Count} sprung={sprungNodes.Count} " +
-                          $"upper={upperNodes.Count} lower={lowerNodes.Count} com={centerOfMass:F3} " +
+        var nodeCom = ComputeWeightedCentroid(sprungNodes);
+        var upperAabb = upperCollisionNodes.Count > 0 ? ComputeAABB(upperCollisionNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
+        var lowerAabb = lowerCollisionNodes.Count > 0 ? ComputeAABB(lowerCollisionNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
+        Console.Error.WriteLine($"[VehiclePhysicsBuilder] Chassis chassisNodes={chassisNodes.Count} rigid={rigidNodes.Count} sprung={sprungNodes.Count} " +
+                          $"upper={upperCollisionNodes.Count} lower={lowerCollisionNodes.Count} nodeCom={nodeCom:F3} boxCom={centerOfMass:F3} " +
                           $"upperExtents={(upperAabb.Maximum - upperAabb.Minimum):F3} " +
                           $"lowerExtents={(lowerAabb.Maximum - lowerAabb.Minimum):F3} mass={totalMass:F0}kg");
         entity.Add(body);
@@ -508,18 +560,17 @@ public static class VehiclePhysicsBuilder
         }
 
         // ── Drive motor ────────────────────────────────────────────────────────
-        // Positive TargetVelocity → wheel bottom moves in −Z → car pushed in +Z (forward).
-        // MotorDamping acts as the proportional gain: motor_torque = Damping × velocityError,
-        // clamped to MotorMaximumForce.  We set Damping high (500) so the torque cap
-        // (set per-frame by RallyCarComponent based on the active gear ratio) is always
-        // the binding constraint, not the proportional gain.
-        var driveMotor = new AngularAxisMotorConstraintComponent
+        // Use a full angular-velocity motor instead of a single chassis-fixed X-axis motor.
+        // Front wheels steer around Y, so a chassis-fixed drive axis injects self-aligning
+        // torque under throttle once the wheel axle is no longer parallel to chassis X.
+        // RallyCarComponent updates the target vector every frame from the wheel's actual axle
+        // direction, which keeps drive torque aligned with the current hinge axis.
+        var driveMotor = new AngularMotorConstraintComponent
         {
             A = chassisBody, B = body,
-            LocalAxisA        = Vector3.UnitX,
-            TargetVelocity    = 0f,
-            MotorMaximumForce = 8000f,
-            MotorDamping      = 500f,
+            TargetVelocityLocalA = Vector3.Zero,
+            MotorMaximumForce    = 8000f,
+            MotorDamping         = 500f,
         };
         entity.Add(driveMotor);
 
@@ -532,8 +583,10 @@ public static class VehiclePhysicsBuilder
                 A = chassisBody, B = body,
                 LocalAxisA        = Vector3.UnitY,
                 TargetVelocity    = 0f,
-                MotorMaximumForce = 4000f,
-                MotorDamping      = 80f,
+                // Steering is a position servo in RallyCarComponent, so this motor needs
+                // enough authority to hold lock against tyre-aligning load at speed.
+                MotorMaximumForce = 12000f,
+                MotorDamping      = 4000f,
             };
             entity.Add(steerMotor);
         }
