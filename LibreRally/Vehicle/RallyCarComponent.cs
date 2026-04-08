@@ -391,7 +391,7 @@ public class RallyCarComponent : SyncScript
             return;
 
         Vector3 chassisPosition = chassisWorld.TranslationVector;
-        Vector3 fallbackForward = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        Vector3 fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         Vector3 fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
         Vector3 fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
 
@@ -407,10 +407,10 @@ public class RallyCarComponent : SyncScript
 
             Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
             Vector3 wheelUp = SafeNormalize(wheelWorld.Up, fallbackUp);
-            Vector3 wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackForward);
+            Vector3 wheelLongitudinal = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
 
             Vector3 wheelVelocity = wheelBody.LinearVelocity;
-            float longitudinalSpeed = Vector3.Dot(wheelVelocity, wheelForward);
+            float longitudinalSpeed = Vector3.Dot(wheelVelocity, wheelLongitudinal);
             float lateralSpeed = Vector3.Dot(wheelVelocity, wheelRight);
 
             float lateralForce = wheelSettings.TireModel.EvaluateLateralForce(

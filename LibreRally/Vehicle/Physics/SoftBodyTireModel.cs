@@ -8,11 +8,15 @@ public sealed class SoftBodyTireModel
 {
     private const float ReferenceWheelLoad = 3000f;
     private const float DegreesPerRadian = 180f / MathF.PI;
+    private const float MaxDeflectionRatio = 0.12f;
+    private const float MinLoadScale = 0.8f;
+    private const float MaxLoadScale = 1.25f;
+    private const float LowSpeedGripScale = 0.15f;
 
     public SoftBodyTireModel(float wheelRadius)
     {
         WheelRadius = MathF.Max(0.1f, wheelRadius);
-        MaxDeflection = WheelRadius * 0.12f;
+        MaxDeflection = WheelRadius * MaxDeflectionRatio;
     }
 
     public float WheelRadius { get; }
@@ -47,13 +51,13 @@ public sealed class SoftBodyTireModel
         float deflectionRate = lateralVelocity - (LateralDeflection * relaxationSpeed / MathF.Max(RelaxationLength, 0.05f));
         LateralDeflection += deflectionRate * dt;
 
-        float loadScale = Math.Clamp(normalLoad / MathF.Max(ReferenceWheelLoad, 1f), 0.8f, 1.25f);
+        float loadScale = Math.Clamp(normalLoad / MathF.Max(ReferenceWheelLoad, 1f), MinLoadScale, MaxLoadScale);
         LateralDeflection = Math.Clamp(LateralDeflection, -MaxDeflection * loadScale, MaxDeflection * loadScale);
 
         float deflectionVelocity = (LateralDeflection - previousDeflection) / dt;
         float softBodyForce = (-ContactPatchStiffness * LateralDeflection) - (ContactPatchDamping * deflectionVelocity);
         float gripEnvelope = EvaluateGripEnvelope(slipAngleDegrees) * normalLoad;
-        float lowSpeedForce = -lateralVelocity * normalLoad * MathF.Max(0f, lowSpeedGrip) * 0.15f;
+        float lowSpeedForce = -lateralVelocity * normalLoad * MathF.Max(0f, lowSpeedGrip) * LowSpeedGripScale;
 
         float lateralForce = absLongitudinalVelocity < 1f
             ? lowSpeedForce
