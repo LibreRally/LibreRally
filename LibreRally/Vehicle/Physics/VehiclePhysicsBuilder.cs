@@ -422,6 +422,8 @@ public static class VehiclePhysicsBuilder
         float wheelRadius = GetVar("tireWidth", 0f);  // not typically a var; use fixed default
         wheelRadius = 0.305f;
 
+        float staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
+
         Entity GetWheel(string label, bool isFront)
         {
             Vector3 pos;
@@ -442,7 +444,7 @@ public static class VehiclePhysicsBuilder
             }
             float freq  = isFront ? springFreqF  : springFreqR;
             float ratio = isFront ? dampRatioF   : dampRatioR;
-            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius);
+            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius, staticNormalLoad);
         }
 
         return (GetWheel("wheel_FL", true), GetWheel("wheel_FR", true),
@@ -480,7 +482,8 @@ public static class VehiclePhysicsBuilder
         bool isFront,
         float springFreq = 2.5f,
         float dampingRatio = 0.9f,
-        float wheelRadius = 0.305f)
+        float wheelRadius = 0.305f,
+        float staticNormalLoad = 0f)
     {
         const float WheelWidth  = 0.175f;
         const float WheelMass   = 18f;
@@ -595,7 +598,7 @@ public static class VehiclePhysicsBuilder
         {
             DriveMotor = driveMotor,
             SteerMotor = steerMotor,
-            StaticNormalLoad = 3000f,
+            StaticNormalLoad = staticNormalLoad,
             TireModel = new SoftBodyTireModel(wheelRadius),
         });
         return entity;

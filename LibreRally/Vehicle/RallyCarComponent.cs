@@ -406,29 +406,61 @@ public class RallyCarComponent : SyncScript
             Matrix wheelWorld = wheel.Transform.WorldMatrix;
 
             Vector3 wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
-            Vector3 wheelUp = SafeNormalize(wheelWorld.Up, fallbackUp);
+            Vector3 nonSpinningUp = ProjectOnPlane(fallbackUp, wheelRight);
+            Vector3 wheelUp = SafeNormalize(nonSpinningUp, fallbackUp);
             Vector3 wheelLongitudinal = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
 
             Vector3 wheelVelocity = wheelBody.LinearVelocity;
             float longitudinalSpeed = Vector3.Dot(wheelVelocity, wheelLongitudinal);
             float lateralSpeed = Vector3.Dot(wheelVelocity, wheelRight);
+            Vector3 wheelPosition = wheelWorld.TranslationVector;
+            float normalLoad = ProbeWheelNormalLoad(chassisBody, wheelBody, wheelSettings, wheelPosition, wheelUp);
 
             float lateralForce = wheelSettings.TireModel.EvaluateLateralForce(
                 lateralSpeed,
                 longitudinalSpeed,
-                wheelSettings.StaticNormalLoad,
+                normalLoad,
                 dt,
                 LateralGrip);
 
             if (MathF.Abs(lateralForce) < 0.01f)
                 continue;
 
-            Vector3 wheelPosition = wheelWorld.TranslationVector;
             Vector3 impulse = wheelRight * (lateralForce * dt);
 
             chassisBody.ApplyImpulse(impulse, wheelPosition - chassisPosition);
             chassisBody.Awake = true;
         }
+    }
+
+    private static float ProbeWheelNormalLoad(
+        BodyComponent chassisBody,
+        BodyComponent wheelBody,
+        WheelSettings wheelSettings,
+        Vector3 wheelPosition,
+        Vector3 wheelUp)
+    {
+        var simulation = wheelBody.Simulation;
+        if (simulation == null || wheelSettings.StaticNormalLoad <= 0f || wheelSettings.TireModel == null)
+            return 0f;
+
+        float wheelRadius = Math.Max(wheelSettings.TireModel.WheelRadius, 0.1f);
+        Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + 0.05f);
+        Vector3 rayDirection = -wheelUp;
+        float rayLength = wheelRadius * 2f + 0.1f;
+
+        wheelSettings.GroundProbeHits.Clear();
+        simulation.RayCastPenetrating(ref rayOrigin, ref rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
+
+        foreach (var hit in wheelSettings.GroundProbeHits)
+        {
+            if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
+                continue;
+
+            return wheelSettings.StaticNormalLoad;
+        }
+
+        return 0f;
     }
 
     private static Vector3 ProjectOnPlane(Vector3 vector, Vector3 planeNormal)

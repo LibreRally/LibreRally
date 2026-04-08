@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
 using Stride.Core;
 using Stride.Engine;
@@ -30,5 +32,9 @@ public class WheelSettings : EntityComponent
 
     /// <summary>Approximate static wheel load used by the tyre model.</summary>
     [DataMemberIgnore]
-    public float StaticNormalLoad { get; set; } = 3000f;
+    public float StaticNormalLoad { get; set; }
+
+    /// <summary>Reusable hit buffer for the tyre ground-contact probe.</summary>
+    [DataMemberIgnore]
+    public List<HitInfo> GroundProbeHits { get; } = new();
 }
