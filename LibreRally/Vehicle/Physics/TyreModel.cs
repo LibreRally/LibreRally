@@ -82,6 +82,7 @@ public sealed class TyreModel
     /// Reference pressure for defaults: 220 kPa (~32 psi), typical rally tarmac tyre.
     /// <para>verticalStiffness = baseStiffness × (TyrePressure / referencePressure)</para>
     /// <para>contactPatchLength ≈ normalLoad / (pressure × width)</para>
+    /// <para>brushStiffness ∝ pressure × width</para>
     /// </summary>
     public float TyrePressure { get; set; } = 220f;
 
@@ -265,7 +266,7 @@ public sealed class TyreModel
     /// </summary>
     private const float InertiaScalar = 1.2f;
     private const float DefaultTyreWidth = 0.205f;
-    private const float DefaultContactPatchStiffness = 65000f;
+    private const float ReferenceContactPatchStiffness = 65000f;
     private const float KilopascalsToPascals = 1000f;
     private const float RollingRadiusDeflectionDivisor = 3f;
     private const float SurfaceDeformationBrushSoftening = 0.15f;
@@ -551,10 +552,10 @@ public sealed class TyreModel
     {
         float pressurePascals = MathF.Max(TyrePressure, 50f) * KilopascalsToPascals;
         float effectiveWidth = MathF.Max(Width, 0.05f);
-        float calibration = MathF.Max(ContactPatchStiffness, 1000f) / DefaultContactPatchStiffness;
-        float pressureMembraneNormalization = DefaultContactPatchStiffness / ReferencePressureBrushStiffness;
+        float calibration = MathF.Max(ContactPatchStiffness, 1000f) / ReferenceContactPatchStiffness;
+        float stiffnessCalibrationFactor = ReferenceContactPatchStiffness / ReferencePressureBrushStiffness;
         return MathF.Max((pressurePascals * effectiveWidth * calibration)
-            * pressureMembraneNormalization, 1000f);
+            * stiffnessCalibrationFactor, 1000f);
     }
 
     internal float ComputeStandingWaveResistanceFactor(float speed)
