@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-macos</TargetFramework>
     <RuntimeIdentifier>osx-x64</RuntimeIdentifier>
-    <ApplicationIcon>..\LibreRally\Resources\Icon.ico</ApplicationIcon>
+    <ApplicationIcon>Icon.ico</ApplicationIcon>
     <OutputType>Exe</OutputType>
     <RootNamespace>LibreRally</RootNamespace>
 
@@ -23,6 +23,10 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<Link>Resources\%(RecursiveDir)%(Filename)%(Extension)</Link>
 		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Content Include="Icon.ico" />
 	</ItemGroup>
 
 </Project>
