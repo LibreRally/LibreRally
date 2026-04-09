@@ -210,8 +210,15 @@ public sealed class TyreModel
 
     // ── Self-aligning torque ─────────────────────────────────────────────────
 
-    /// <summary>Pneumatic trail at zero slip (m). Mz = trail × Fy. Decreases with slip angle.</summary>
-    public float PneumaticTrail { get; set; } = 0.025f;
+    /// <summary>
+    /// Pneumatic trail scale factor (dimensionless, default 1.0).
+    /// Mz = trail_scale × computed_trail(α) × Fy, where computed_trail is derived
+    /// from contact-patch geometry using the brush model (The Contact Patch, C2015):
+    /// trail = a/3 in pure adhesion; trail decreases as the slip zone grows within
+    /// the contact patch, reaching zero at full sliding.
+    /// Values above 1.0 amplify steering feel; values below 1.0 reduce it.
+    /// </summary>
+    public float PneumaticTrail { get; set; } = 1.0f;
 
     // ── Thermal / wear ───────────────────────────────────────────────────────
 
@@ -472,12 +479,20 @@ public sealed class TyreModel
         ClampToFrictionEllipse(ref longitudinalForce, ref lateralForce, peakForce);
 
         // ── Self-aligning torque ─────────────────────────────────────────────
-        // Mz = t_p · Fy, where t_p decreases with slip angle magnitude.
-        // At high slip angles the pneumatic trail collapses to near zero.
-        // Reference: Pacejka §4.3.3.
-        float absAlpha = MathF.Abs(slipAngle);
-        float trailFactor = MathF.Max(0f, 1f - absAlpha / (MathF.PI * 0.25f));
-        selfAligningTorque = PneumaticTrail * trailFactor * lateralForce;
+        // Physics-based pneumatic trail using the brush model contact-patch geometry.
+        //
+        // Reference: The Contact Patch, "A Simple Model for Tyre Deformation" (C2015).
+        //   • Pure adhesion (low slip): trail = a/3   (eq. 13)
+        //   • Mixed adhesion/slip:      trail = a·λ(1−2λ/3)/(2(1−λ/2))  (eq. 20)
+        //     where λ = µP/(4a²c·tan α) is the fraction of the patch still adhering.
+        //
+        // Normalised so the factor equals 1.0 at zero slip and 0.0 at full sliding.
+        // PneumaticTrail acts as a dimensionless scale on the computed geometry-based trail.
+        float trailFactor = ComputePneumaticTrailFactor(slipAngle, normalLoad, mu, effectiveBrushStiffness);
+        // Compute peak trail for this load from contact-patch geometry (a/3).
+        float halfPatchLength = ComputeEffectivePatchLength(normalLoad) * 0.5f;
+        float peakTrail = halfPatchLength / 3f;
+        selfAligningTorque = PneumaticTrail * peakTrail * trailFactor * lateralForce;
 
         // ── Wheel angular velocity integration ───────────────────────────────
         // Iω̇ = T_drive − T_brake − Fx·R
@@ -574,6 +589,60 @@ public sealed class TyreModel
         float referencePressurePascals = ReferencePressure * KilopascalsToPascals;
         float theoreticalLength = referenceLoad / MathF.Max(referencePressurePascals * ReferenceTyreWidth, 1f);
         return MathF.Max(theoreticalLength * MathF.Max(ContactPatchLengthScale, 0.1f) * ReferenceTyreWidth, 1e-6f);
+    }
+
+    /// <summary>
+    /// Computes a dimensionless factor in [0, 1] for the pneumatic trail using
+    /// the brush-tyre contact-patch model.
+    ///
+    /// <para>The factor is 1.0 when the entire contact patch adheres (low slip angle)
+    /// and falls to 0.0 when the patch is fully sliding (high slip angle).</para>
+    ///
+    /// <para>Derivation follows The Contact Patch, "A Simple Model for Tyre Deformation"
+    /// (C2015):
+    /// <list type="bullet">
+    ///   <item>Adhesion threshold (eq. 11): tan(α_thresh) = µP / (4a²c)</item>
+    ///   <item>Pure adhesion (eq. 13): pneumatic trail = a/3  → factor = 1</item>
+    ///   <item>Mixed adhesion/slip (eq. 20): trail = a·λ(1−2λ/3)/(2(1−λ/2))<br/>
+    ///         where λ = µP/(4a²c·tan α) = tan(α_thresh)/tan(α)</item>
+    ///   <item>Normalised factor = (3λ − 2λ²) / (2 − λ)</item>
+    /// </list></para>
+    /// </summary>
+    /// <param name="slipAngle">Slip angle (rad).</param>
+    /// <param name="normalLoad">Vertical tyre load (N).</param>
+    /// <param name="mu">Effective friction coefficient.</param>
+    /// <param name="brushStiffness">Total effective brush stiffness (N/m).</param>
+    internal float ComputePneumaticTrailFactor(float slipAngle, float normalLoad, float mu, float brushStiffness)
+    {
+        // a = half contact-patch length (m)
+        float a = MathF.Max(ComputeEffectivePatchLength(normalLoad) * 0.5f, 0.001f);
+
+        // c = brush stiffness per unit tread length (N/m²).
+        // The effective brush stiffness is the total spring over the whole patch length 2a,
+        // so c = brushStiffness / (2a).
+        float c = brushStiffness / (2f * a);
+
+        float tanAlpha = MathF.Abs(MathF.Tan(Math.Clamp(MathF.Abs(slipAngle), 0f, MaxSlipAngle)));
+        if (tanAlpha < 1e-9f)
+            return 1f;  // zero slip → full adhesion → maximum trail
+
+        // Slip threshold: tan(α) at which the trailing edge of the contact patch
+        // first begins to slide (article eq. 11).
+        float slipThresholdTanAlpha = mu * normalLoad / MathF.Max(4f * a * a * c, 1e-9f);
+
+        if (tanAlpha <= slipThresholdTanAlpha)
+            return 1f;  // entire patch adheres → trail = a/3 → factor = 1
+
+        // Mixed adhesion and slip.
+        // λ = fraction of the contact patch still in adhesion (0 = full slide, 1 = full adhesion).
+        float lambda = Math.Clamp(slipThresholdTanAlpha / tanAlpha, 0f, 1f);
+
+        // Normalised trail (article eq. 20 divided by a/3):
+        //   factor = 3λ(1 − 2λ/3) / (2(1 − λ/2))
+        //          = (3λ − 2λ²) / (2 − λ)
+        float numerator = lambda * (3f - 2f * lambda);
+        float denominator = MathF.Max(2f - lambda, 1e-6f);
+        return MathF.Max(numerator / denominator, 0f);
     }
 
     private void ClampToFrictionEllipse(ref float longitudinalForce, ref float lateralForce, float peakForce)

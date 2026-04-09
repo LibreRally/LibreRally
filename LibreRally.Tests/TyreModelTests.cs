@@ -316,4 +316,118 @@ public class TyreModelTests
 
         Assert.InRange(ellipseValue, 0.995f, 1.005f);
     }
+
+    // ── Pneumatic trail (brush model, The Contact Patch C2015) ──────────────
+
+    [Fact]
+    public void PneumaticTrailFactor_IsOneAtZeroSlip()
+    {
+        var model = new TyreModel(0.305f) { Width = 0.205f, TyrePressure = 220f };
+        float brushStiffness = model.ComputeEffectiveBrushStiffness();
+        float factor = model.ComputePneumaticTrailFactor(0f, 3000f, 1.0f, brushStiffness);
+        Assert.Equal(1f, factor, 5);
+    }
+
+    [Fact]
+    public void PneumaticTrailFactor_DecreasesMonotonicallyWithSlipAngle()
+    {
+        var model = new TyreModel(0.305f) { Width = 0.205f, TyrePressure = 220f };
+        float brushStiffness = model.ComputeEffectiveBrushStiffness();
+        const float normalLoad = 3000f;
+        const float mu = 1.0f;
+
+        float prev = 1f;
+        foreach (float alpha in new[] { 0.05f, 0.10f, 0.20f, 0.35f, 0.60f, 0.90f, 1.10f })
+        {
+            float factor = model.ComputePneumaticTrailFactor(alpha, normalLoad, mu, brushStiffness);
+            Assert.True(factor <= prev + 1e-5f,
+                $"Trail factor should be non-increasing; got {factor} after {prev} at α={alpha} rad");
+            prev = factor;
+        }
+    }
+
+    [Fact]
+    public void PneumaticTrailFactor_IsZeroAtFullSlide()
+    {
+        var model = new TyreModel(0.305f) { Width = 0.205f, TyrePressure = 220f };
+        float brushStiffness = model.ComputeEffectiveBrushStiffness();
+        // λ = 0 at extreme slip → factor should reach zero
+        float factor = model.ComputePneumaticTrailFactor(1.2f, 3000f, 1.0f, brushStiffness);
+        Assert.True(factor >= 0f);
+        Assert.True(factor < 0.05f, $"Trail factor should be near zero at extreme slip; got {factor}");
+    }
+
+    [Fact]
+    public void SelfAligningTorque_PeaksThenFallsWithSlipAngle()
+    {
+        // Article (C2015 Fig. 9): self-aligning moment rises to a peak then declines.
+        // Verify the computed Mz follows this shape over a sweep of lateral velocities.
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+        };
+
+        const float normalLoad = 3000f;
+        const float longitudinalVelocity = 20f;
+        float maxMz = 0f;
+        float lastMz = 0f;
+        bool sawPeakThenFall = false;
+
+        foreach (float lateralVelocity in new[] { 0.2f, 0.5f, 1.0f, 2.0f, 4.0f, 7.0f, 12.0f, 18.0f })
+        {
+            var state = TyreState.CreateDefault();
+            state.AngularVelocity = longitudinalVelocity / model.Radius;
+            model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+                Tarmac, 0.01f, out _, out _, out float mz);
+
+            float absMz = MathF.Abs(mz);
+            if (absMz > maxMz)
+                maxMz = absMz;
+            else if (maxMz > 0f && absMz < maxMz * 0.8f)
+                sawPeakThenFall = true;
+
+            lastMz = absMz;
+        }
+
+        Assert.True(sawPeakThenFall,
+            "Self-aligning torque should peak and then fall at high slip angles (article C2015 Fig. 9)");
+    }
+
+    [Fact]
+    public void SelfAligningTorque_ScalesWithPneumaticTrailProperty()
+    {
+        var baseModel = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f, LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f, PneumaticTrail = 1.0f,
+            OptimalTemperature = 30f, TemperatureWindow = 100f,
+            WornGripFraction = 1.0f, RollingResistanceCoefficient = 0f,
+        };
+        var doubleModel = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f, LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f, PneumaticTrail = 2.0f,
+            OptimalTemperature = 30f, TemperatureWindow = 100f,
+            WornGripFraction = 1.0f, RollingResistanceCoefficient = 0f,
+        };
+
+        var state1 = TyreState.CreateDefault();
+        var state2 = TyreState.CreateDefault();
+        float lv = 20f, latV = 1.5f;
+        state1.AngularVelocity = lv / baseModel.Radius;
+        state2.AngularVelocity = lv / doubleModel.Radius;
+
+        baseModel.Update(ref state1, lv, latV, 3000f, 0f, 0f, 0f, Tarmac, 0.01f, out _, out _, out float mz1);
+        doubleModel.Update(ref state2, lv, latV, 3000f, 0f, 0f, 0f, Tarmac, 0.01f, out _, out _, out float mz2);
+
+        Assert.True(MathF.Abs(mz2) > MathF.Abs(mz1),
+            "PneumaticTrail=2.0 should produce larger self-aligning torque than 1.0");
+        Assert.Equal(MathF.Abs(mz1), MathF.Abs(mz2) / 2f, 3);
+    }
 }
