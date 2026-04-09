@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RuntimeIdentifier>osx-x64</RuntimeIdentifier>
     <ApplicationIcon>..\LibreRally\Resources\Icon.ico</ApplicationIcon>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <RootNamespace>LibreRally</RootNamespace>
 
     <OutputPath>..\Bin\macOS\$(Configuration)\</OutputPath>
