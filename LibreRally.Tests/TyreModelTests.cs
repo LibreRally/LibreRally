@@ -441,7 +441,6 @@ public class TyreModelTests
         // First step at cruise — no braking
         model.Update(ref state, 20f, 0f, 3000f, 0f, 0f, 0f,
             Tarmac, 0.01f, out _, out _, out _);
-        float deflectionCruise = state.LongitudinalDeflection;
 
         // Apply heavy braking — wheel slows, deflection should build
         model.Update(ref state, 20f, 0f, 3000f, 0f, -3000f, 0f,
