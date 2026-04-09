@@ -542,7 +542,7 @@ public sealed class TyreModel
         if (areaGripExponent > 0f)
         {
             float effectivePatchArea = ComputeEffectivePatchArea(normalLoad);
-            float referencePatchArea = ComputeEffectivePatchArea(referenceLoad);
+            float referencePatchArea = ComputeReferencePatchArea();
             float patchAreaRatio = effectivePatchArea / MathF.Max(referencePatchArea, 1e-6f);
             mu *= MathF.Pow(MathF.Max(patchAreaRatio, 1e-3f), areaGripExponent);
         }
@@ -574,6 +574,13 @@ public sealed class TyreModel
     {
         float effectiveWidth = MathF.Max(Width, 0.05f);
         return ComputeEffectivePatchLength(normalLoad) * effectiveWidth;
+    }
+
+    internal float ComputeReferencePatchArea()
+    {
+        float referencePressurePascals = ReferencePressure * KilopascalsToPascals;
+        float theoreticalLength = ReferenceLoad / MathF.Max(referencePressurePascals * ReferenceTyreWidth, 1f);
+        return MathF.Max(theoreticalLength * MathF.Max(ContactPatchLengthScale, 0.1f) * ReferenceTyreWidth, 1e-6f);
     }
 
     internal float ComputeVerticalStiffness()
