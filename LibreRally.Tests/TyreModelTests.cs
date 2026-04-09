@@ -438,17 +438,23 @@ public class TyreModelTests
         var state = TyreState.CreateDefault();
         state.AngularVelocity = 20f / model.Radius;
 
-        // First step at cruise — no braking
+        // Baseline step at cruise — no braking
         model.Update(ref state, 20f, 0f, 3000f, 0f, 0f, 0f,
             Tarmac, 0.01f, out _, out _, out _);
+        float baselineDeflection = state.LongitudinalDeflection;
 
-        // Apply heavy braking — wheel slows, deflection should build
-        model.Update(ref state, 20f, 0f, 3000f, 0f, -3000f, 0f,
-            Tarmac, 0.01f, out _, out _, out _);
+        // Apply heavy braking for several steps — deflection should build
+        for (int i = 0; i < 5; i++)
+        {
+            model.Update(ref state, 20f, 0f, 3000f, 0f, 3000f, 0f,
+                Tarmac, 0.01f, out _, out _, out _);
+        }
+
         float deflectionBraking = state.LongitudinalDeflection;
 
-        // Deflection should have changed from the brake application
-        Assert.True(MathF.Abs(deflectionBraking) >= 0f);
+        Assert.True(
+            MathF.Abs(deflectionBraking) > 1e-5f &&
+            MathF.Abs(deflectionBraking) > MathF.Abs(baselineDeflection));
     }
 
     [Fact]
