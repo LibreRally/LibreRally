@@ -68,7 +68,7 @@ public sealed class TyreModel
     public float Radius { get; }
 
     /// <summary>Tyre width (m), used for contact patch size estimation.</summary>
-    public float Width { get; set; } = 0.205f;
+    public float Width { get; set; } = ReferenceTyreWidth;
 
     // ── Tyre construction parameters ─────────────────────────────────────────
     // These properties support BeamNG-style tyre definitions and can be loaded
@@ -110,7 +110,18 @@ public sealed class TyreModel
     /// Values above 1.0 lengthen the effective patch for extra compliance; values below 1.0 shorten it.
     /// Reference: The Contact Patch, "The contact patch"; Pacejka §3.2.
     /// </summary>
-    public float ContactPatchLength { get; set; } = 1.0f;
+    public float ContactPatchLengthScale { get; set; } = 1.0f;
+
+    /// <summary>
+    /// Obsolete alias for <see cref="ContactPatchLengthScale"/> retained for backward compatibility.
+    /// This value is a dimensionless scale factor, not an absolute length in metres.
+    /// </summary>
+    [Obsolete("ContactPatchLength is a dimensionless scale factor. Use ContactPatchLengthScale instead.")]
+    public float ContactPatchLength
+    {
+        get => ContactPatchLengthScale;
+        set => ContactPatchLengthScale = value;
+    }
 
     /// <summary>
     /// Baseline vertical stiffness of the tyre carcass (N/m) at <see cref="ReferencePressure"/>.
@@ -171,7 +182,7 @@ public sealed class TyreModel
     /// Brush stiffness calibration (N/m at 220 kPa and 205 mm width).
     /// The effective brush stiffness scales from the pressure-membrane estimate <c>pressure × width</c>.
     /// </summary>
-    public float ContactPatchStiffness { get; set; } = 65000f;
+    public float ContactPatchStiffness { get; set; } = ReferenceContactPatchStiffness;
 
     /// <summary>Lateral contact-patch damping (N·s/m).</summary>
     public float ContactPatchDamping { get; set; } = 4500f;
@@ -265,12 +276,12 @@ public sealed class TyreModel
     /// Reference: Milliken, RCVD §2.3, approximate wheel inertia.
     /// </summary>
     private const float InertiaScalar = 1.2f;
-    private const float DefaultTyreWidth = 0.205f;
+    private const float ReferenceTyreWidth = 0.205f;
     private const float ReferenceContactPatchStiffness = 65000f;
     private const float KilopascalsToPascals = 1000f;
     private const float RollingRadiusDeflectionDivisor = 3f;
     private const float SurfaceDeformationBrushSoftening = 0.15f;
-    private const float ReferencePressureBrushStiffness = ReferencePressure * KilopascalsToPascals * DefaultTyreWidth;
+    private const float ReferencePressureBrushStiffness = ReferencePressure * KilopascalsToPascals * ReferenceTyreWidth;
 
     /// <summary>
     /// Reference tyre pressure (kPa) used to normalise pressure-dependent effects.
@@ -461,13 +472,15 @@ public sealed class TyreModel
 
         // ── Wheel angular velocity integration ───────────────────────────────
         // Iω̇ = T_drive − T_brake − Fx·R
+        // Use the same net longitudinal force that is applied to the chassis so
+        // rolling resistance produces a matching resistive wheel torque.
         // Use explicit WheelInertia if set (> 0), otherwise estimate from load and geometry.
         // Reference: basic rotational dynamics, F = ma analogy for rotation.
         float wheelInertia = WheelInertia > 0f
             ? WheelInertia
             : MathF.Max(0.5f, (normalLoad / 9.81f * 0.05f) * Radius * Radius * InertiaScalar);
         float brakeDir = state.AngularVelocity > 0f ? -1f : (state.AngularVelocity < 0f ? 1f : 0f);
-        float netTorque = driveTorque + brakeTorque * brakeDir - rawFx * effectiveRollingRadius;
+        float netTorque = driveTorque + brakeTorque * brakeDir - longitudinalForce * effectiveRollingRadius;
         state.AngularVelocity += (netTorque / wheelInertia) * dt;
 
         // ── Thermal model ────────────────────────────────────────────────────
@@ -525,7 +538,7 @@ public sealed class TyreModel
     {
         float pressurePascals = MathF.Max(TyrePressure, 50f) * KilopascalsToPascals;
         float effectiveWidth = MathF.Max(Width, 0.05f);
-        float patchLengthScale = MathF.Max(ContactPatchLength, 0.1f);
+        float patchLengthScale = MathF.Max(ContactPatchLengthScale, 0.1f);
         float theoreticalLength = normalLoad / MathF.Max(pressurePascals * effectiveWidth, 1f);
         return MathF.Max(theoreticalLength * patchLengthScale, 0.01f);
     }
@@ -533,8 +546,7 @@ public sealed class TyreModel
     internal float ComputeVerticalStiffness()
     {
         float pressureRatio = MathF.Max(TyrePressure, 50f) / ReferencePressure;
-        float carcassFactor = MathF.Max(CarcassStiffness, 0.1f);
-        return MathF.Max(VerticalStiffness * pressureRatio * carcassFactor, 10000f);
+        return MathF.Max(VerticalStiffness * pressureRatio, 10000f);
     }
 
     internal float ComputeEffectiveRollingRadius(float normalLoad)

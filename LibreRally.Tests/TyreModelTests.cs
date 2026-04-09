@@ -10,7 +10,7 @@ public class TyreModelTests
         var model = new TyreModel(0.305f)
         {
             Width = 0.205f,
-            ContactPatchLength = 1.0f,
+            ContactPatchLengthScale = 1.0f,
             TyrePressure = 220f,
         };
 
@@ -31,7 +31,6 @@ public class TyreModelTests
         {
             TyrePressure = 220f,
             VerticalStiffness = 200000f,
-            CarcassStiffness = 1.0f,
         };
 
         float unloadedRadius = model.ComputeEffectiveRollingRadius(0f);
@@ -78,5 +77,17 @@ public class TyreModelTests
 
         Assert.True(lowSpeed >= 1f);
         Assert.True(highSpeed > lowSpeed);
+    }
+
+    [Fact]
+    public void ContactPatchLengthAlias_MapsToScaleProperty()
+    {
+        var model = new TyreModel(0.305f);
+
+#pragma warning disable CS0618
+        model.ContactPatchLength = 1.2f;
+#pragma warning restore CS0618
+
+        Assert.Equal(1.2f, model.ContactPatchLengthScale);
     }
 }
