@@ -442,23 +442,11 @@ public sealed class TyreModel
         float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
         float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
 
-        // Clamp to a friction ellipse:
-        // (Fx/Fx_max)^2 + (Fy/Fy_max)^2 ≤ 1
-        float fxMax = MathF.Max(peakForce, 1f);
-        float fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), 1f);
-        float ellipseValue = (rawFx * rawFx) / (fxMax * fxMax) + (blendedFy * blendedFy) / (fyMax * fyMax);
-        if (ellipseValue > 1f)
-        {
-            float scale = 1f / MathF.Sqrt(ellipseValue);
-            rawFx *= scale;
-            blendedFy *= scale;
-        }
-
         // ── Camber thrust ────────────────────────────────────────────────────
         // Small lateral force from wheel inclination. Fy_camber = γ · Cγ · Fz.
         // Reference: Pacejka §4.3.
         float camberForce = camberAngle * CamberThrustCoefficient * normalLoad;
-        blendedFy += camberForce;
+        float totalFy = blendedFy + camberForce;
 
         // ── Rolling resistance ───────────────────────────────────────────────
         // Frr = Crr · Fz, opposing wheel direction of travel.
@@ -477,7 +465,11 @@ public sealed class TyreModel
         }
 
         longitudinalForce = rawFx + rrForce;
-        lateralForce = blendedFy;
+        lateralForce = totalFy;
+
+        // Clamp the final applied force vector to a friction ellipse:
+        // (Fx/Fx_max)^2 + (Fy/Fy_max)^2 ≤ 1
+        ClampToFrictionEllipse(ref longitudinalForce, ref lateralForce, peakForce);
 
         // ── Self-aligning torque ─────────────────────────────────────────────
         // Mz = t_p · Fy, where t_p decreases with slip angle magnitude.
@@ -578,9 +570,25 @@ public sealed class TyreModel
 
     internal float ComputeReferencePatchArea()
     {
+        float referenceLoad = MathF.Max(ReferenceLoad, 1f);
         float referencePressurePascals = ReferencePressure * KilopascalsToPascals;
-        float theoreticalLength = ReferenceLoad / MathF.Max(referencePressurePascals * ReferenceTyreWidth, 1f);
+        float theoreticalLength = referenceLoad / MathF.Max(referencePressurePascals * ReferenceTyreWidth, 1f);
         return MathF.Max(theoreticalLength * MathF.Max(ContactPatchLengthScale, 0.1f) * ReferenceTyreWidth, 1e-6f);
+    }
+
+    private void ClampToFrictionEllipse(ref float longitudinalForce, ref float lateralForce, float peakForce)
+    {
+        const float forceEpsilon = 1e-6f;
+        float fxMax = MathF.Max(peakForce, forceEpsilon);
+        float fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
+        float ellipseValue = (longitudinalForce * longitudinalForce) / (fxMax * fxMax)
+            + (lateralForce * lateralForce) / (fyMax * fyMax);
+        if (ellipseValue > 1f)
+        {
+            float scale = 1f / MathF.Sqrt(ellipseValue);
+            longitudinalForce *= scale;
+            lateralForce *= scale;
+        }
     }
 
     internal float ComputeVerticalStiffness()
