@@ -118,6 +118,28 @@ public class TyreModelTests
     }
 
     [Fact]
+    public void EffectiveFriction_IncreasesWithLargerPatchArea()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0.05f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+        };
+
+        model.TyrePressure = 180f;
+        float lowPressureMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+
+        model.TyrePressure = 280f;
+        float highPressureMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+
+        Assert.True(lowPressureMu > highPressureMu);
+    }
+
+    [Fact]
     public void FrictionEllipse_CapsCombinedSlipAtEllipseBoundary()
     {
         var baselineModel = new TyreModel(0.305f)
