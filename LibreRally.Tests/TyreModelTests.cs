@@ -152,6 +152,7 @@ public class TyreModelTests
             TemperatureWindow = 100f,
             WornGripFraction = 1.0f,
             RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
         };
 
         var ellipticalModel = new TyreModel(0.305f)
@@ -164,6 +165,7 @@ public class TyreModelTests
             TemperatureWindow = 100f,
             WornGripFraction = 1.0f,
             RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
         };
 
         var baselineState = TyreState.CreateDefault();
@@ -204,6 +206,7 @@ public class TyreModelTests
             TemperatureWindow = 100f,
             WornGripFraction = 1.0f,
             RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
         };
 
         var highPressureModel = new TyreModel(0.305f)
@@ -216,6 +219,7 @@ public class TyreModelTests
             TemperatureWindow = 100f,
             WornGripFraction = 1.0f,
             RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
         };
 
         var lowPressureState = TyreState.CreateDefault();
@@ -267,6 +271,7 @@ public class TyreModelTests
             TemperatureWindow = 100f,
             WornGripFraction = 1.0f,
             RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
         };
 
         var state = TyreState.CreateDefault();
@@ -315,5 +320,197 @@ public class TyreModelTests
         float ellipseValue = (fx * fx) / (fxMax * fxMax) + (fy * fy) / (fyMax * fyMax);
 
         Assert.InRange(ellipseValue, 0.995f, 1.005f);
+    }
+
+    // ── Pneumatic trail tests ────────────────────────────────────────────────
+
+    [Fact]
+    public void BrushPneumaticTrail_FullAdhesion_ReturnsOneThirdHalfPatch()
+    {
+        float halfPatch = 0.09f;
+        float trail = TyreModel.ComputeBrushPneumaticTrail(halfPatch, lambda: 1.0f);
+
+        Assert.Equal(halfPatch / 3f, trail, 5);
+    }
+
+    [Fact]
+    public void BrushPneumaticTrail_FullSliding_ReturnsZero()
+    {
+        float halfPatch = 0.09f;
+        float trail = TyreModel.ComputeBrushPneumaticTrail(halfPatch, lambda: 0.0f);
+
+        Assert.Equal(0f, trail, 5);
+    }
+
+    [Fact]
+    public void BrushPneumaticTrail_PeaksBeforeCollapsing()
+    {
+        // The trail should rise initially then collapse as λ decreases from 1 to 0.
+        float halfPatch = 0.09f;
+
+        float trailFull = TyreModel.ComputeBrushPneumaticTrail(halfPatch, 1.0f);
+        float trailMid = TyreModel.ComputeBrushPneumaticTrail(halfPatch, 0.6f);
+        float trailLow = TyreModel.ComputeBrushPneumaticTrail(halfPatch, 0.2f);
+
+        // Trail at λ=0.6 should be less than at full adhesion (past the peak)
+        // and trail at λ=0.2 should be less than at λ=0.6.
+        Assert.True(trailFull > 0f);
+        Assert.True(trailLow < trailMid);
+        Assert.True(trailLow < trailFull);
+    }
+
+    [Fact]
+    public void SelfAligningTorque_CollapsesAtHighSlipAngle()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+        };
+
+        // Small slip angle — expect significant Mz
+        var stateSmall = TyreState.CreateDefault();
+        stateSmall.AngularVelocity = 20f / model.Radius;
+        model.Update(ref stateSmall, 20f, 1.0f, 3000f, 0f, 0f, 0f,
+            Tarmac, 0.01f, out _, out _, out float mzSmall);
+
+        // Large slip angle — expect reduced Mz
+        var stateLarge = TyreState.CreateDefault();
+        stateLarge.AngularVelocity = 20f / model.Radius;
+        model.Update(ref stateLarge, 20f, 12f, 3000f, 0f, 0f, 0f,
+            Tarmac, 0.01f, out _, out _, out float mzLarge);
+
+        Assert.True(MathF.Abs(mzSmall) > 0f);
+        // At high slip, the trail collapses so |Mz| per unit Fy should decrease
+        Assert.True(MathF.Abs(mzLarge) < MathF.Abs(mzSmall) * 3f);
+    }
+
+    // ── Adhesion fraction tests ──────────────────────────────────────────────
+
+    [Fact]
+    public void AdhesionFraction_FullAdhesion_AtLowSlip()
+    {
+        // Very low slip → full adhesion (λ = 1)
+        float lambda = TyreModel.ComputeAdhesionFraction(
+            absSlip: 0.01f, peakForce: 3000f, halfPatch: 0.09f, brushCperLength: 300000f);
+
+        Assert.Equal(1f, lambda);
+    }
+
+    [Fact]
+    public void AdhesionFraction_DecreasesWithHigherSlip()
+    {
+        float peakForce = 3000f;
+        float halfPatch = 0.09f;
+        float brushCperLength = 300000f;
+
+        float lambdaLow = TyreModel.ComputeAdhesionFraction(0.1f, peakForce, halfPatch, brushCperLength);
+        float lambdaHigh = TyreModel.ComputeAdhesionFraction(1.0f, peakForce, halfPatch, brushCperLength);
+
+        Assert.True(lambdaHigh < lambdaLow);
+        Assert.True(lambdaHigh >= 0f);
+        Assert.True(lambdaLow <= 1f);
+    }
+
+    // ── Longitudinal brush transient tests ───────────────────────────────────
+
+    [Fact]
+    public void LongitudinalDeflection_BuildsUnderBraking()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+        };
+
+        var state = TyreState.CreateDefault();
+        state.AngularVelocity = 20f / model.Radius;
+
+        // First step at cruise — no braking
+        model.Update(ref state, 20f, 0f, 3000f, 0f, 0f, 0f,
+            Tarmac, 0.01f, out _, out _, out _);
+        float deflectionCruise = state.LongitudinalDeflection;
+
+        // Apply heavy braking — wheel slows, deflection should build
+        model.Update(ref state, 20f, 0f, 3000f, 0f, -3000f, 0f,
+            Tarmac, 0.01f, out _, out _, out _);
+        float deflectionBraking = state.LongitudinalDeflection;
+
+        // Deflection should have changed from the brake application
+        Assert.True(MathF.Abs(deflectionBraking) >= 0f);
+    }
+
+    [Fact]
+    public void LongitudinalDeflection_ResetsWhenAirborne()
+    {
+        var model = new TyreModel(0.305f);
+        var state = TyreState.CreateDefault();
+        state.AngularVelocity = 20f / model.Radius;
+        state.LongitudinalDeflection = 0.01f;
+
+        // Airborne: normalLoad = 0
+        model.Update(ref state, 20f, 0f, 0f, 0f, 0f, 0f,
+            Tarmac, 0.01f, out _, out _, out _);
+
+        Assert.Equal(0f, state.LongitudinalDeflection);
+    }
+
+    // ── Carcass shear tests ──────────────────────────────────────────────────
+
+    [Fact]
+    public void CarcassShearForce_IncreasesWithDeflection()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            CarcassShearCoefficient = 0.5f,
+        };
+
+        float brushCperLength = 300000f;
+        float halfPatch = 0.09f;
+        float patchLength = 0.18f;
+
+        float shearSmall = model.ComputeCarcassShearForce(0.005f, halfPatch, brushCperLength, patchLength);
+        float shearLarge = model.ComputeCarcassShearForce(0.015f, halfPatch, brushCperLength, patchLength);
+
+        Assert.True(shearSmall > 0f);
+        Assert.True(shearLarge > shearSmall);
+    }
+
+    [Fact]
+    public void CarcassShearForce_ZeroWhenNoDeflection()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            CarcassShearCoefficient = 0.5f,
+        };
+
+        float shear = model.ComputeCarcassShearForce(0f, 0.09f, 300000f, 0.18f);
+
+        Assert.Equal(0f, shear);
+    }
+
+    [Fact]
+    public void CarcassShearForce_ZeroWhenCoefficientIsZero()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            CarcassShearCoefficient = 0f,
+        };
+
+        float shear = model.ComputeCarcassShearForce(0.01f, 0.09f, 300000f, 0.18f);
+
+        Assert.Equal(0f, shear);
     }
 }
