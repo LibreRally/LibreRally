@@ -233,4 +233,87 @@ public class TyreModelTests
 
         Assert.True(MathF.Abs(highPressureFy) > MathF.Abs(lowPressureFy));
     }
+
+    [Fact]
+    public void EffectiveFriction_ClampsReferencePatchAreaLoad()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            ReferenceLoad = 0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0.05f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+        };
+
+        float mu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+
+        Assert.True(float.IsFinite(mu));
+        Assert.InRange(mu, 0.5f, 2.0f);
+    }
+
+    [Fact]
+    public void FrictionEllipse_RespectsVeryLowPeakForce()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            FrictionEllipseRatio = 0.9f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+        };
+
+        var state = TyreState.CreateDefault();
+        float normalLoad = 0.25f;
+        float longitudinalVelocity = 20f;
+        float lateralVelocity = 7.3f;
+        state.AngularVelocity = longitudinalVelocity / model.Radius;
+
+        model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+            Tarmac, 0.01f, out float fx, out float fy, out _);
+
+        float fxMax = normalLoad;
+        float fyMax = normalLoad * 0.9f;
+        float ellipseValue = (fx * fx) / (fxMax * fxMax) + (fy * fy) / (fyMax * fyMax);
+
+        Assert.InRange(ellipseValue, 0f, 1.0001f);
+    }
+
+    [Fact]
+    public void FrictionEllipse_ClampsFinalAppliedForcesAfterCamberAndRollingResistance()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            FrictionEllipseRatio = 0.9f,
+            CamberThrustCoefficient = 0.25f,
+            RollingResistanceCoefficient = 0.08f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+        };
+
+        var state = TyreState.CreateDefault();
+        float normalLoad = 3000f;
+        float longitudinalVelocity = 20f;
+        float lateralVelocity = 7.3f;
+        state.AngularVelocity = longitudinalVelocity / model.Radius;
+
+        model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0.35f,
+            Tarmac, 0.01f, out float fx, out float fy, out _);
+
+        float fxMax = normalLoad;
+        float fyMax = normalLoad * 0.9f;
+        float ellipseValue = (fx * fx) / (fxMax * fxMax) + (fy * fy) / (fyMax * fyMax);
+
+        Assert.InRange(ellipseValue, 0.995f, 1.005f);
+    }
 }
