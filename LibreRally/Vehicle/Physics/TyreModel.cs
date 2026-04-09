@@ -267,6 +267,9 @@ public sealed class TyreModel
     private const float DefaultTyreWidth = 0.205f;
     private const float DefaultContactPatchStiffness = 65000f;
     private const float KilopascalsToPascals = 1000f;
+    private const float RollingRadiusDeflectionDivisor = 3f;
+    private const float SurfaceDeformationBrushSoftening = 0.15f;
+    private const float ReferencePressureBrushStiffness = ReferencePressure * KilopascalsToPascals * DefaultTyreWidth;
 
     /// <summary>
     /// Reference tyre pressure (kPa) used to normalise pressure-dependent effects.
@@ -407,7 +410,7 @@ public sealed class TyreModel
         // Treat the inflated carcass as a pressure membrane: lateral brush stiffness scales with
         // inflation pressure × tread width, with ContactPatchStiffness acting as a calibration factor.
         float effectiveBrushStiffness = ComputeEffectiveBrushStiffness()
-            * (1f - surface.DeformationFactor * 0.15f);
+            * (1f - surface.DeformationFactor * SurfaceDeformationBrushSoftening);
         float brushForce = -effectiveBrushStiffness * state.LateralDeflection;
         float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
         float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
@@ -540,7 +543,7 @@ public sealed class TyreModel
         float maxDeflection = Radius * 0.35f;
         deflection = Math.Clamp(deflection, 0f, maxDeflection);
 
-        float rollingRadius = Radius * (1f - deflection / MathF.Max(3f * Radius, 1e-4f));
+        float rollingRadius = Radius * (1f - deflection / MathF.Max(RollingRadiusDeflectionDivisor * Radius, 1e-4f));
         return Math.Clamp(rollingRadius, Radius * 0.6f, Radius);
     }
 
@@ -548,10 +551,10 @@ public sealed class TyreModel
     {
         float pressurePascals = MathF.Max(TyrePressure, 50f) * KilopascalsToPascals;
         float effectiveWidth = MathF.Max(Width, 0.05f);
-        float referenceStiffness = ReferencePressure * KilopascalsToPascals * DefaultTyreWidth;
         float calibration = MathF.Max(ContactPatchStiffness, 1000f) / DefaultContactPatchStiffness;
+        float pressureMembraneNormalization = DefaultContactPatchStiffness / ReferencePressureBrushStiffness;
         return MathF.Max((pressurePascals * effectiveWidth * calibration)
-            / MathF.Max(referenceStiffness / DefaultContactPatchStiffness, 1e-4f), 1000f);
+            * pressureMembraneNormalization, 1000f);
     }
 
     internal float ComputeStandingWaveResistanceFactor(float speed)
