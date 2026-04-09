@@ -24,6 +24,9 @@ public struct TyreState
     /// <summary>Lateral deflection state for the brush contact-patch model (m).</summary>
     public float LateralDeflection;
 
+    /// <summary>Longitudinal deflection state for the brush contact-patch model (m).</summary>
+    public float LongitudinalDeflection;
+
     /// <summary>Creates a fresh tyre state with default ambient temperature and full tread.</summary>
     public static TyreState CreateDefault() => new()
     {
@@ -31,6 +34,7 @@ public struct TyreState
         TreadLife = 1.0f,
         AngularVelocity = 0f,
         LateralDeflection = 0f,
+        LongitudinalDeflection = 0f,
     };
 }
 
@@ -161,20 +165,33 @@ public sealed class TyreModel
     /// <summary>Lateral curvature factor E.</summary>
     public float LateralE { get; set; } = -0.6f;
 
+    /// <summary>
+    /// Ratio of lateral grip limit to longitudinal grip limit.
+    /// 1.0 gives an equal-grip friction circle; values below 1.0 produce a friction ellipse.
+    /// </summary>
+    public float FrictionEllipseRatio { get; set; } = 1.0f;
+
     // ── Friction ─────────────────────────────────────────────────────────────
 
     /// <summary>Peak friction coefficient on reference surface (tarmac).</summary>
     public float PeakFrictionCoefficient { get; set; } = 1.05f;
 
     /// <summary>
-    /// Load sensitivity coefficient: µ decreases with increasing vertical load.
-    /// µ_effective = µ_peak * (1 − LoadSensitivity * (Fz − Fz_ref) / Fz_ref).
-    /// Typical range 0.0–0.15. See Pacejka Ch.4 load sensitivity.
+    /// Load sensitivity exponent for the tyre's non-linear grip response to vertical load.
+    /// <para><c>µ_effective = µ_peak × (Fz / Fz_ref)^(-LoadSensitivity)</c></para>
+    /// Higher values make grip fall away faster as load rises.
+    /// Typical range 0.0–0.20; 0.15 is a representative road-tyre value.
     /// </summary>
-    public float LoadSensitivity { get; set; } = 0.08f;
+    public float LoadSensitivity { get; set; } = 0.15f;
 
     /// <summary>Reference vertical load for µ rating (N).</summary>
     public float ReferenceLoad { get; set; } = 3000f;
+
+    /// <summary>
+    /// Grip gain from effective contact-patch area, applied as a small power-law multiplier.
+    /// <para><c>µ_effective *= (patchArea / referencePatchArea)^ContactAreaGripExponent</c></para>
+    /// </summary>
+    public float ContactAreaGripExponent { get; set; } = 0.05f;
 
     // ── Brush contact-patch model ────────────────────────────────────────────
 
@@ -187,8 +204,16 @@ public sealed class TyreModel
     /// <summary>Lateral contact-patch damping (N·s/m).</summary>
     public float ContactPatchDamping { get; set; } = 4500f;
 
-    /// <summary>Relaxation length (m) for the brush tyre transient model.</summary>
+    /// <summary>Lateral relaxation length (m) for the brush tyre transient model.</summary>
     public float RelaxationLength { get; set; } = 0.6f;
+
+    /// <summary>
+    /// Longitudinal relaxation length (m) for the brush tyre transient model.
+    /// Typically shorter than lateral because the tyre carcass is stiffer in
+    /// the rolling direction. Default 0.4 m.
+    /// Reference: Pacejka §5.4; brush model braking transient.
+    /// </summary>
+    public float LongitudinalRelaxationLength { get; set; } = 0.4f;
 
     // ── Camber ───────────────────────────────────────────────────────────────
 
@@ -262,6 +287,14 @@ public sealed class TyreModel
     /// Effective rolling resistance scales as <c>1 + gain × (speed / criticalSpeed)²</c>.
     /// </summary>
     public float StandingWaveResistanceGain { get; set; } = 1.0f;
+
+    /// <summary>
+    /// Scaling factor for free-rolling carcass shear resistance.
+    /// The carcass shear contribution arises from the difference between tread-element speed
+    /// (Ω·r) and road speed (Ω·rₑ) as the tread compresses through the contact patch.
+    /// Reference: "A simple model for tyre deformation", The Contact Patch, §Free rolling, Eq. 8.
+    /// </summary>
+    public float CarcassShearCoefficient { get; set; } = 0.5f;
 
     // ── Constants ────────────────────────────────────────────────────────────
 
@@ -337,6 +370,7 @@ public sealed class TyreModel
         if (dt < 1e-6f)
         {
             state.LateralDeflection = 0f;
+            state.LongitudinalDeflection = 0f;
             return;
         }
 
@@ -347,6 +381,7 @@ public sealed class TyreModel
         if (airborne)
         {
             state.LateralDeflection = 0f;
+            state.LongitudinalDeflection = 0f;
 
             // Integrate angular velocity from torque even without ground contact
             float airInertia = WheelInertia > 0f
@@ -396,7 +431,9 @@ public sealed class TyreModel
         // SidewallStiffness scales the lateral cornering stiffness B:
         //   corneringStiffness *= SidewallStiffness
         // Higher sidewall stiffness → sharper response.
-        float effectiveLatB = LateralB * SidewallStiffness * (1f - surface.DeformationFactor * 0.2f);
+        float pressureStiffnessFactor = MathF.Sqrt(MathF.Max(TyrePressure, 50f) / ReferencePressure);
+        float effectiveLatB = LateralB * SidewallStiffness * pressureStiffnessFactor
+            * (1f - surface.DeformationFactor * 0.2f);
         float rawFy = MagicFormulaRally(slipAngle, effectiveLatB, LateralC, peakForce, LateralE);
 
         // ── Contact-patch brush model (lateral transient) ────────────────────
@@ -411,37 +448,61 @@ public sealed class TyreModel
             (state.LateralDeflection * relaxSpeed / MathF.Max(effectiveRelaxation, 0.05f));
         state.LateralDeflection += deflectionRate * dt;
 
-        // Clamp deflection to contact-patch limit (brush saturation).
-        // For a roughly rectangular footprint, patch length ≈ Fz / (P × width).
-        // Lower pressure or higher load produces a longer patch and more available deflection.
+        // ── Contact-patch dimensions for dual-zone brush model ───────────────
+        // Contact patch half-length a = patchLength / 2.
+        // Brush stiffness c per unit length relates to the overall brush stiffness.
+        // Reference: "A simple model for tyre deformation", The Contact Patch, §Cornering.
         float effectivePatchLength = ComputeEffectivePatchLength(normalLoad);
-        float maxDeflection = MathF.Max(effectivePatchLength * 0.5f, 0.01f);
-        state.LateralDeflection = Math.Clamp(state.LateralDeflection, -maxDeflection, maxDeflection);
-
-        // Blend brush-model transient force with steady-state Pacejka.
-        // Treat the inflated carcass as a pressure membrane: lateral brush stiffness scales with
-        // inflation pressure × tread width, with ContactPatchStiffness acting as a calibration factor.
+        float halfPatch = MathF.Max(effectivePatchLength * 0.5f, 0.005f);
         float effectiveBrushStiffness = ComputeEffectiveBrushStiffness()
             * (1f - surface.DeformationFactor * SurfaceDeformationBrushSoftening);
+
+        // ── Dual-zone lateral brush: adhesion/sliding frontier (λ) ───────────
+        // λ is the adhesion fraction of the contact patch (1 = full adhesion, 0 = full slide).
+        // In the adhesion-only regime (small α):  Qy = 2a²c·tan(α)
+        // Transition threshold: tan(α) = µP / (4a²c)  →  λ = µP / (4a²c·tan(α))
+        // In the mixed regime:  Qy = (1 − λ/2) · µ · P
+        // Reference: The Contact Patch, C2015, Eq. 12, 15, 18.
+        float absTanAlpha = MathF.Abs(MathF.Tan(slipAngle));
+        float brushCperLength = effectiveBrushStiffness / MathF.Max(effectivePatchLength, 0.01f);
+        float lambda = ComputeAdhesionFraction(absTanAlpha, peakForce, halfPatch, brushCperLength);
+
+        // Clamp lateral deflection using the adhesion zone length rather than full patch
+        float maxLateralDeflection = MathF.Max(halfPatch * lambda, 0.005f);
+        state.LateralDeflection = Math.Clamp(state.LateralDeflection, -maxLateralDeflection, maxLateralDeflection);
+
+        // Blend brush-model transient force with steady-state Pacejka.
         float brushForce = -effectiveBrushStiffness * state.LateralDeflection;
         float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
         float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
 
-        // Clamp to friction circle: sqrt(Fx² + Fy²) ≤ µ·Fz
-        // This couples longitudinal and lateral forces realistically.
-        float combinedMag = MathF.Sqrt(rawFx * rawFx + blendedFy * blendedFy);
-        if (combinedMag > peakForce && combinedMag > 0f)
-        {
-            float scale = peakForce / combinedMag;
-            rawFx *= scale;
-            blendedFy *= scale;
-        }
+        // ── Contact-patch brush model (longitudinal transient) ───────────────
+        // Mirrors the lateral transient for longitudinal forces.
+        // dδx/dt = (ωR − Vx) − δx · |Vx| / Lx
+        // This gives smoother brake-pedal feel and torque application.
+        // Reference: brush model braking, The Contact Patch C2015, Eq. 21–28.
+        float effectiveLongRelaxation = LongitudinalRelaxationLength / MathF.Max(CarcassStiffness, 0.1f);
+        float longSlipVelocity = wheelLinearSpeed - longitudinalVelocity;
+        float longDeflectionRate = longSlipVelocity -
+            (state.LongitudinalDeflection * relaxSpeed / MathF.Max(effectiveLongRelaxation, 0.05f));
+        state.LongitudinalDeflection += longDeflectionRate * dt;
+
+        // Clamp longitudinal deflection using the adhesion zone length.
+        // The braking analogue of λ uses K = S/(1−S) in place of tan(α).
+        float absK = MathF.Abs(slipRatio) / MathF.Max(1f - MathF.Abs(slipRatio), 0.01f);
+        float lambdaLong = ComputeAdhesionFraction(absK, peakForce, halfPatch, brushCperLength);
+        float maxLongDeflection = MathF.Max(halfPatch * lambdaLong, 0.005f);
+        state.LongitudinalDeflection = Math.Clamp(state.LongitudinalDeflection,
+            -maxLongDeflection, maxLongDeflection);
+
+        float brushFx = effectiveBrushStiffness * state.LongitudinalDeflection;
+        float blendedFx = blendAlpha * rawFx + (1f - blendAlpha) * brushFx;
 
         // ── Camber thrust ────────────────────────────────────────────────────
         // Small lateral force from wheel inclination. Fy_camber = γ · Cγ · Fz.
         // Reference: Pacejka §4.3.
         float camberForce = camberAngle * CamberThrustCoefficient * normalLoad;
-        blendedFy += camberForce;
+        float totalFy = blendedFy + camberForce;
 
         // ── Rolling resistance ───────────────────────────────────────────────
         // Frr = Crr · Fz, opposing wheel direction of travel.
@@ -459,16 +520,44 @@ public sealed class TyreModel
             rrForce = longitudinalVelocity > 0f ? -rollingResistance : rollingResistance;
         }
 
-        longitudinalForce = rawFx + rrForce;
-        lateralForce = blendedFy;
+        // ── Free-rolling carcass shear resistance ────────────────────────────
+        // Even in free rolling, carcass compression creates fore-aft shear in the
+        // contact patch. The net retarding force scales with (r − rₑ) and the
+        // brush stiffness. The contact patch half-angle θ ≈ a / r.
+        // Reference: The Contact Patch, C2015, §Free rolling, Eq. 7–8.
+        float carcassShearForce = 0f;
+        if (MathF.Abs(longitudinalVelocity) > rollingResistanceDeadband)
+        {
+            float radiusDelta = Radius - effectiveRollingRadius;
+            float shearMagnitude = ComputeCarcassShearForce(radiusDelta, halfPatch,
+                brushCperLength, effectivePatchLength);
+            carcassShearForce = longitudinalVelocity > 0f ? -shearMagnitude : shearMagnitude;
+        }
 
-        // ── Self-aligning torque ─────────────────────────────────────────────
-        // Mz = t_p · Fy, where t_p decreases with slip angle magnitude.
-        // At high slip angles the pneumatic trail collapses to near zero.
-        // Reference: Pacejka §4.3.3.
-        float absAlpha = MathF.Abs(slipAngle);
-        float trailFactor = MathF.Max(0f, 1f - absAlpha / (MathF.PI * 0.25f));
-        selfAligningTorque = PneumaticTrail * trailFactor * lateralForce;
+        longitudinalForce = blendedFx + rrForce + carcassShearForce;
+        lateralForce = totalFy;
+
+        // Clamp the final applied force vector to a friction ellipse:
+        // (Fx/Fx_max)^2 + (Fy/Fy_max)^2 ≤ 1
+        ClampToFrictionEllipse(ref longitudinalForce, ref lateralForce, peakForce);
+
+        // ── Self-aligning torque (physically-derived pneumatic trail) ────────
+        // The pneumatic trail follows a characteristic rise-then-collapse curve from
+        // the brush model's adhesion/sliding frontier λ.
+        // Pure adhesion:  trail = a/3  (resultant 2/3 along the patch)
+        // Mixed regime:   trail = a · λ · (1 − 2λ/3) / (2 · (1 − λ/2))
+        // This gives the realistic steering-going-light effect near the grip limit.
+        // Reference: The Contact Patch, C2015, Eq. 13, 20.
+        float pneumaticTrail = ComputeBrushPneumaticTrail(halfPatch, lambda);
+
+        // Scale by the configured PneumaticTrail property as a reference calibration.
+        // The brush model predicts trail ≈ a/3 at zero slip; PneumaticTrail is the user's
+        // desired value at zero slip, so we scale accordingly.
+        float referenceTrail = halfPatch / 3f;
+        float trailScale = PneumaticTrail / MathF.Max(referenceTrail, 0.001f);
+        pneumaticTrail *= trailScale;
+
+        selfAligningTorque = pneumaticTrail * lateralForce;
 
         // ── Wheel angular velocity integration ───────────────────────────────
         // Iω̇ = T_drive − T_brake − Fx·R
@@ -509,16 +598,26 @@ public sealed class TyreModel
     /// Computes effective friction coefficient accounting for surface, load sensitivity,
     /// temperature window, and tread wear.
     /// </summary>
-    private float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
+    internal float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
         float temperature, float treadLife)
     {
         // Base µ from surface type
         float mu = PeakFrictionCoefficient * surface.FrictionCoefficient;
 
-        // Load sensitivity: µ decreases with increasing Fz above reference load.
-        // Reference: Pacejka Ch.4, load sensitivity.
-        float loadRatio = (normalLoad - ReferenceLoad) / MathF.Max(ReferenceLoad, 1f);
-        mu *= MathF.Max(0.4f, 1f - LoadSensitivity * loadRatio);
+        // Load sensitivity: rubber grip follows a non-linear power-law with load.
+        float referenceLoad = MathF.Max(ReferenceLoad, 1f);
+        float loadRatio = MathF.Max(normalLoad / referenceLoad, 1e-3f);
+        mu *= MathF.Pow(loadRatio, -LoadSensitivity);
+
+        // Effective patch area contributes a small secondary grip change.
+        float areaGripExponent = MathF.Max(ContactAreaGripExponent, 0f);
+        if (areaGripExponent > 0f)
+        {
+            float effectivePatchArea = ComputeEffectivePatchArea(normalLoad);
+            float referencePatchArea = ComputeReferencePatchArea();
+            float patchAreaRatio = effectivePatchArea / MathF.Max(referencePatchArea, 1e-6f);
+            mu *= MathF.Pow(MathF.Max(patchAreaRatio, 1e-3f), areaGripExponent);
+        }
 
         // Temperature effect: peak grip at optimal temperature, falls off outside window.
         // Reference: Salaani, SAE 2007-01-0816, Fig. 7.
@@ -541,6 +640,35 @@ public sealed class TyreModel
         float patchLengthScale = MathF.Max(ContactPatchLengthScale, 0.1f);
         float theoreticalLength = normalLoad / MathF.Max(pressurePascals * effectiveWidth, 1f);
         return MathF.Max(theoreticalLength * patchLengthScale, 0.01f);
+    }
+
+    internal float ComputeEffectivePatchArea(float normalLoad)
+    {
+        float effectiveWidth = MathF.Max(Width, 0.05f);
+        return ComputeEffectivePatchLength(normalLoad) * effectiveWidth;
+    }
+
+    internal float ComputeReferencePatchArea()
+    {
+        float referenceLoad = MathF.Max(ReferenceLoad, 1f);
+        float referencePressurePascals = ReferencePressure * KilopascalsToPascals;
+        float theoreticalLength = referenceLoad / MathF.Max(referencePressurePascals * ReferenceTyreWidth, 1f);
+        return MathF.Max(theoreticalLength * MathF.Max(ContactPatchLengthScale, 0.1f) * ReferenceTyreWidth, 1e-6f);
+    }
+
+    private void ClampToFrictionEllipse(ref float longitudinalForce, ref float lateralForce, float peakForce)
+    {
+        const float forceEpsilon = 1e-6f;
+        float fxMax = MathF.Max(peakForce, forceEpsilon);
+        float fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
+        float ellipseValue = (longitudinalForce * longitudinalForce) / (fxMax * fxMax)
+            + (lateralForce * lateralForce) / (fyMax * fyMax);
+        if (ellipseValue > 1f)
+        {
+            float scale = 1f / MathF.Sqrt(ellipseValue);
+            longitudinalForce *= scale;
+            lateralForce *= scale;
+        }
     }
 
     internal float ComputeVerticalStiffness()
@@ -575,6 +703,62 @@ public sealed class TyreModel
         float criticalSpeed = MathF.Max(StandingWaveCriticalSpeed, 1f);
         float speedRatio = MathF.Abs(speed) / criticalSpeed;
         return 1f + MathF.Max(StandingWaveResistanceGain, 0f) * speedRatio * speedRatio;
+    }
+
+    /// <summary>
+    /// Computes the adhesion fraction λ of the contact patch for a given slip input.
+    /// λ = 1 means full adhesion (low slip); λ → 0 means nearly full sliding.
+    /// <para>The slip threshold is <c>µP / (4a²c)</c>.</para>
+    /// <para>When <c>|slip| ≤ threshold</c>, λ = 1 (pure adhesion).</para>
+    /// <para>When <c>|slip| > threshold</c>, λ = threshold / |slip| (mixed).</para>
+    /// Reference: The Contact Patch, C2015, Eq. 15.
+    /// </summary>
+    /// <param name="absSlip">Absolute value of the slip input (tan(α) for lateral, K for longitudinal).</param>
+    /// <param name="peakForce">µ · Fz — the maximum friction force (N).</param>
+    /// <param name="halfPatch">Contact patch half-length a (m).</param>
+    /// <param name="brushCperLength">Brush stiffness per unit length of tread (N/m²).</param>
+    internal static float ComputeAdhesionFraction(float absSlip, float peakForce,
+        float halfPatch, float brushCperLength)
+    {
+        float threshold = peakForce / MathF.Max(4f * halfPatch * halfPatch * brushCperLength, 1f);
+        if (absSlip <= threshold)
+            return 1f;
+        return Math.Clamp(threshold / MathF.Max(absSlip, 1e-6f), 0f, 1f);
+    }
+
+    /// <summary>
+    /// Computes the pneumatic trail from the brush-model adhesion fraction λ.
+    /// <para>Pure adhesion (λ = 1):  trail = a / 3.</para>
+    /// <para>Mixed adhesion/slip (λ &lt; 1):  trail = a · λ · (1 − 2λ/3) / (2 · (1 − λ/2)).</para>
+    /// Reference: The Contact Patch, C2015, Eq. 13, 20.
+    /// </summary>
+    /// <param name="halfPatch">Contact patch half-length a (m).</param>
+    /// <param name="lambda">Adhesion fraction (0–1).</param>
+    internal static float ComputeBrushPneumaticTrail(float halfPatch, float lambda)
+    {
+        lambda = Math.Clamp(lambda, 0f, 1f);
+        if (lambda >= 1f)
+            return halfPatch / 3f;
+
+        float numerator = halfPatch * lambda * (1f - (2f / 3f) * lambda);
+        float denominator = 2f * (1f - 0.5f * lambda);
+        return numerator / MathF.Max(denominator, 0.01f);
+    }
+
+    /// <summary>
+    /// Computes the free-rolling carcass shear resistance force magnitude.
+    /// Arises from the difference between unloaded radius and effective rolling radius.
+    /// Reference: The Contact Patch, C2015, §Free rolling, Eq. 7–8.
+    /// </summary>
+    /// <param name="radiusDelta">r − rₑ (m). Positive when tyre is deflected.</param>
+    /// <param name="halfPatch">Contact patch half-length a (m).</param>
+    /// <param name="brushCperLength">Brush stiffness per unit length of tread (N/m²).</param>
+    /// <param name="patchLength">Full contact patch length 2a (m).</param>
+    internal float ComputeCarcassShearForce(float radiusDelta, float halfPatch,
+        float brushCperLength, float patchLength)
+    {
+        float halfAngle = MathF.Asin(Math.Clamp(halfPatch / MathF.Max(Radius, 0.1f), 0f, 1f));
+        return CarcassShearCoefficient * brushCperLength * radiusDelta * halfAngle * patchLength;
     }
 
     /// <summary>
