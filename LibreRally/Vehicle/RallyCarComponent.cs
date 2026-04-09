@@ -583,9 +583,8 @@ public class RallyCarComponent : SyncScript
         float sampledOmegaSum = 0f;
         int sampledCount = 0;
 
-        foreach (var wheel in DriveWheels)
+        foreach (var ws in DriveWheels.Select(wheel => wheel.Get<WheelSettings>()))
         {
-            var ws = wheel.Get<WheelSettings>();
             int dynamicsIndex = ws?.DynamicsIndex ?? -1;
             if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount)
                 continue;
