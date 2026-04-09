@@ -465,18 +465,7 @@ public sealed class TyreModel
         // Reference: The Contact Patch, C2015, Eq. 12, 15, 18.
         float absTanAlpha = MathF.Abs(MathF.Tan(slipAngle));
         float brushCperLength = effectiveBrushStiffness / MathF.Max(effectivePatchLength, 0.01f);
-        float slipThreshold = peakForce / MathF.Max(4f * halfPatch * halfPatch * brushCperLength, 1f);
-        float lambda;
-        if (absTanAlpha <= slipThreshold)
-        {
-            // Pure adhesion regime: all bristles grip
-            lambda = 1f;
-        }
-        else
-        {
-            // Mixed adhesion/slip: λ = µP / (4a²c·tan(α))
-            lambda = Math.Clamp(slipThreshold / MathF.Max(absTanAlpha, 1e-6f), 0f, 1f);
-        }
+        float lambda = ComputeAdhesionFraction(absTanAlpha, peakForce, halfPatch, brushCperLength);
 
         // Clamp lateral deflection using the adhesion zone length rather than full patch
         float maxLateralDeflection = MathF.Max(halfPatch * lambda, 0.005f);
@@ -501,10 +490,7 @@ public sealed class TyreModel
         // Clamp longitudinal deflection using the adhesion zone length.
         // The braking analogue of λ uses K = S/(1−S) in place of tan(α).
         float absK = MathF.Abs(slipRatio) / MathF.Max(1f - MathF.Abs(slipRatio), 0.01f);
-        float longSlipThreshold = peakForce / MathF.Max(4f * halfPatch * halfPatch * brushCperLength, 1f);
-        float lambdaLong = absK <= longSlipThreshold
-            ? 1f
-            : Math.Clamp(longSlipThreshold / MathF.Max(absK, 1e-6f), 0f, 1f);
+        float lambdaLong = ComputeAdhesionFraction(absK, peakForce, halfPatch, brushCperLength);
         float maxLongDeflection = MathF.Max(halfPatch * lambdaLong, 0.005f);
         state.LongitudinalDeflection = Math.Clamp(state.LongitudinalDeflection,
             -maxLongDeflection, maxLongDeflection);
@@ -543,10 +529,8 @@ public sealed class TyreModel
         if (MathF.Abs(longitudinalVelocity) > rollingResistanceDeadband)
         {
             float radiusDelta = Radius - effectiveRollingRadius;
-            float halfAngle = MathF.Asin(Math.Clamp(halfPatch / MathF.Max(Radius, 0.1f), 0f, 1f));
-            // The net shear ∝ brush stiffness × radius delta × half-angle
-            float shearMagnitude = CarcassShearCoefficient * brushCperLength * radiusDelta
-                * halfAngle * effectivePatchLength;
+            float shearMagnitude = ComputeCarcassShearForce(radiusDelta, halfPatch,
+                brushCperLength, effectivePatchLength);
             carcassShearForce = longitudinalVelocity > 0f ? -shearMagnitude : shearMagnitude;
         }
 
@@ -564,19 +548,7 @@ public sealed class TyreModel
         // Mixed regime:   trail = a · λ · (1 − 2λ/3) / (2 · (1 − λ/2))
         // This gives the realistic steering-going-light effect near the grip limit.
         // Reference: The Contact Patch, C2015, Eq. 13, 20.
-        float pneumaticTrail;
-        if (lambda >= 1f)
-        {
-            // Pure adhesion: trail = a/3
-            pneumaticTrail = halfPatch / 3f;
-        }
-        else
-        {
-            // Mixed adhesion/slip: equation 20
-            float numerator = halfPatch * lambda * (1f - (2f / 3f) * lambda);
-            float denominatorTrail = 2f * (1f - 0.5f * lambda);
-            pneumaticTrail = numerator / MathF.Max(denominatorTrail, 0.01f);
-        }
+        float pneumaticTrail = ComputeBrushPneumaticTrail(halfPatch, lambda);
 
         // Scale by the configured PneumaticTrail property as a reference calibration.
         // The brush model predicts trail ≈ a/3 at zero slip; PneumaticTrail is the user's
