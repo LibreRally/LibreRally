@@ -332,9 +332,11 @@ public sealed class TyreModel
         slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
 
         // ── Slip angle (lateral) ─────────────────────────────────────────────
-        // α = atan(Vy / |Vx|)
+        // α = atan(-Vy / |Vx|)
+        // Positive contact-patch lateral velocity means the wheel is moving to the right
+        // relative to its heading, so the tyre reaction force must act to the left.
         // Reference: Pacejka, §1.3, Eq. 1.4.
-        float slipAngle = MathF.Atan2(lateralVelocity, MathF.Max(absVx, MinSpeed));
+        float slipAngle = MathF.Atan2(-lateralVelocity, MathF.Max(absVx, MinSpeed));
         slipAngle = Math.Clamp(slipAngle, -MaxSlipAngle, MaxSlipAngle);
 
         // ── Pacejka Magic Formula forces ─────────────────────────────────────
