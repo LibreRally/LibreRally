@@ -161,20 +161,33 @@ public sealed class TyreModel
     /// <summary>Lateral curvature factor E.</summary>
     public float LateralE { get; set; } = -0.6f;
 
+    /// <summary>
+    /// Ratio of lateral grip limit to longitudinal grip limit.
+    /// 1.0 gives an equal-grip friction circle; values below 1.0 produce a friction ellipse.
+    /// </summary>
+    public float FrictionEllipseRatio { get; set; } = 1.0f;
+
     // ── Friction ─────────────────────────────────────────────────────────────
 
     /// <summary>Peak friction coefficient on reference surface (tarmac).</summary>
     public float PeakFrictionCoefficient { get; set; } = 1.05f;
 
     /// <summary>
-    /// Load sensitivity coefficient: µ decreases with increasing vertical load.
-    /// µ_effective = µ_peak * (1 − LoadSensitivity * (Fz − Fz_ref) / Fz_ref).
-    /// Typical range 0.0–0.15. See Pacejka Ch.4 load sensitivity.
+    /// Load sensitivity exponent for the tyre's non-linear grip response to vertical load.
+    /// <para><c>µ_effective = µ_peak × (Fz / Fz_ref)^(-LoadSensitivity)</c></para>
+    /// Higher values make grip fall away faster as load rises.
+    /// Typical range 0.0–0.20; 0.15 is a representative road-tyre value.
     /// </summary>
-    public float LoadSensitivity { get; set; } = 0.08f;
+    public float LoadSensitivity { get; set; } = 0.15f;
 
     /// <summary>Reference vertical load for µ rating (N).</summary>
     public float ReferenceLoad { get; set; } = 3000f;
+
+    /// <summary>
+    /// Grip gain from effective contact-patch area, applied as a small power-law multiplier.
+    /// <para><c>µ_effective *= (patchArea / referencePatchArea)^ContactAreaGripExponent</c></para>
+    /// </summary>
+    public float ContactAreaGripExponent { get; set; } = 0.05f;
 
     // ── Brush contact-patch model ────────────────────────────────────────────
 
@@ -396,7 +409,9 @@ public sealed class TyreModel
         // SidewallStiffness scales the lateral cornering stiffness B:
         //   corneringStiffness *= SidewallStiffness
         // Higher sidewall stiffness → sharper response.
-        float effectiveLatB = LateralB * SidewallStiffness * (1f - surface.DeformationFactor * 0.2f);
+        float pressureStiffnessFactor = MathF.Sqrt(MathF.Max(TyrePressure, 50f) / ReferencePressure);
+        float effectiveLatB = LateralB * SidewallStiffness * pressureStiffnessFactor
+            * (1f - surface.DeformationFactor * 0.2f);
         float rawFy = MagicFormulaRally(slipAngle, effectiveLatB, LateralC, peakForce, LateralE);
 
         // ── Contact-patch brush model (lateral transient) ────────────────────
@@ -427,12 +442,14 @@ public sealed class TyreModel
         float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
         float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
 
-        // Clamp to friction circle: sqrt(Fx² + Fy²) ≤ µ·Fz
-        // This couples longitudinal and lateral forces realistically.
-        float combinedMag = MathF.Sqrt(rawFx * rawFx + blendedFy * blendedFy);
-        if (combinedMag > peakForce && combinedMag > 0f)
+        // Clamp to a friction ellipse:
+        // (Fx/Fx_max)^2 + (Fy/Fy_max)^2 ≤ 1
+        float fxMax = MathF.Max(peakForce, 1f);
+        float fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), 1f);
+        float ellipseValue = (rawFx * rawFx) / (fxMax * fxMax) + (blendedFy * blendedFy) / (fyMax * fyMax);
+        if (ellipseValue > 1f)
         {
-            float scale = peakForce / combinedMag;
+            float scale = 1f / MathF.Sqrt(ellipseValue);
             rawFx *= scale;
             blendedFy *= scale;
         }
@@ -509,16 +526,26 @@ public sealed class TyreModel
     /// Computes effective friction coefficient accounting for surface, load sensitivity,
     /// temperature window, and tread wear.
     /// </summary>
-    private float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
+    internal float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
         float temperature, float treadLife)
     {
         // Base µ from surface type
         float mu = PeakFrictionCoefficient * surface.FrictionCoefficient;
 
-        // Load sensitivity: µ decreases with increasing Fz above reference load.
-        // Reference: Pacejka Ch.4, load sensitivity.
-        float loadRatio = (normalLoad - ReferenceLoad) / MathF.Max(ReferenceLoad, 1f);
-        mu *= MathF.Max(0.4f, 1f - LoadSensitivity * loadRatio);
+        // Load sensitivity: rubber grip follows a non-linear power-law with load.
+        float referenceLoad = MathF.Max(ReferenceLoad, 1f);
+        float loadRatio = MathF.Max(normalLoad / referenceLoad, 1e-3f);
+        mu *= MathF.Pow(loadRatio, -LoadSensitivity);
+
+        // Effective patch area contributes a small secondary grip change.
+        float areaGripExponent = MathF.Max(ContactAreaGripExponent, 0f);
+        if (areaGripExponent > 0f)
+        {
+            float effectivePatchArea = ComputeEffectivePatchArea(normalLoad);
+            float referencePatchArea = ComputeEffectivePatchArea(referenceLoad);
+            float patchAreaRatio = effectivePatchArea / MathF.Max(referencePatchArea, 1e-6f);
+            mu *= MathF.Pow(MathF.Max(patchAreaRatio, 1e-3f), areaGripExponent);
+        }
 
         // Temperature effect: peak grip at optimal temperature, falls off outside window.
         // Reference: Salaani, SAE 2007-01-0816, Fig. 7.
@@ -541,6 +568,12 @@ public sealed class TyreModel
         float patchLengthScale = MathF.Max(ContactPatchLengthScale, 0.1f);
         float theoreticalLength = normalLoad / MathF.Max(pressurePascals * effectiveWidth, 1f);
         return MathF.Max(theoreticalLength * patchLengthScale, 0.01f);
+    }
+
+    internal float ComputeEffectivePatchArea(float normalLoad)
+    {
+        float effectiveWidth = MathF.Max(Width, 0.05f);
+        return ComputeEffectivePatchLength(normalLoad) * effectiveWidth;
     }
 
     internal float ComputeVerticalStiffness()
