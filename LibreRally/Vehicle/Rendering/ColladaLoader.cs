@@ -39,7 +39,9 @@ public static class ColladaLoader
 
         var geometryLibrary = LoadGeometryLibrary(root);
         if (geometryLibrary.Count == 0)
-            return new List<ColladaMesh>();
+        {
+	        return new List<ColladaMesh>();
+        }
 
         var sceneMeshes = LoadSceneMeshes(root, geometryLibrary);
         return sceneMeshes.Count > 0
@@ -56,7 +58,9 @@ public static class ColladaLoader
         var result = new Dictionary<string, ColladaGeometry>(StringComparer.OrdinalIgnoreCase);
         var geometryLib = root.Element(Ns + "library_geometries");
         if (geometryLib == null)
-            return result;
+        {
+	        return result;
+        }
 
         foreach (var geometry in geometryLib.Elements(Ns + "geometry"))
         {
@@ -64,14 +68,18 @@ public static class ColladaLoader
                 ?? geometry.Attribute("name")?.Value
                 ?? "";
             if (string.IsNullOrWhiteSpace(geometryId))
-                continue;
+            {
+	            continue;
+            }
 
             string geometryName = geometry.Attribute("name")?.Value
-                ?? geometryId;
+                                  ?? geometryId;
 
             var mesh = geometry.Element(Ns + "mesh");
             if (mesh == null)
-                continue;
+            {
+	            continue;
+            }
 
             result[geometryId] = new ColladaGeometry(
                 geometryId,
@@ -88,7 +96,9 @@ public static class ColladaLoader
     {
         var sceneLibrary = root.Element(Ns + "library_visual_scenes");
         if (sceneLibrary == null)
-            return new List<ColladaMesh>();
+        {
+	        return new List<ColladaMesh>();
+        }
 
         IEnumerable<XElement> visualScenes = sceneLibrary.Elements(Ns + "visual_scene");
         string? activeSceneId = root.Element(Ns + "scene")?
@@ -107,7 +117,9 @@ public static class ColladaLoader
                 .ToList();
 
             if (activeVisualScenes.Count > 0)
-                visualScenes = activeVisualScenes;
+            {
+	            visualScenes = activeVisualScenes;
+            }
         }
 
         var result = new List<ColladaMesh>();
@@ -154,11 +166,15 @@ public static class ColladaLoader
     {
         var matrixElement = node.Element(Ns + "matrix");
         if (matrixElement == null)
-            return Matrix4x4.Identity;
+        {
+	        return Matrix4x4.Identity;
+        }
 
         float[] values = ParseFloatArray(matrixElement.Value);
         if (values.Length != 16)
-            return Matrix4x4.Identity;
+        {
+	        return Matrix4x4.Identity;
+        }
 
         // BeamNG serializes Collada node transforms with translation in the last column.
         // Transpose into System.Numerics row-vector layout so Vector3.Transform applies them correctly.
@@ -177,7 +193,9 @@ public static class ColladaLoader
         bool hasBakedTransform = !IsApproximatelyIdentity(transform);
         Matrix4x4 normalTransform = transform;
         if (hasBakedTransform && Matrix4x4.Invert(transform, out Matrix4x4 inverseTransform))
-            normalTransform = Matrix4x4.Transpose(inverseTransform);
+        {
+	        normalTransform = Matrix4x4.Transpose(inverseTransform);
+        }
 
         var vertices = new List<ColladaVertex>(sourceMesh.Vertices.Count);
         foreach (var vertex in sourceMesh.Vertices)
@@ -190,9 +208,13 @@ public static class ColladaLoader
                 ? Vector3.TransformNormal(vertex.Normal, normalTransform)
                 : vertex.Normal;
             if (normal.LengthSquared() > 1e-8f)
-                normal = Vector3.Normalize(normal);
+            {
+	            normal = Vector3.Normalize(normal);
+            }
             else
-                normal = Vector3.UnitY;
+            {
+	            normal = Vector3.UnitY;
+            }
 
             vertices.Add(new ColladaVertex(position, normal, vertex.TexCoord));
         }
@@ -288,7 +310,9 @@ public static class ColladaLoader
             foreach (var input in verticesElem.Elements(Ns + "input"))
             {
                 if (input.Attribute("semantic")?.Value == "POSITION")
-                    positionSourceId = input.Attribute("source")?.Value ?? "";
+                {
+	                positionSourceId = input.Attribute("source")?.Value ?? "";
+                }
             }
         }
         sources[verticesId + "_POSITION"] = sources.GetValueOrDefault(positionSourceId, Array.Empty<float>());
@@ -302,17 +326,42 @@ public static class ColladaLoader
             float minZ = float.MaxValue, maxZ = float.MinValue;
             for (int i = 0; i + 2 < rawPos.Length; i += 3)
             {
-                if (rawPos[i    ] < minX) minX = rawPos[i    ];
-                if (rawPos[i    ] > maxX) maxX = rawPos[i    ];
-                if (rawPos[i + 1] < minY) minY = rawPos[i + 1];
-                if (rawPos[i + 1] > maxY) maxY = rawPos[i + 1];
-                if (rawPos[i + 2] < minZ) minZ = rawPos[i + 2];
-                if (rawPos[i + 2] > maxZ) maxZ = rawPos[i + 2];
+                if (rawPos[i    ] < minX)
+                {
+	                minX = rawPos[i    ];
+                }
+
+                if (rawPos[i    ] > maxX)
+                {
+	                maxX = rawPos[i    ];
+                }
+
+                if (rawPos[i + 1] < minY)
+                {
+	                minY = rawPos[i + 1];
+                }
+
+                if (rawPos[i + 1] > maxY)
+                {
+	                maxY = rawPos[i + 1];
+                }
+
+                if (rawPos[i + 2] < minZ)
+                {
+	                minZ = rawPos[i + 2];
+                }
+
+                if (rawPos[i + 2] > maxZ)
+                {
+	                maxZ = rawPos[i + 2];
+                }
             }
             if ((maxX - minX) > MaxGeomExtentMetres ||
                 (maxY - minY) > MaxGeomExtentMetres ||
                 (maxZ - minZ) > MaxGeomExtentMetres)
-                yield break;
+            {
+	            yield break;
+            }
         }
 
         // Process <triangles> and <polylist> primitives
@@ -328,7 +377,9 @@ public static class ColladaLoader
                 verticesId);
 
             if (colladaMesh != null)
-                yield return colladaMesh;
+            {
+	            yield return colladaMesh;
+            }
         }
     }
 
@@ -349,7 +400,10 @@ public static class ColladaLoader
             string source = input.Attribute("source")?.Value ?? "";
             int offset = int.TryParse(input.Attribute("offset")?.Value, out int o) ? o : 0;
             inputs[semantic] = (source, offset);
-            if (offset > maxOffset) maxOffset = offset;
+            if (offset > maxOffset)
+            {
+	            maxOffset = offset;
+            }
         }
 
         int stride = maxOffset + 1;
@@ -360,10 +414,16 @@ public static class ColladaLoader
 
         // Parse index list
         var pElem = prim.Element(Ns + "p");
-        if (pElem == null) return null;
+        if (pElem == null)
+        {
+	        return null;
+        }
 
         int[] rawIndices = ParseIntArray(pElem.Value);
-        if (rawIndices.Length == 0) return null;
+        if (rawIndices.Length == 0)
+        {
+	        return null;
+        }
 
         int posOffset = inputs.TryGetValue("VERTEX", out var vIn) ? vIn.Offset : 0;
         int normOffset = inputs.TryGetValue("NORMAL", out var nIn) ? nIn.Offset : -1;
@@ -406,7 +466,10 @@ public static class ColladaLoader
         if (prim.Name.LocalName.Equals("polylist", StringComparison.OrdinalIgnoreCase))
         {
             var vcountElem = prim.Element(Ns + "vcount");
-            if (vcountElem == null) return null;
+            if (vcountElem == null)
+            {
+	            return null;
+            }
 
             int[] polyVertexCounts = ParseIntArray(vcountElem.Value);
             int cursor = 0;
@@ -421,7 +484,9 @@ public static class ColladaLoader
 
                 int polygonIndexCount = polyVertCount * stride;
                 if (cursor + polygonIndexCount > rawIndices.Length)
-                    break;
+                {
+	                break;
+                }
 
                 int first = GetOrAddVertex(cursor);
                 int prev = GetOrAddVertex(cursor + stride);
@@ -470,12 +535,16 @@ public static class ColladaLoader
         string? fallbackKey)
     {
         if (!inputs.TryGetValue(semantic, out var inputDef))
-            return Array.Empty<float>();
+        {
+	        return Array.Empty<float>();
+        }
 
         // For VERTEX semantic, resolve through the vertices element
         string key = inputDef.Source;
         if (alternateId != null && key == alternateId && fallbackKey != null)
-            key = alternateId + "_" + fallbackKey;
+        {
+	        key = alternateId + "_" + fallbackKey;
+        }
 
         return sources.GetValueOrDefault(key, Array.Empty<float>());
     }
@@ -493,7 +562,10 @@ public static class ColladaLoader
         {
             var doc = XDocument.Load(daeFilePath);
             var root = doc.Root;
-            if (root == null) return result;
+            if (root == null)
+            {
+	            return result;
+            }
 
             // Step 1 — image id → just the filename (absolute paths from other machines)
             var imageFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -501,14 +573,19 @@ public static class ColladaLoader
             {
                 string id = img.Attribute("id")?.Value ?? "";
                 var initFrom = img.Element(Ns + "init_from");
-                if (initFrom == null || string.IsNullOrEmpty(id)) continue;
+                if (initFrom == null || string.IsNullOrEmpty(id))
+                {
+	                continue;
+                }
 
                 string rawPath = Uri.UnescapeDataString(initFrom.Value.Trim());
                 // Normalise path separators before extracting filename
                 rawPath = rawPath.Replace('/', System.IO.Path.DirectorySeparatorChar);
                 string filename = System.IO.Path.GetFileName(rawPath);
                 if (!string.IsNullOrEmpty(filename))
-                    imageFiles[id] = filename;
+                {
+	                imageFiles[id] = filename;
+                }
             }
 
             // Step 2 — for each effect: resolve sampler→surface→image chain and find diffuse texture
@@ -516,7 +593,10 @@ public static class ColladaLoader
             foreach (var effect in root.Descendants(Ns + "effect"))
             {
                 string effectId = effect.Attribute("id")?.Value ?? "";
-                if (string.IsNullOrEmpty(effectId)) continue;
+                if (string.IsNullOrEmpty(effectId))
+                {
+	                continue;
+                }
 
                 // Collect newparam sid → surface init_from image id
                 var surfaceToImage = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -525,20 +605,29 @@ public static class ColladaLoader
                 foreach (var newparam in effect.Descendants(Ns + "newparam"))
                 {
                     string sid = newparam.Attribute("sid")?.Value ?? "";
-                    if (string.IsNullOrEmpty(sid)) continue;
+                    if (string.IsNullOrEmpty(sid))
+                    {
+	                    continue;
+                    }
 
                     var surface = newparam.Element(Ns + "surface");
                     if (surface != null)
                     {
                         string imgRef = surface.Element(Ns + "init_from")?.Value.Trim() ?? "";
-                        if (!string.IsNullOrEmpty(imgRef)) surfaceToImage[sid] = imgRef;
+                        if (!string.IsNullOrEmpty(imgRef))
+                        {
+	                        surfaceToImage[sid] = imgRef;
+                        }
                     }
 
                     var sampler = newparam.Element(Ns + "sampler2D");
                     if (sampler != null)
                     {
                         string srcRef = sampler.Element(Ns + "source")?.Value.Trim() ?? "";
-                        if (!string.IsNullOrEmpty(srcRef)) samplerToSurface[sid] = srcRef;
+                        if (!string.IsNullOrEmpty(srcRef))
+                        {
+	                        samplerToSurface[sid] = srcRef;
+                        }
                     }
                 }
 
@@ -547,7 +636,11 @@ public static class ColladaLoader
                     .FirstOrDefault(t => t.Ancestors().Any(a => a.Name.LocalName == "diffuse"));
                 texElem ??= effect.Descendants(Ns + "texture").FirstOrDefault();
 
-                if (texElem == null) continue;
+                if (texElem == null)
+                {
+	                continue;
+                }
+
                 string texRef = texElem.Attribute("texture")?.Value ?? "";
 
                 string? filename = null;
@@ -565,7 +658,9 @@ public static class ColladaLoader
                 }
 
                 if (filename != null)
-                    effectToFilename[effectId] = filename;
+                {
+	                effectToFilename[effectId] = filename;
+                }
             }
 
             // Step 3 — material id → effect id
@@ -576,7 +671,9 @@ public static class ColladaLoader
                 string effectUrl = mat.Element(Ns + "instance_effect")?
                     .Attribute("url")?.Value?.TrimStart('#') ?? "";
                 if (!string.IsNullOrEmpty(matId) && !string.IsNullOrEmpty(effectUrl))
-                    materialToEffect[matId] = effectUrl;
+                {
+	                materialToEffect[matId] = effectUrl;
+                }
             }
 
             // Step 4 — visual_scene bind_material: symbol → material id → filename
@@ -584,7 +681,10 @@ public static class ColladaLoader
             {
                 string symbol = instMat.Attribute("symbol")?.Value ?? "";
                 string target = instMat.Attribute("target")?.Value?.TrimStart('#') ?? "";
-                if (string.IsNullOrEmpty(symbol) || string.IsNullOrEmpty(target)) continue;
+                if (string.IsNullOrEmpty(symbol) || string.IsNullOrEmpty(target))
+                {
+	                continue;
+                }
 
                 if (materialToEffect.TryGetValue(target, out string? effectId) &&
                     effectToFilename.TryGetValue(effectId, out string? filename))

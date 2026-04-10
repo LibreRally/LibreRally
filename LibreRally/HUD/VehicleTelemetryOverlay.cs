@@ -58,11 +58,15 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _spriteBatch == null || _pixel == null || _font == null)
-            return;
+        {
+	        return;
+        }
 
         var backBuffer = _game.GraphicsDevice.Presenter?.BackBuffer;
         if (backBuffer == null)
-            return;
+        {
+	        return;
+        }
 
         var context = _game.GraphicsContext;
         context.CommandList.SetRenderTargetAndViewport(null, backBuffer);

@@ -45,17 +45,24 @@ public static class JBeamAssembler
             foreach (var p in parts)
             {
                 if (!partLibrary.ContainsKey(p.Name))
-                    partLibrary[p.Name] = p;
+                {
+	                partLibrary[p.Name] = p;
+                }
             }
         }
 
         // Find the main part (slotType == "main")
         JBeamPart? mainPart = null;
         if (pcConfig != null && !string.IsNullOrEmpty(pcConfig.MainPartName))
-            partLibrary.TryGetValue(pcConfig.MainPartName, out mainPart);
+        {
+	        partLibrary.TryGetValue(pcConfig.MainPartName, out mainPart);
+        }
+
         mainPart ??= partLibrary.Values.FirstOrDefault(p => p.IsMain);
         if (mainPart == null)
-            throw new InvalidOperationException($"No jbeam part with slotType 'main' found in '{vehicleFolder}'.");
+        {
+	        throw new InvalidOperationException($"No jbeam part with slotType 'main' found in '{vehicleFolder}'.");
+        }
 
         // Resolve slot hierarchy depth-first, collecting all active parts in order
         var activeParts = new List<ResolvedPartInstance>();
@@ -68,8 +75,11 @@ public static class JBeamAssembler
         var def = Merge(mainPart.Name, vehicleFolder, activeParts);
         // Attach vars so physics builder can use them
         if (vars != null)
-            foreach (var kv in vars)
-                def.Vars[kv.Key] = kv.Value;
+        {
+	        foreach (var kv in vars)
+		        def.Vars[kv.Key] = kv.Value;
+        }
+
         return def;
     }
 
@@ -85,7 +95,11 @@ public static class JBeamAssembler
         Dictionary<string, string>? pcParts = null,
         Vector3 visualOffset = default)
     {
-        if (!visited.Add(part.Name)) return;
+        if (!visited.Add(part.Name))
+        {
+	        return;
+        }
+
         result.Add(new ResolvedPartInstance(part, visualOffset));
 
         foreach (var slot in part.Slots)
@@ -93,18 +107,25 @@ public static class JBeamAssembler
             // .pc config overrides the default; empty string = no part
             string partName = slot.Default;
             if (pcParts != null && pcParts.TryGetValue(slot.Type, out var pcOverride))
-                partName = pcOverride;
+            {
+	            partName = pcOverride;
+            }
 
-            if (string.IsNullOrEmpty(partName)) continue;
+            if (string.IsNullOrEmpty(partName))
+            {
+	            continue;
+            }
 
             if (library.TryGetValue(partName, out var child))
-                ResolveSlots(
-                    child,
-                    library,
-                    result,
-                    visited,
-                    pcParts,
-                    visualOffset + (slot.NodeOffset ?? Vector3.Zero));
+            {
+	            ResolveSlots(
+		            child,
+		            library,
+		            result,
+		            visited,
+		            pcParts,
+		            visualOffset + (slot.NodeOffset ?? Vector3.Zero));
+            }
             // Missing parts (e.g. common.zip parts not shipped with the mod) are silently ignored.
         }
     }
@@ -127,7 +148,9 @@ public static class JBeamAssembler
         var slotTypeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in resolvedParts)
             if (!string.IsNullOrEmpty(p.SlotType))
-                slotTypeToPartName[p.SlotType] = p.Name;
+            {
+	            slotTypeToPartName[p.SlotType] = p.Name;
+            }
 
         // Merge nodes and beams from all resolved parts
         var nodeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -137,7 +160,11 @@ public static class JBeamAssembler
             var part = resolved.Part;
             foreach (var node in part.Nodes)
             {
-                if (allNodes.ContainsKey(node.Id)) continue;
+                if (allNodes.ContainsKey(node.Id))
+                {
+	                continue;
+                }
+
                 allNodes[node.Id] = new AssembledNode(
                     node.Id,
                     node.Position,
@@ -193,7 +220,9 @@ public static class JBeamAssembler
     private static Vector3? CombineFlexBodyPosition(Vector3? basePosition, Vector3 slotOffset)
     {
         if (basePosition == null && slotOffset == Vector3.Zero)
-            return null;
+        {
+	        return null;
+        }
 
         return (basePosition ?? Vector3.Zero) + slotOffset;
     }
@@ -224,7 +253,9 @@ public static class JBeamAssembler
         foreach (var part in activeParts)
         {
             if (IsDetachable(part.SlotType))
-                detachablePartNames.Add(part.Name);
+            {
+	            detachablePartNames.Add(part.Name);
+            }
         }
 
         // For each detachable part: find its exclusive nodes and break strength
@@ -232,7 +263,10 @@ public static class JBeamAssembler
 
         foreach (var part in activeParts)
         {
-            if (!detachablePartNames.Contains(part.Name)) continue;
+            if (!detachablePartNames.Contains(part.Name))
+            {
+	            continue;
+            }
 
             var exclusiveNodes = part.Nodes
                 .Select(n => n.Id)
@@ -300,11 +334,17 @@ public static class JBeamAssembler
 
     private static bool IsDetachable(string slotType)
     {
-        if (string.IsNullOrEmpty(slotType)) return false;
+        if (string.IsNullOrEmpty(slotType))
+        {
+	        return false;
+        }
+
         foreach (string pattern in DetachableSlotPatterns)
         {
             if (slotType.Contains(pattern, StringComparison.OrdinalIgnoreCase))
-                return true;
+            {
+	            return true;
+            }
         }
         return false;
     }
@@ -327,7 +367,9 @@ public static class JBeamAssembler
             if (id1InPart ^ id2InPart)
             {
                 if (beam.BreakStrength < minStrength)
-                    minStrength = beam.BreakStrength;
+                {
+	                minStrength = beam.BreakStrength;
+                }
             }
         }
 

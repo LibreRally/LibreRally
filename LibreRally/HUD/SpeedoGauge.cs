@@ -75,13 +75,19 @@ public class SpeedoGauge : GameSystemBase
 
     public override void Draw(GameTime gameTime)
     {
-        if (_game == null || _sb == null || _pixel == null) return;
+        if (_game == null || _sb == null || _pixel == null)
+        {
+	        return;
+        }
 
         var gd = _game.GraphicsDevice;
         var ctx = _game.GraphicsContext;
         var cmd = ctx.CommandList;
         var back = gd.Presenter?.BackBuffer;
-        if (back == null) return;
+        if (back == null)
+        {
+	        return;
+        }
 
         int sw = back.Width;
         int sh = back.Height;
@@ -170,7 +176,9 @@ public class SpeedoGauge : GameSystemBase
     {
         fraction = Math.Clamp(fraction, 0f, 1f);
         if (fraction < 0.002f)
-            return;
+        {
+	        return;
+        }
 
         DrawGradientArcBand(cx, cy, TrackRadius, TrackThickness + 4f, 0f, fraction, f => WithAlpha(colorAtFraction(f), 42), true);
         DrawGradientArcBand(cx, cy, TrackRadius, TrackThickness, 0f, fraction, colorAtFraction, true);
@@ -188,7 +196,9 @@ public class SpeedoGauge : GameSystemBase
             DrawTick(cx, cy, frac, MajorTickInnerRadius, TickOuterRadius, new Color(232, 236, 240, 230), 2.5f);
 
             if (i >= sectionCount)
-                continue;
+            {
+	            continue;
+            }
 
             for (int j = 1; j <= minorTicksPerGap; j++)
             {
@@ -239,7 +249,9 @@ public class SpeedoGauge : GameSystemBase
         DrawFilledCircle(cx + 1.5f, cy + 2f, 12f, new Color(0, 0, 0, 50));
 
         if (HandbrakeEngaged)
-            DrawFilledCircle(cx, cy, 13f, new Color(255, 76, 60, 26));
+        {
+	        DrawFilledCircle(cx, cy, 13f, new Color(255, 76, 60, 26));
+        }
 
         DrawFilledCircle(cx, cy, 10f, new Color(10, 12, 15, 232));
         DrawCircleStroke(cx, cy, 10f, 1.5f, new Color(150, 156, 166, HandbrakeEngaged ? 86 : 44));
@@ -264,9 +276,13 @@ public class SpeedoGauge : GameSystemBase
         var offColor = new Color(50, 54, 62, 190);
 
         if (CurrentGear <= 0)
-            DrawReverseGlyph(cx, cy, onColor);
+        {
+	        DrawReverseGlyph(cx, cy, onColor);
+        }
         else
-            DrawSevenSegmentDigit(cx, cy, Math.Clamp(CurrentGear, 0, 9), onColor, glowColor, offColor);
+        {
+	        DrawSevenSegmentDigit(cx, cy, Math.Clamp(CurrentGear, 0, 9), onColor, glowColor, offColor);
+        }
     }
 
     private void DrawSevenSegmentDigit(float cx, float cy, int digit, Color onColor, Color glowColor, Color offColor)
@@ -362,7 +378,10 @@ public class SpeedoGauge : GameSystemBase
     {
         var delta = end - start;
         var length = delta.Length();
-        if (length < 0.5f) return;
+        if (length < 0.5f)
+        {
+	        return;
+        }
 
         float angle = MathF.Atan2(delta.Y, delta.X);
         var center = (start + end) * 0.5f;
@@ -384,7 +403,9 @@ public class SpeedoGauge : GameSystemBase
             float yPos = y;
             float xSquared = radiusSquared - (yPos * yPos);
             if (xSquared < 0f)
-                continue;
+            {
+	            continue;
+            }
 
             float xExtent = MathF.Sqrt(xSquared);
             DrawRect(new RectangleF(cx - xExtent, cy + yPos - 0.5f, xExtent * 2f, 1f), color);
@@ -401,7 +422,9 @@ public class SpeedoGauge : GameSystemBase
         startFrac = Math.Clamp(startFrac, 0f, 1f);
         endFrac = Math.Clamp(endFrac, 0f, 1f);
         if (endFrac <= startFrac)
-            return;
+        {
+	        return;
+        }
 
         DrawArcBand(cx, cy, radius, thickness, StartDeg + SweepDeg * startFrac, SweepDeg * (endFrac - startFrac), color, roundCaps);
     }
@@ -409,7 +432,9 @@ public class SpeedoGauge : GameSystemBase
     private void DrawArcBand(float cx, float cy, float radius, float thickness, float startDeg, float sweepDeg, Color color, bool roundCaps)
     {
         if (MathF.Abs(sweepDeg) < 0.05f || thickness <= 0.1f)
-            return;
+        {
+	        return;
+        }
 
         int segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
         Vector2 first = Vector2.Zero;
@@ -423,7 +448,10 @@ public class SpeedoGauge : GameSystemBase
             var p1 = PointOnCircle(cx, cy, radius, segmentEnd);
 
             if (i == 0)
-                first = p0;
+            {
+	            first = p0;
+            }
+
             last = p1;
 
             DrawLine(p0, p1, color, thickness);
@@ -442,7 +470,9 @@ public class SpeedoGauge : GameSystemBase
         startFrac = Math.Clamp(startFrac, 0f, 1f);
         endFrac = Math.Clamp(endFrac, 0f, 1f);
         if (endFrac <= startFrac || thickness <= 0.1f)
-            return;
+        {
+	        return;
+        }
 
         float sweepDeg = SweepDeg * (endFrac - startFrac);
         int segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
@@ -461,7 +491,10 @@ public class SpeedoGauge : GameSystemBase
             var p1 = PointOnCircle(cx, cy, radius, StartDeg + SweepDeg * segmentEndFrac);
 
             if (i == 0)
-                first = p0;
+            {
+	            first = p0;
+            }
+
             last = p1;
 
             DrawLine(p0, p1, colorAtFraction(segmentMidFrac), thickness);
@@ -494,9 +527,14 @@ public class SpeedoGauge : GameSystemBase
 
         fraction = Math.Clamp(fraction, 0f, 1f);
         if (fraction <= SpeedCautionFrac)
-            return green;
+        {
+	        return green;
+        }
+
         if (fraction <= SpeedWarningFrac)
-            return LerpColor(green, amber, (fraction - SpeedCautionFrac) / (SpeedWarningFrac - SpeedCautionFrac));
+        {
+	        return LerpColor(green, amber, (fraction - SpeedCautionFrac) / (SpeedWarningFrac - SpeedCautionFrac));
+        }
 
         return LerpColor(amber, red, (fraction - SpeedWarningFrac) / (1f - SpeedWarningFrac));
     }
@@ -510,9 +548,14 @@ public class SpeedoGauge : GameSystemBase
 
         fraction = Math.Clamp(fraction, 0f, 1f);
         if (fraction <= RpmAmberFrac)
-            return LerpColor(blue, brightBlue, fraction / RpmAmberFrac);
+        {
+	        return LerpColor(blue, brightBlue, fraction / RpmAmberFrac);
+        }
+
         if (fraction <= RpmRedlineFrac)
-            return LerpColor(brightBlue, amber, (fraction - RpmAmberFrac) / (RpmRedlineFrac - RpmAmberFrac));
+        {
+	        return LerpColor(brightBlue, amber, (fraction - RpmAmberFrac) / (RpmRedlineFrac - RpmAmberFrac));
+        }
 
         return LerpColor(amber, red, (fraction - RpmRedlineFrac) / (1f - RpmRedlineFrac));
     }

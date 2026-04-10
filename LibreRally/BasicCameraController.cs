@@ -59,7 +59,7 @@ public class BasicCameraController : SyncScript
 
     private void ProcessInput()
     {
-        float deltaTime = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+        var deltaTime = (float)Game.UpdateTime.Elapsed.TotalSeconds;
         translation = Vector3.Zero;
         yaw = 0f;
         pitch = 0f;
@@ -75,13 +75,13 @@ public class BasicCameraController : SyncScript
             //    If you don't use deltaTime your speed will be dependant on the amount of frames rendered
             //    on screen which often are inconsistent, meaning that if the player has performance issues,
             //    this entity will move around slower.
-            float speed = 1f * deltaTime;
+            var speed = 1f * deltaTime;
 
-            Vector3 dir = Vector3.Zero;
+            var dir = Vector3.Zero;
 
             if (Gamepad && Input.HasGamePad)
             {
-                GamePadState padState = Input.DefaultGamePad.State;
+                var padState = Input.DefaultGamePad.State;
                 // LeftThumb can be positive or negative on both axis (pushed to the right or to the left)
                 dir.Z += padState.LeftThumb.Y;
                 dir.X += padState.LeftThumb.X;
@@ -156,11 +156,11 @@ public class BasicCameraController : SyncScript
         // Keyboard and Gamepad based Rotation
         {
             // See Keyboard & Gamepad translation's deltaTime usage
-            float speed = 1f * deltaTime;
-            Vector2 rotation = Vector2.Zero;
+            var speed = 1f * deltaTime;
+            var rotation = Vector2.Zero;
             if (Gamepad && Input.HasGamePad)
             {
-                GamePadState padState = Input.DefaultGamePad.State;
+                var padState = Input.DefaultGamePad.State;
                 rotation.X += padState.RightThumb.Y;
                 rotation.Y += -padState.RightThumb.X;
             }
@@ -267,7 +267,7 @@ public class BasicCameraController : SyncScript
         var currentPitch = MathUtil.PiOverTwo - MathF.Acos(Vector3.Dot(rotation.Forward, upVector));
         pitch = MathUtil.Clamp(currentPitch + pitch, -MaximumPitch, MaximumPitch) - currentPitch;
 
-        Vector3 finalTranslation = translation;
+        var finalTranslation = translation;
         finalTranslation.Z = -finalTranslation.Z;
         finalTranslation = Vector3.TransformCoordinate(finalTranslation, rotation);
 

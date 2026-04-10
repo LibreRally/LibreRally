@@ -150,7 +150,10 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<float> camberAngles,
         float dt)
     {
-        if (dt < 1e-6f) return;
+        if (dt < 1e-6f)
+        {
+	        return;
+        }
 
         Vector3 chassisVelocity = chassisBody.LinearVelocity;
 
@@ -241,9 +244,13 @@ public sealed class VehicleDynamicsSystem
                 : wheelGrounded[i] ? 1f : 0f;
 
             if (!WheelGrounded[i])
-                CurrentNormalLoads[i] = 0f;
+            {
+	            CurrentNormalLoads[i] = 0f;
+            }
             else
-                CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f) * contactScale;
+            {
+	            CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f) * contactScale;
+            }
         }
     }
 
@@ -413,13 +420,17 @@ public sealed class VehicleDynamicsSystem
         for (int i = 0; i < WheelCount; i++)
         {
             if (!WheelGrounded[i])
-                continue;
+            {
+	            continue;
+            }
 
             float fx = LongitudinalForces[i];
             float fy = LateralForces[i];
 
             if (MathF.Abs(fx) < 0.01f && MathF.Abs(fy) < 0.01f)
-                continue;
+            {
+	            continue;
+            }
 
             // Build force vector in world space using wheel orientation
             Vector3 wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
@@ -449,7 +460,10 @@ public sealed class VehicleDynamicsSystem
     {
         float lengthSq = value.LengthSquared();
         if (lengthSq < 1e-6f)
-            return fallback;
+        {
+	        return fallback;
+        }
+
         return value / MathF.Sqrt(lengthSq);
     }
 }

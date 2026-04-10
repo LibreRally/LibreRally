@@ -67,17 +67,28 @@ public static class BeamNGMaterialLoader
         {
             string matName = matEntry.Name;
             // Skip metadata keys (not material definitions)
-            if (matName is "version" or "persistentId") continue;
+            if (matName is "version" or "persistentId")
+            {
+	            continue;
+            }
 
             var matElem = matEntry.Value;
-            if (matElem.ValueKind != JsonValueKind.Object) continue;
+            if (matElem.ValueKind != JsonValueKind.Object)
+            {
+	            continue;
+            }
 
             string? texPath = FindBestTexturePath(matElem);
-            if (texPath == null) continue;
+            if (texPath == null)
+            {
+	            continue;
+            }
 
             string? resolved = ResolveVehiclePath(texPath, vehiclesRootDir);
             if (!string.IsNullOrEmpty(resolved))
-                result.TryAdd(matName, resolved);
+            {
+	            result.TryAdd(matName, resolved);
+            }
         }
     }
 
@@ -87,16 +98,29 @@ public static class BeamNGMaterialLoader
     /// </summary>
     private static string? FindBestTexturePath(JsonElement material)
     {
-        if (!material.TryGetProperty("Stages", out var stages)) return null;
+        if (!material.TryGetProperty("Stages", out var stages))
+        {
+	        return null;
+        }
 
         foreach (var stage in stages.EnumerateArray())
         {
-            if (stage.ValueKind != JsonValueKind.Object) continue;
+            if (stage.ValueKind != JsonValueKind.Object)
+            {
+	            continue;
+            }
 
             // PBR format (version 1.5+): baseColorMap
-            if (TryGetNonNullPath(stage, "baseColorMap", out string? path)) return path;
+            if (TryGetNonNullPath(stage, "baseColorMap", out string? path))
+            {
+	            return path;
+            }
+
             // Legacy format: colorMap
-            if (TryGetNonNullPath(stage, "colorMap", out path)) return path;
+            if (TryGetNonNullPath(stage, "colorMap", out path))
+            {
+	            return path;
+            }
             // Diffuse colour only — skip; no texture file to load
         }
 
@@ -106,12 +130,22 @@ public static class BeamNGMaterialLoader
     private static bool TryGetNonNullPath(JsonElement stage, string key, out string? path)
     {
         path = null;
-        if (!stage.TryGetProperty(key, out var elem)) return false;
-        if (elem.ValueKind != JsonValueKind.String) return false;
+        if (!stage.TryGetProperty(key, out var elem))
+        {
+	        return false;
+        }
+
+        if (elem.ValueKind != JsonValueKind.String)
+        {
+	        return false;
+        }
 
         string raw = elem.GetString()!;
         // Ignore BeamNG placeholder textures
-        if (IsNullTexture(raw)) return false;
+        if (IsNullTexture(raw))
+        {
+	        return false;
+        }
 
         path = raw;
         return true;
@@ -131,7 +165,10 @@ public static class BeamNGMaterialLoader
     /// </summary>
     private static string? ResolveVehiclePath(string vehiclePath, string vehiclesRootDir)
     {
-        if (string.IsNullOrWhiteSpace(vehiclePath)) return null;
+        if (string.IsNullOrWhiteSpace(vehiclePath))
+        {
+	        return null;
+        }
 
         // Normalise: remove leading slashes, convert forward-slashes
         string normalised = vehiclePath.TrimStart('/', '\\');
@@ -139,18 +176,26 @@ public static class BeamNGMaterialLoader
         // Strip the "vehicles/" prefix that BeamNG uses as a virtual root
         const string vehiclesPrefix = "vehicles/";
         if (normalised.StartsWith(vehiclesPrefix, StringComparison.OrdinalIgnoreCase))
-            normalised = normalised[vehiclesPrefix.Length..];
+        {
+	        normalised = normalised[vehiclesPrefix.Length..];
+        }
 
         string fullPath = Path.Combine(vehiclesRootDir,
             normalised.Replace('/', Path.DirectorySeparatorChar));
 
-        if (File.Exists(fullPath)) return fullPath;
+        if (File.Exists(fullPath))
+        {
+	        return fullPath;
+        }
 
         // Fallback: if the original reference was a .dds, try .png (for copyright-free placeholders)
         if (Path.GetExtension(fullPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
         {
             string pngPath = Path.ChangeExtension(fullPath, ".png");
-            if (File.Exists(pngPath)) return pngPath;
+            if (File.Exists(pngPath))
+            {
+	            return pngPath;
+            }
         }
 
         return null;

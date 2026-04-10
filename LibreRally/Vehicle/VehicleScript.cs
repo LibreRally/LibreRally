@@ -60,10 +60,16 @@ public class VehicleScript : SyncScript
 
     public override void Update()
     {
-        if (_chassis == null) return;
+        if (_chassis == null)
+        {
+	        return;
+        }
 
         float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-        if (dt <= 0f) return;
+        if (dt <= 0f)
+        {
+	        return;
+        }
 
         ProcessDriving(dt);
     }
@@ -74,19 +80,42 @@ public class VehicleScript : SyncScript
         float throttle = 0f, brake = 0f, steerInput = 0f;
         bool handbrake = false;
 
-        if (Input.IsKeyDown(Keys.W)) throttle = 1f;
-        if (Input.IsKeyDown(Keys.S)) brake = 1f;
-        if (Input.IsKeyDown(Keys.A)) steerInput = -1f;
-        if (Input.IsKeyDown(Keys.D)) steerInput = 1f;
-        if (Input.IsKeyDown(Keys.Space)) handbrake = true;
+        if (Input.IsKeyDown(Keys.W))
+        {
+	        throttle = 1f;
+        }
+
+        if (Input.IsKeyDown(Keys.S))
+        {
+	        brake = 1f;
+        }
+
+        if (Input.IsKeyDown(Keys.A))
+        {
+	        steerInput = -1f;
+        }
+
+        if (Input.IsKeyDown(Keys.D))
+        {
+	        steerInput = 1f;
+        }
+
+        if (Input.IsKeyDown(Keys.Space))
+        {
+	        handbrake = true;
+        }
 
         // ── Steering ──────────────────────────────────────────────────────
         if (Math.Abs(steerInput) > 0.01f)
-            _steerAngle = MathUtil.Clamp(
-                _steerAngle + steerInput * SteerSpeed * dt,
-                -MaxSteerAngle, MaxSteerAngle);
+        {
+	        _steerAngle = MathUtil.Clamp(
+		        _steerAngle + steerInput * SteerSpeed * dt,
+		        -MaxSteerAngle, MaxSteerAngle);
+        }
         else
-            _steerAngle = MathUtil.Lerp(_steerAngle, 0f, SteerReturnSpeed * dt);
+        {
+	        _steerAngle = MathUtil.Lerp(_steerAngle, 0f, SteerReturnSpeed * dt);
+        }
 
         // ── Chassis velocity ───────────────────────────────────────────────
         var vel = _chassis!.LinearVelocity;
@@ -116,7 +145,10 @@ public class VehicleScript : SyncScript
 
     private void ApplyAntiRoll(float dt)
     {
-        if (_chassis == null) return;
+        if (_chassis == null)
+        {
+	        return;
+        }
 
         var up = Vector3.Transform(Vector3.UnitY, _chassis.Entity.Transform.Rotation);
         var worldUp = Vector3.UnitY;

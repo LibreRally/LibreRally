@@ -28,11 +28,16 @@ public class BreakablePartComponent : SyncScript
 
     public override void Update()
     {
-        if (_broken || WeldConstraint == null || !WeldConstraint.Attached) return;
+        if (_broken || WeldConstraint == null || !WeldConstraint.Attached)
+        {
+	        return;
+        }
 
         float force = WeldConstraint.GetAccumulatedForceMagnitude();
         if (force > BreakStrength)
-            Break();
+        {
+	        Break();
+        }
     }
 
     private void Break()

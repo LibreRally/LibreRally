@@ -18,12 +18,19 @@ public class RallyHud : SyncScript
     public override void Update()
     {
         if (Timer != null)
-            DebugText.Print($"Time: {Timer.GetTimeString()}", new Int2(16, 16));
+        {
+	        DebugText.Print($"Time: {Timer.GetTimeString()}", new Int2(16, 16));
+        }
 
         if (RaceController != null && !RaceController.IsRacing && RaceController.CountdownRemaining > 0)
-            DebugText.Print($"GO IN: {RaceController.CountdownBeats}", new Int2(16, 36));
+        {
+	        DebugText.Print($"GO IN: {RaceController.CountdownBeats}", new Int2(16, 36));
+        }
 
-        if (Car == null) return;
+        if (Car == null)
+        {
+	        return;
+        }
 
         // Digital overlay aligned to the dual-dial gauge drawn by SpeedoGauge.
         var gd = ((Stride.Engine.Game)Game).GraphicsDevice;
@@ -44,6 +51,8 @@ public class RallyHud : SyncScript
 
         // Redline flash warning
         if (Car.EngineRpm > Car.MaxRpm * 0.92f)
-            DebugText.Print("SHIFT!", new Int2(rpmCx - 18, cy - 30));
+        {
+	        DebugText.Print("SHIFT!", new Int2(rpmCx - 18, cy - 30));
+        }
     }
 }
