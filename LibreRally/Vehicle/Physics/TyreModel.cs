@@ -394,9 +394,13 @@ public sealed class TyreModel
             {
                 float brakeOmegaChange = (brakeTorque / airInertia) * dt;
                 if (state.AngularVelocity > 0f)
-                    state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+                {
+	                state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+                }
                 else if (state.AngularVelocity < 0f)
-                    state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+                {
+	                state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+                }
             }
             return;
         }
@@ -590,9 +594,13 @@ public sealed class TyreModel
         {
             float brakeOmegaChange = (brakeTorque / wheelInertia) * dt;
             if (state.AngularVelocity > 0f)
-                state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+            {
+	            state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+            }
             else if (state.AngularVelocity < 0f)
-                state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+            {
+	            state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+            }
         }
 
         // ── Thermal model ────────────────────────────────────────────────────
@@ -745,7 +753,10 @@ public sealed class TyreModel
     {
         float threshold = peakForce / MathF.Max(4f * halfPatch * halfPatch * brushCperLength, 1f);
         if (absSlip <= threshold)
-            return 1f;
+        {
+	        return 1f;
+        }
+
         return Math.Clamp(threshold / MathF.Max(absSlip, 1e-6f), 0f, 1f);
     }
 
@@ -761,7 +772,9 @@ public sealed class TyreModel
     {
         lambda = Math.Clamp(lambda, 0f, 1f);
         if (lambda >= 1f)
-            return halfPatch / 3f;
+        {
+	        return halfPatch / 3f;
+        }
 
         float numerator = halfPatch * lambda * (1f - (2f / 3f) * lambda);
         float denominator = 2f * (1f - 0.5f * lambda);
@@ -822,13 +835,17 @@ public sealed class TyreModel
 
         // Use the higher-magnitude force: normal Pacejka at low slip, retention floor at high slip.
         if (t <= 0f)
-            return pacejkaForce;
+        {
+	        return pacejkaForce;
+        }
 
         // Smooth blend — don't let force drop below retention floor past transition
         float absPacejka = MathF.Abs(pacejkaForce);
         float absFloor = MathF.Abs(retentionFloor);
         if (absPacejka >= absFloor)
-            return pacejkaForce;
+        {
+	        return pacejkaForce;
+        }
 
         return pacejkaForce + t * (retentionFloor - pacejkaForce);
     }

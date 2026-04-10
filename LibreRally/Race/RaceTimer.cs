@@ -31,6 +31,8 @@ public class RaceTimer : SyncScript
     public override void Update()
     {
         if (_running)
-            _elapsed += Game.UpdateTime.Elapsed.TotalSeconds;
+        {
+	        _elapsed += Game.UpdateTime.Elapsed.TotalSeconds;
+        }
     }
 }

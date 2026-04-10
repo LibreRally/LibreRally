@@ -49,8 +49,15 @@ public class RaceController : SyncScript
 
     private void OnCheckpointTriggered(int index)
     {
-        if (_state != State.Racing) return;
-        if (index != _nextCheckpoint) return;
+        if (_state != State.Racing)
+        {
+	        return;
+        }
+
+        if (index != _nextCheckpoint)
+        {
+	        return;
+        }
 
         SplitTimes.Add(Timer?.ElapsedSeconds ?? 0);
         _nextCheckpoint++;

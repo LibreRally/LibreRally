@@ -1,8 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net10.0-windows;net10.0</TargetFrameworks>
+	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
+	  <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="CommentSense" Version="1.0.0" />
+    <PackageReference Include="Microsoft.Build.Tasks.Core" Version="18.4.0" />
     <PackageReference Include="Stride.Engine" Version="4.3.0.2507" />
     <PackageReference Include="Stride.Video" Version="4.3.0.2507" />
     <PackageReference Include="Stride.BepuPhysics" Version="4.3.0.2507" />

@@ -43,7 +43,9 @@ public class VehicleLoader
     public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null)
     {
         if (!Directory.Exists(vehicleFolderPath))
-            throw new DirectoryNotFoundException($"Vehicle folder not found: '{vehicleFolderPath}'");
+        {
+	        throw new DirectoryNotFoundException($"Vehicle folder not found: '{vehicleFolderPath}'");
+        }
 
         // 0. Load .pc config (parts selection + physics variables)
         PcConfig? pcConfig = null;
@@ -172,7 +174,9 @@ public class VehicleLoader
         Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
                  $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
         if (pcPath != null)
-            Log.Info($"[VehicleLoader] Active config path: {pcPath}");
+        {
+	        Log.Info($"[VehicleLoader] Active config path: {pcPath}");
+        }
 
         return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR, diagnostics);
     }
@@ -329,13 +333,18 @@ public class VehicleLoader
                 source.TextureMap);
 
             if (meshEntity == null)
-                continue;
+            {
+	            continue;
+            }
 
             ApplyWheelFlexBodyTransform(meshEntity, wheelEntity, flexBody, sourceMeshes);
             wheelEntity.AddChild(meshEntity);
             wheelMeshNames.Add(flexBody.MeshName);
             if (IsTireLikeFlexBody(flexBody))
-                tireLikeAttachments[wheelKey]++;
+            {
+	            tireLikeAttachments[wheelKey]++;
+            }
+
             attached++;
         }
 
@@ -415,7 +424,9 @@ public class VehicleLoader
     private static bool ContainsWheelVisualToken(string value)
     {
         if (string.IsNullOrEmpty(value))
-            return false;
+        {
+	        return false;
+        }
 
         return value.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
@@ -454,16 +465,22 @@ public class VehicleLoader
             : VehiclePhysicsBuilder.BeamNGToStride(flexBody.Position.Value) - wheelEntity.Transform.Position;
 
         if (!geometryAlreadyPositioned && flexBody.Rotation.HasValue)
-            meshEntity.Transform.Rotation = BeamNGRotationToStride(flexBody.Rotation.Value);
+        {
+	        meshEntity.Transform.Rotation = BeamNGRotationToStride(flexBody.Rotation.Value);
+        }
 
         if (!geometryAlreadyPositioned && flexBody.Scale.HasValue)
-            meshEntity.Transform.Scale = BeamNGScaleToStride(flexBody.Scale.Value);
+        {
+	        meshEntity.Transform.Scale = BeamNGScaleToStride(flexBody.Scale.Value);
+        }
     }
 
     private static bool GeometryMatchesPosition(List<ColladaMesh> sourceMeshes, System.Numerics.Vector3 expectedPosition)
     {
         if (sourceMeshes.Count == 0)
-            return false;
+        {
+	        return false;
+        }
 
         var sum = System.Numerics.Vector3.Zero;
         int count = 0;
@@ -477,7 +494,9 @@ public class VehicleLoader
         }
 
         if (count == 0)
-            return false;
+        {
+	        return false;
+        }
 
         var centroid = sum / count;
         return System.Numerics.Vector3.Distance(centroid, expectedPosition) < 0.25f;
@@ -540,7 +559,9 @@ public class VehicleLoader
             }
 
             if (data.Wheel.GetChildren().Any(child => child.Name == $"{wheelKey}_fallback_tire"))
-                continue;
+            {
+	            continue;
+            }
 
             var tireEntity = BuildFallbackTireEntity($"{wheelKey}_fallback_tire", data.Spec);
             data.Wheel.AddChild(tireEntity);
@@ -551,7 +572,9 @@ public class VehicleLoader
     {
         spec = default;
         if (pcConfig == null)
-            return false;
+        {
+	        return false;
+        }
 
         string slotPrefix = front ? "tire_F" : "tire_R";
         string? partName = pcConfig.Parts
@@ -560,11 +583,15 @@ public class VehicleLoader
             .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
 
         if (string.IsNullOrWhiteSpace(partName))
-            return false;
+        {
+	        return false;
+        }
 
         var match = Regex.Match(partName, @"(?<width>\d{3})_(?<aspect>\d{2})_(?<rim>\d{2})");
         if (!match.Success)
-            return false;
+        {
+	        return false;
+        }
 
         float widthMetres = int.Parse(match.Groups["width"].Value) / 1000f;
         float aspectRatio = int.Parse(match.Groups["aspect"].Value) / 100f;
@@ -721,14 +748,20 @@ public class VehicleLoader
         Dictionary<string, string> jsonMaterials,
         Dictionary<string, string> colladaTextureMap)
     {
-        if (colladaMeshes.Count == 0) return null;
+        if (colladaMeshes.Count == 0)
+        {
+	        return null;
+        }
 
         var groups = colladaMeshes
             .Where(cm => cm.Vertices.Count > 0 && cm.Indices.Count > 0)
             .GroupBy(cm => cm.MaterialName)
             .ToList();
 
-        if (groups.Count == 0) return null;
+        if (groups.Count == 0)
+        {
+	        return null;
+        }
 
         var rootEntity = new Entity($"{vehicleName}_mesh");
         int built = 0;
@@ -747,7 +780,10 @@ public class VehicleLoader
                 foreach (int idx in cm.Indices)
                     allIndices.Add(idx + baseIndex);
             }
-            if (allVerts.Count == 0) continue;
+            if (allVerts.Count == 0)
+            {
+	            continue;
+            }
 
             var min = new Vector3(float.MaxValue);
             var max = new Vector3(float.MinValue);
@@ -774,11 +810,15 @@ public class VehicleLoader
             Texture? texture = null;
 
             if (jsonMaterials.TryGetValue(matName, out string? absolutePath))
-                texture = TryLoadTextureFromPath(absolutePath);
+            {
+	            texture = TryLoadTextureFromPath(absolutePath);
+            }
 
             // 2. Collada library_images chain (filename only, look in Textures/)
             if (texture == null && colladaTextureMap.TryGetValue(symbol, out string? colladaFile))
-                texture = TryLoadTexture(vehicleFolder, colladaFile);
+            {
+	            texture = TryLoadTexture(vehicleFolder, colladaFile);
+            }
 
             // 3. Grey placeholder — covers sunburst base-car materials and anything else missing
             var material = BuildMaterial(texture);
@@ -797,9 +837,14 @@ public class VehicleLoader
     {
         string s = symbol;
         if (s.EndsWith("-material", StringComparison.OrdinalIgnoreCase))
-            s = s[..^"-material".Length];
+        {
+	        s = s[..^"-material".Length];
+        }
         else if (s.EndsWith("_material", StringComparison.OrdinalIgnoreCase))
-            s = s[..^"_material".Length];
+        {
+	        s = s[..^"_material".Length];
+        }
+
         return s;
     }
 
@@ -822,12 +867,20 @@ public class VehicleLoader
     /// <summary>Loads a texture from an absolute file path.</summary>
     private Texture? TryLoadTextureFromPath(string absolutePath)
     {
-        if (!File.Exists(absolutePath)) return null;
+        if (!File.Exists(absolutePath))
+        {
+	        return null;
+        }
+
         try
         {
             using var stream = File.OpenRead(absolutePath);
             var image = Image.Load(stream);
-            if (image == null) return null;
+            if (image == null)
+            {
+	            return null;
+            }
+
             var tex = Texture.New(_graphicsDevice, image);
             image.Dispose();
             Log.Info($"Texture loaded: {Path.GetFileName(absolutePath)}");
@@ -850,7 +903,10 @@ public class VehicleLoader
         // Search directories: root folder first, then Textures/ subfolder
         var searchDirs = new List<string> { vehicleFolder };
         string texturesDir = Path.Combine(vehicleFolder, "Textures");
-        if (Directory.Exists(texturesDir)) searchDirs.Add(texturesDir);
+        if (Directory.Exists(texturesDir))
+        {
+	        searchDirs.Add(texturesDir);
+        }
 
         foreach (string dir in searchDirs)
         {
@@ -858,14 +914,20 @@ public class VehicleLoader
             if (!string.IsNullOrEmpty(Path.GetExtension(filename)))
             {
                 string direct = Path.Combine(dir, filename);
-                if (File.Exists(direct)) return TryLoadTextureFromPath(direct);
+                if (File.Exists(direct))
+                {
+	                return TryLoadTextureFromPath(direct);
+                }
 
                 // 2. Try replacing the extension — DAE often says .color.png but files are .color.dds
                 string noExt = Path.GetFileNameWithoutExtension(filename);
                 foreach (string ext in new[] { ".dds", ".png", ".jpg", ".jpeg", ".tga" })
                 {
                     string path = Path.Combine(dir, noExt + ext);
-                    if (File.Exists(path)) return TryLoadTextureFromPath(path);
+                    if (File.Exists(path))
+                    {
+	                    return TryLoadTextureFromPath(path);
+                    }
                 }
             }
             else
@@ -877,11 +939,18 @@ public class VehicleLoader
                     if (!File.Exists(path))
                     {
                         var found = Directory.GetFiles(dir, filename + ext, SearchOption.TopDirectoryOnly);
-                        if (found.Length == 0) continue;
+                        if (found.Length == 0)
+                        {
+	                        continue;
+                        }
+
                         path = found[0];
                     }
                     var tex = TryLoadTextureFromPath(path);
-                    if (tex != null) return tex;
+                    if (tex != null)
+                    {
+	                    return tex;
+                    }
                 }
             }
         }
@@ -913,13 +982,19 @@ public class VehicleLoader
         try
         {
             var chassisPart = definition.Parts.FirstOrDefault(p => !p.Detachable);
-            if (chassisPart == null) return null;
+            if (chassisPart == null)
+            {
+	            return null;
+            }
 
             var nodes = chassisPart.ExclusiveNodeIds
                 .Where(id => definition.Nodes.ContainsKey(id))
                 .Select(id => definition.Nodes[id])
                 .ToList();
-            if (nodes.Count == 0) return null;
+            if (nodes.Count == 0)
+            {
+	            return null;
+            }
 
             // Size from AABB of chassis nodes (Stride coords)
             var positions = nodes.Select(n => VehiclePhysicsBuilder.BeamNGToStride(n.Position)).ToList();

@@ -44,7 +44,11 @@ public class RallyCameraScript : SyncScript
 
     public override void Start()
     {
-        if (Target == null) return;
+        if (Target == null)
+        {
+	        return;
+        }
+
         var worldPos = ComputeApproximateWorldPos(Target);
         Entity.Transform.Position = worldPos + FollowOffset;
         ApplyCameraRotation(worldPos);
@@ -65,9 +69,16 @@ public class RallyCameraScript : SyncScript
 
     public override void Update()
     {
-        if (Target == null) return;
+        if (Target == null)
+        {
+	        return;
+        }
+
         float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-        if (dt <= 0f || dt > 0.1f) dt = 0.016f;
+        if (dt <= 0f || dt > 0.1f)
+        {
+	        dt = 0.016f;
+        }
 
         var pad = Input.GamePads.FirstOrDefault();
         if (pad != null && pad.IsButtonPressed(GamePadButton.Y))
@@ -144,7 +155,10 @@ public class RallyCameraScript : SyncScript
     private void ApplyCameraRotation(Vector3 targetWorldPos)
     {
         var lookDir = targetWorldPos - Entity.Transform.Position;
-        if (lookDir.LengthSquared() < 0.000001f) return;
+        if (lookDir.LengthSquared() < 0.000001f)
+        {
+	        return;
+        }
 
         lookDir.Normalize();
         float horizontal = MathF.Sqrt(lookDir.X * lookDir.X + lookDir.Z * lookDir.Z);
@@ -171,7 +185,10 @@ public class RallyCameraScript : SyncScript
     private static Vector2 ApplyLookDeadZone(Vector2 thumb)
     {
         float magnitude = thumb.Length();
-        if (magnitude <= LookDeadZone || magnitude <= float.Epsilon) return Vector2.Zero;
+        if (magnitude <= LookDeadZone || magnitude <= float.Epsilon)
+        {
+	        return Vector2.Zero;
+        }
 
         float scaledMagnitude = MathF.Min(1f, (magnitude - LookDeadZone) / (1f - LookDeadZone));
         return thumb * (scaledMagnitude / magnitude);
@@ -198,8 +215,16 @@ public class RallyCameraScript : SyncScript
         float t = MathF.Min(1f, recentreSpeed * dt);
         currentAngles.X = MathUtil.Lerp(currentAngles.X, 0f, t);
         currentAngles.Y = MathUtil.Lerp(currentAngles.Y, 0f, t);
-        if (MathF.Abs(currentAngles.X) < 0.001f) currentAngles.X = 0f;
-        if (MathF.Abs(currentAngles.Y) < 0.001f) currentAngles.Y = 0f;
+        if (MathF.Abs(currentAngles.X) < 0.001f)
+        {
+	        currentAngles.X = 0f;
+        }
+
+        if (MathF.Abs(currentAngles.Y) < 0.001f)
+        {
+	        currentAngles.Y = 0f;
+        }
+
         return currentAngles;
     }
 

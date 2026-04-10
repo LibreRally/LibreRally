@@ -170,7 +170,9 @@ public static class DifferentialSolver
         // Compute speed difference
         float deltaOmega = omegaLeft - omegaRight;
         if (MathF.Abs(deltaOmega) < 0.01f)
-            return; // wheels at same speed — no locking torque needed
+        {
+	        return; // wheels at same speed — no locking torque needed
+        }
 
         // Locking torque: proportional to input torque magnitude and speed difference.
         // tanh provides smooth onset and saturation.

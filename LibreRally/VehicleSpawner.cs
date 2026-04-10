@@ -48,7 +48,9 @@ public class VehicleSpawner : SyncScript
             Log.Error($"Failed to load vehicle: {ex}");
             _status = $"Load error: {ex.Message}";
             if (_telemetryOverlay != null)
-                _telemetryOverlay.StatusText = _status;
+            {
+	            _telemetryOverlay.StatusText = _status;
+            }
         }
     }
 
@@ -108,7 +110,9 @@ public class VehicleSpawner : SyncScript
     {
         EnsureTelemetryOverlay();
         if (_telemetryOverlay == null)
-            return;
+        {
+	        return;
+        }
 
         _telemetryOverlay.Car = car;
         _telemetryOverlay.StatusText = _status;
@@ -118,7 +122,9 @@ public class VehicleSpawner : SyncScript
     private void EnsureTelemetryOverlay()
     {
         if (_telemetryOverlay != null)
-            return;
+        {
+	        return;
+        }
 
         _telemetryOverlay = new VehicleTelemetryOverlay(Services)
         {
@@ -151,7 +157,10 @@ public class VehicleSpawner : SyncScript
     {
         var cameraEntity = SceneSystem.SceneInstance.RootScene.Entities
             .FirstOrDefault(e => e.Get<CameraComponent>() != null);
-        if (cameraEntity == null) return;
+        if (cameraEntity == null)
+        {
+	        return;
+        }
 
         foreach (var s in cameraEntity.GetAll<SyncScript>().ToList())
             cameraEntity.Remove(s);
@@ -287,7 +296,9 @@ public class VehicleSpawner : SyncScript
 
         // Toggle debug info with F3
         if (Input.IsKeyPressed(Keys.F3))
-            _showDebug = !_showDebug;
+        {
+	        _showDebug = !_showDebug;
+        }
 
         if (_telemetryOverlay != null)
         {

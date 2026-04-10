@@ -102,14 +102,18 @@ public static class VehiclePhysicsBuilder
             .Where(n => !IsWheelLikeNode(n))
             .ToList();
         if (sprungNodes.Count < 5)
-            sprungNodes = rigidNodes;
+        {
+	        sprungNodes = rigidNodes;
+        }
 
         var upperMassNodes = sprungNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
         var lowerMassNodes = sprungNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
 
         var collisionNodes = sprungNodes.Where(n => n.Position.Z >= CollisionMinZ).ToList();
         if (collisionNodes.Count < 5)
-            collisionNodes = sprungNodes;
+        {
+	        collisionNodes = sprungNodes;
+        }
 
         var upperCollisionNodes = collisionNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
         var lowerCollisionNodes = collisionNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
@@ -135,7 +139,9 @@ public static class VehiclePhysicsBuilder
         void AddBoxSpec(List<AssembledNode> nodes, float mass, bool centralFloorProxy = false)
         {
             if (nodes.Count == 0 || mass <= 0f)
-                return;
+            {
+	            return;
+            }
 
             BoundingBox aabb = ComputeAABB(nodes.Select(n => n.Position));
             Vector3 extents = aabb.Maximum - aabb.Minimum;
@@ -158,10 +164,15 @@ public static class VehiclePhysicsBuilder
         }
 
         if (lowerMass > 1f)
-            AddBoxSpec(lowerCollisionNodes, lowerMass, centralFloorProxy: true);
+        {
+	        AddBoxSpec(lowerCollisionNodes, lowerMass, centralFloorProxy: true);
+        }
+
         AddBoxSpec(upperCollisionNodes, Math.Max(upperMass, 1f));
         if (boxSpecs.Count == 0)
-            AddBoxSpec(collisionNodes, Math.Max(totalMass, 1f));
+        {
+	        AddBoxSpec(collisionNodes, Math.Max(totalMass, 1f));
+        }
 
         Vector3 centerOfMass = Vector3.Zero;
         float boxMassSum = 0f;
@@ -218,7 +229,9 @@ public static class VehiclePhysicsBuilder
             .ToList();
 
         if (partNodes.Count == 0)
-            return (new Entity(part.Name), new BodyComponent { Collider = new CompoundCollider() });
+        {
+	        return (new Entity(part.Name), new BodyComponent { Collider = new CompoundCollider() });
+        }
 
         Vector3 centroid = ComputeCentroid(partNodes.Select(n => n.Position));
         BoundingBox aabb = ComputeAABB(partNodes.Select(n => n.Position));
@@ -296,22 +309,35 @@ public static class VehiclePhysicsBuilder
         {
             foreach (var fb in def.FlexBodies)
             {
-                if (fb.Position == null) continue;
+                if (fb.Position == null)
+                {
+	                continue;
+                }
+
                 // Skip positions that carry no height info (z == 0 in BeamNG space).
                 // Steelwheel mesh flexbodies store only a lateral offset (x ≠ 0, y=0, z=0)
                 // because their real position is supplied by the slot's nodeOffset at runtime.
                 // Brake disc flexbodies store the absolute wheel centre including z ≈ 0.285 m.
-                if (Math.Abs(fb.Position.Value.Z) < 0.05f) continue;
+                if (Math.Abs(fb.Position.Value.Z) < 0.05f)
+                {
+	                continue;
+                }
+
                 // Match flexbodies whose groups include the exact wheel group (e.g. "wheel_FR")
                 bool matchesGroup = fb.NodeGroups.Any(g =>
                     g.Equals("wheel" + suffix, StringComparison.OrdinalIgnoreCase)
                     || g.Equals("wheelhub" + suffix, StringComparison.OrdinalIgnoreCase));
-                if (!matchesGroup) continue;
+                if (!matchesGroup)
+                {
+	                continue;
+                }
 
                 Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label} flexbody candidate: mesh={fb.MeshName} " +
-                                  $"pos={fb.Position.Value.X:F3},{fb.Position.Value.Y:F3},{fb.Position.Value.Z:F3}");
+                                        $"pos={fb.Position.Value.X:F3},{fb.Position.Value.Y:F3},{fb.Position.Value.Z:F3}");
                 if (!wheelCentresFromFlexbodies.ContainsKey(label))
-                    wheelCentresFromFlexbodies[label] = fb.Position.Value;
+                {
+	                wheelCentresFromFlexbodies[label] = fb.Position.Value;
+                }
             }
         }
 
@@ -323,7 +349,10 @@ public static class VehiclePhysicsBuilder
 
         foreach (var node in def.Nodes.Values)
         {
-            if (node.Position.Z < 0.10f) continue;  // skip steelwheel origin nodes
+            if (node.Position.Z < 0.10f)
+            {
+	            continue;  // skip steelwheel origin nodes
+            }
 
             foreach (var group in node.Groups)
             {
@@ -334,9 +363,14 @@ public static class VehiclePhysicsBuilder
                         && group.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
                     {
                         if (!wheelGroupNodes.ContainsKey(label))
-                            wheelGroupNodes[label] = new List<AssembledNode>();
+                        {
+	                        wheelGroupNodes[label] = new List<AssembledNode>();
+                        }
+
                         if (!wheelGroupNodes[label].Any(n => n.Id == node.Id))
-                            wheelGroupNodes[label].Add(node);
+                        {
+	                        wheelGroupNodes[label].Add(node);
+                        }
                     }
                 }
             }
@@ -346,22 +380,42 @@ public static class VehiclePhysicsBuilder
         // Only applies when flexbody positions are unavailable for that corner.
         foreach (var (label, _, _) in WheelSlots.Where(s => !s.isFront))
         {
-            if (wheelCentresFromFlexbodies.ContainsKey(label)) continue;
-            if (wheelGroupNodes.ContainsKey(label)) continue;
+            if (wheelCentresFromFlexbodies.ContainsKey(label))
+            {
+	            continue;
+            }
+
+            if (wheelGroupNodes.ContainsKey(label))
+            {
+	            continue;
+            }
 
             foreach (var node in def.Nodes.Values)
             {
-                if (node.Position.Z < 0.10f) continue;
+                if (node.Position.Z < 0.10f)
+                {
+	                continue;
+                }
+
                 bool isRearHub = node.Groups.Any(g =>
                     g.Contains("hub_R", StringComparison.OrdinalIgnoreCase)
                     && !g.Contains("hub_FR", StringComparison.OrdinalIgnoreCase)
                     && !g.Contains("hub_FL", StringComparison.OrdinalIgnoreCase));
-                if (!isRearHub) continue;
+                if (!isRearHub)
+                {
+	                continue;
+                }
+
                 string l = node.Position.X < 0 ? "wheel_RR" : "wheel_RL";
                 if (!wheelGroupNodes.ContainsKey(l))
-                    wheelGroupNodes[l] = new List<AssembledNode>();
+                {
+	                wheelGroupNodes[l] = new List<AssembledNode>();
+                }
+
                 if (!wheelGroupNodes[l].Any(n => n.Id == node.Id))
-                    wheelGroupNodes[l].Add(node);
+                {
+	                wheelGroupNodes[l].Add(node);
+                }
             }
         }
 
@@ -372,7 +426,9 @@ public static class VehiclePhysicsBuilder
         {
             foreach (var (k, v) in EstimateWheelPositions(def))
                 if (!allFoundWheels.Contains(k))
-                    wheelGroupNodes[k] = v;
+                {
+	                wheelGroupNodes[k] = v;
+                }
         }
 
         // ── Step 3: Spring parameters from .pc vars, with beam-derived fallback ──
@@ -384,7 +440,9 @@ public static class VehiclePhysicsBuilder
             .Where(n => !IsWheelLikeNode(n))
             .Sum(n => n.Weight);
         if (sprungMass <= 0f)
-            sprungMass = (float)def.Nodes.Values.Sum(n => n.Weight);
+        {
+	        sprungMass = (float)def.Nodes.Values.Sum(n => n.Weight);
+        }
 
         float quarterMass = sprungMass / 4.0f;
         quarterMass = Math.Max(quarterMass, 50f);
@@ -645,7 +703,9 @@ public static class VehiclePhysicsBuilder
     private static Dictionary<string, List<AssembledNode>> EstimateWheelPositions(VehicleDefinition def)
     {
         if (def.Nodes.Count == 0)
-            return new Dictionary<string, List<AssembledNode>>();
+        {
+	        return new Dictionary<string, List<AssembledNode>>();
+        }
 
         var allPositions = def.Nodes.Values.Select(n => n.Position).ToList();
         float minX = allPositions.Min(p => p.X);
@@ -684,7 +744,9 @@ public static class VehiclePhysicsBuilder
                 group.Contains("wheelhub", StringComparison.OrdinalIgnoreCase) ||
                 group.StartsWith("hub_", StringComparison.OrdinalIgnoreCase) ||
                 group.Contains("_hub_", StringComparison.OrdinalIgnoreCase))
-                return true;
+            {
+	            return true;
+            }
         }
 
         return false;
@@ -698,7 +760,9 @@ public static class VehiclePhysicsBuilder
     {
         var list = nodes.ToList();
         if (list.Count == 0)
-            return Vector3.Zero;
+        {
+	        return Vector3.Zero;
+        }
 
         System.Numerics.Vector3 weightedSum = System.Numerics.Vector3.Zero;
         float totalWeight = 0f;
@@ -710,7 +774,9 @@ public static class VehiclePhysicsBuilder
         }
 
         if (totalWeight <= 0f)
-            return ComputeCentroid(list.Select(n => n.Position));
+        {
+	        return ComputeCentroid(list.Select(n => n.Position));
+        }
 
         return BeamNGToStride(weightedSum / totalWeight);
     }
@@ -718,7 +784,11 @@ public static class VehiclePhysicsBuilder
     private static Vector3 ComputeCentroid(IEnumerable<System.Numerics.Vector3> beamngPositions)
     {
         var list = beamngPositions.ToList();
-        if (list.Count == 0) return Vector3.Zero;
+        if (list.Count == 0)
+        {
+	        return Vector3.Zero;
+        }
+
         var sum = System.Numerics.Vector3.Zero;
         foreach (var p in list) sum += p;
         sum /= list.Count;
@@ -730,7 +800,9 @@ public static class VehiclePhysicsBuilder
     {
         var list = beamngPositions.Select(BeamNGToStride).ToList();
         if (list.Count == 0)
-            return new BoundingBox(Vector3.Zero, Vector3.Zero);
+        {
+	        return new BoundingBox(Vector3.Zero, Vector3.Zero);
+        }
 
         var min = list[0];
         var max = list[0];

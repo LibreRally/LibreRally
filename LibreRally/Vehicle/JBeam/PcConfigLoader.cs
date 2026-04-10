@@ -45,7 +45,9 @@ public static class PcConfigLoader
 
         string mainPart = "";
         if (root.TryGetProperty("mainPartName", out var mpn) && mpn.ValueKind == JsonValueKind.String)
-            mainPart = mpn.GetString() ?? "";
+        {
+	        mainPart = mpn.GetString() ?? "";
+        }
 
         var parts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (root.TryGetProperty("parts", out var partsEl) && partsEl.ValueKind == JsonValueKind.Object)
@@ -86,7 +88,10 @@ public static class PcConfigLoader
     public static string? FindBestConfig(string vehicleFolder, string? preferredName = null)
     {
         var pcFiles = Directory.GetFiles(vehicleFolder, "*.pc", SearchOption.TopDirectoryOnly);
-        if (pcFiles.Length == 0) return null;
+        if (pcFiles.Length == 0)
+        {
+	        return null;
+        }
 
         if (!string.IsNullOrEmpty(preferredName))
         {
@@ -95,13 +100,19 @@ public static class PcConfigLoader
                 ? preferredName : preferredName + ".pc";
             var exact = Array.Find(pcFiles, f =>
                 string.Equals(Path.GetFileName(f), nameWithExt, StringComparison.OrdinalIgnoreCase));
-            if (exact != null) return exact;
+            if (exact != null)
+            {
+	            return exact;
+            }
         }
 
         // Prefer rally_pro_asphalt as a sensible default for development
         var rallyPro = Array.Find(pcFiles, f =>
             Path.GetFileNameWithoutExtension(f).Equals("rally_pro_asphalt", StringComparison.OrdinalIgnoreCase));
-        if (rallyPro != null) return rallyPro;
+        if (rallyPro != null)
+        {
+	        return rallyPro;
+        }
 
         return pcFiles[0];
     }

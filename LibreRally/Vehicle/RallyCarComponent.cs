@@ -158,7 +158,10 @@ public class RallyCarComponent : SyncScript
     public override void Update()
     {
         float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-        if (dt <= 0f || dt > 0.1f) dt = 0.016f;
+        if (dt <= 0f || dt > 0.1f)
+        {
+	        dt = 0.016f;
+        }
 
         // ── Input ────────────────────────────────────────────────────────────
         var pad = Input.GamePads.FirstOrDefault();
@@ -174,15 +177,37 @@ public class RallyCarComponent : SyncScript
             handbrakeRequested = pad.IsButtonDown(GamePadButton.A);
         }
 
-        if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W)) throttle  = MathF.Max(throttle, 1f);
-        if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S)) brake     = MathF.Max(brake,    1f);
-        if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A)) steer     = MathF.Min(steer,   -1f);
-        if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D)) steer     = MathF.Max(steer,    1f);
-        if (Input.IsKeyDown(Keys.Space))                             handbrakeRequested = true;
+        if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W))
+        {
+	        throttle  = MathF.Max(throttle, 1f);
+        }
+
+        if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S))
+        {
+	        brake     = MathF.Max(brake,    1f);
+        }
+
+        if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A))
+        {
+	        steer     = MathF.Min(steer,   -1f);
+        }
+
+        if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D))
+        {
+	        steer     = MathF.Max(steer,    1f);
+        }
+
+        if (Input.IsKeyDown(Keys.Space))
+        {
+	        handbrakeRequested = true;
+        }
 
         // ── Chassis physics ──────────────────────────────────────────────────
         var chassisBody = CarBody.Get<BodyComponent>();
-        if (chassisBody == null) return;
+        if (chassisBody == null)
+        {
+	        return;
+        }
 
         chassisBody.Awake = true;
 
@@ -328,7 +353,11 @@ public class RallyCarComponent : SyncScript
 
         // Rev up with throttle; coupling pulls toward actual drivetrain demand
         float displayCrank = InterpolateTorqueCurve(_engineRpm) * driveInput;
-        if (_engineRpm >= MaxRpm) displayCrank = 0f;
+        if (_engineRpm >= MaxRpm)
+        {
+	        displayCrank = 0f;
+        }
+
         float netDisplay   = displayCrank - frictionLoss - engBrake;
         _engineRpm += (netDisplay / EngineInertia) * dt * (60f / (2f * MathF.PI));
 
@@ -359,7 +388,10 @@ public class RallyCarComponent : SyncScript
         foreach (var wheel in SteerWheels)
         {
             var ws = wheel.Get<WheelSettings>();
-            if (ws?.SteerMotor == null) continue;
+            if (ws?.SteerMotor == null)
+            {
+	            continue;
+            }
 
             ws.CurrentSteerAngle += Math.Clamp(steerTargetAngle - ws.CurrentSteerAngle, -SteerRate * dt, SteerRate * dt);
 
@@ -387,9 +419,16 @@ public class RallyCarComponent : SyncScript
         foreach (var wheel in DriveWheels)
         {
             var wb = wheel.Get<BodyComponent>();
-            if (wb != null) wb.Awake = true;
+            if (wb != null)
+            {
+	            wb.Awake = true;
+            }
+
             var ws = wheel.Get<WheelSettings>();
-            if (ws?.DriveMotor == null) continue;
+            if (ws?.DriveMotor == null)
+            {
+	            continue;
+            }
 
             // When dynamics system is active, zero out motor forces to prevent
             // BEPU and VehicleDynamicsSystem from both generating tyre forces.
@@ -453,7 +492,9 @@ public class RallyCarComponent : SyncScript
             {
                 _brakeTorques[i] = isBraking ? serviceBrakeTorque : 0f;
                 if (isHandbrake && i >= VehicleDynamicsSystem.RL)
-                    _brakeTorques[i] += handbrakeTorque;
+                {
+	                _brakeTorques[i] += handbrakeTorque;
+                }
             }
 
             Matrix chassisWorld = chassisTransform.WorldMatrix;
@@ -577,7 +618,9 @@ public class RallyCarComponent : SyncScript
     {
         if (TorqueCurveRpm == null || TorqueCurveRpm.Length < 2 ||
             TorqueCurveNm  == null || TorqueCurveNm.Length < TorqueCurveRpm.Length)
-            return 222f;  // sunburst peak as fallback
+        {
+	        return 222f;  // sunburst peak as fallback
+        }
 
         rpm = Math.Clamp(rpm, TorqueCurveRpm[0], TorqueCurveRpm[^1]);
         for (int i = 1; i < TorqueCurveRpm.Length; i++)
@@ -595,10 +638,12 @@ public class RallyCarComponent : SyncScript
     {
         int dynamicsIndex = wheelSettings?.DynamicsIndex ?? -1;
         if ((uint)dynamicsIndex < VehicleDynamicsSystem.WheelCount)
-            return dynamicsIndex >= VehicleDynamicsSystem.RL;
+        {
+	        return dynamicsIndex >= VehicleDynamicsSystem.RL;
+        }
 
         return wheel.Name.EndsWith("_RL", StringComparison.OrdinalIgnoreCase)
-            || wheel.Name.EndsWith("_RR", StringComparison.OrdinalIgnoreCase);
+               || wheel.Name.EndsWith("_RR", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static float ClampShiftRpmForSlip(float roadRpm, float drivelineRpm, float slipAllowanceRpm)
@@ -649,17 +694,23 @@ public class RallyCarComponent : SyncScript
             sampledCount++;
 
             if (!sampledWheelGrounded[i])
-                continue;
+            {
+	            continue;
+            }
 
             groundedOmegaSum += wheelOmega;
             groundedCount++;
         }
 
         if (groundedCount > 0)
-            return groundedOmegaSum / groundedCount;
+        {
+	        return groundedOmegaSum / groundedCount;
+        }
 
         if (sampledCount > 0 && MathF.Abs(forwardSpeed) > 0.5f)
-            return sampledOmegaSum / sampledCount;
+        {
+	        return sampledOmegaSum / sampledCount;
+        }
 
         return fallbackOmega;
     }
@@ -672,7 +723,9 @@ public class RallyCarComponent : SyncScript
         float assistGain)
     {
         if (assistGain <= 0f || MathF.Abs(steerRack) < 0.01f)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         float speedMs = MathF.Abs(forwardSpeed);
         float travelDirection = speedMs > 0.35f
@@ -682,7 +735,9 @@ public class RallyCarComponent : SyncScript
                 : 0f;
 
         if (travelDirection == 0f)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         const float AssistFadeInSpeed = 0.75f;
         const float AssistLaunchSpeedBias = 0.2f;
@@ -699,11 +754,15 @@ public class RallyCarComponent : SyncScript
     internal static float ApplyYawAssistTopUp(float currentYawRate, float targetYawRate, float maxDelta)
     {
         if (MathF.Abs(targetYawRate) < 1e-4f || maxDelta <= 0f)
-            return currentYawRate;
+        {
+	        return currentYawRate;
+        }
 
         float shortfall = targetYawRate - currentYawRate;
         if (MathF.Abs(shortfall) < 1e-4f || MathF.Sign(shortfall) != MathF.Sign(targetYawRate))
-            return currentYawRate;
+        {
+	        return currentYawRate;
+        }
 
         return currentYawRate + Math.Clamp(shortfall, -maxDelta, maxDelta);
     }
@@ -719,7 +778,9 @@ public class RallyCarComponent : SyncScript
         float reverseEngageSpeedKmh)
     {
         if (shiftCooldown > 0f || handbrakeRequested)
-            return currentGear;
+        {
+	        return currentGear;
+        }
 
         float reverseEngageSpeedMs = MathF.Max(reverseEngageSpeedKmh / 3.6f, 0.1f);
         bool nearStandstill = speedKmh < reverseEngageSpeedKmh && MathF.Abs(forwardSpeed) < reverseEngageSpeedMs;
@@ -727,14 +788,20 @@ public class RallyCarComponent : SyncScript
         bool wantsReverse = brakeInput > 0.05f && throttleInput <= 0.05f;
 
         if (currentGear == 0)
-            return wantsForward && nearStandstill ? 1 : 0;
+        {
+	        return wantsForward && nearStandstill ? 1 : 0;
+        }
 
         if (wantsReverse && nearStandstill)
-            return 0;
+        {
+	        return 0;
+        }
 
         // Ensure we don't inappropriately force a downshift to 1 while doing a high-RPM burnout
         if (nearStandstill && currentGear > 1 && !wantsForward)
-            return 1;
+        {
+	        return 1;
+        }
 
         return currentGear;
     }
@@ -744,7 +811,9 @@ public class RallyCarComponent : SyncScript
         float clampedDeadzone = Math.Clamp(deadzone, 0f, 0.99f);
         float clampedValue = Math.Clamp(value, 0f, 1f);
         if (clampedValue <= clampedDeadzone)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         return (clampedValue - clampedDeadzone) / (1f - clampedDeadzone);
     }
@@ -760,7 +829,9 @@ public class RallyCarComponent : SyncScript
         float safeWheelRadius = MathF.Max(WheelRadius, 0.05f);
         float fallbackOmega = forwardSpeed / safeWheelRadius;
         if (Dynamics == null || DriveWheels.Count == 0)
-            return fallbackOmega;
+        {
+	        return fallbackOmega;
+        }
 
         Span<float> sampledWheelOmegas = stackalloc float[VehicleDynamicsSystem.WheelCount];
         Span<bool> sampledWheelGrounded = stackalloc bool[VehicleDynamicsSystem.WheelCount];
@@ -771,14 +842,18 @@ public class RallyCarComponent : SyncScript
             var ws = wheel.Get<WheelSettings>();
             int dynamicsIndex = ws?.DynamicsIndex ?? -1;
             if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount)
-                continue;
+            {
+	            continue;
+            }
 
             sampledWheelOmegas[sampledCount] = Dynamics.WheelStates[dynamicsIndex].AngularVelocity;
             sampledWheelGrounded[sampledCount] = Dynamics.WheelGrounded[dynamicsIndex];
             sampledCount++;
 
             if (sampledCount >= VehicleDynamicsSystem.WheelCount)
-                break;
+            {
+	            break;
+            }
         }
 
         return ResolveDrivenWheelOmega(
@@ -815,7 +890,9 @@ public class RallyCarComponent : SyncScript
         Vector3 up = chassisWorld.Up;
         float upLengthSq = up.LengthSquared();
         if (upLengthSq < 1e-6f)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         up /= MathF.Sqrt(upLengthSq);
 
@@ -824,7 +901,9 @@ public class RallyCarComponent : SyncScript
         float chassisRightLengthSq = chassisRight.LengthSquared();
         float wheelRightLengthSq = wheelRight.LengthSquared();
         if (chassisRightLengthSq < 1e-6f || wheelRightLengthSq < 1e-6f)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         chassisRight /= MathF.Sqrt(chassisRightLengthSq);
         wheelRight /= MathF.Sqrt(wheelRightLengthSq);
@@ -841,7 +920,9 @@ public class RallyCarComponent : SyncScript
         Vector3 wheelAxleWorld = wheelWorld.Right;
         float axleLengthSq = wheelAxleWorld.LengthSquared();
         if (axleLengthSq < 1e-6f)
-            return Vector3.UnitX;
+        {
+	        return Vector3.UnitX;
+        }
 
         wheelAxleWorld /= MathF.Sqrt(axleLengthSq);
 
@@ -852,7 +933,9 @@ public class RallyCarComponent : SyncScript
 
         float axisLengthSq = axisLocalA.LengthSquared();
         if (axisLengthSq < 1e-6f)
-            return Vector3.UnitX;
+        {
+	        return Vector3.UnitX;
+        }
 
         return axisLocalA / MathF.Sqrt(axisLengthSq);
     }
@@ -867,11 +950,15 @@ public class RallyCarComponent : SyncScript
         var simulation = wheelBody.Simulation;
         var tyreModel = wheelSettings.TyreModel;
         if (simulation == null || tyreModel == null)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         float staticNormalLoad = Math.Max(wheelSettings.StaticNormalLoad, 0f);
         if (staticNormalLoad <= 0f)
-            return 0f;
+        {
+	        return 0f;
+        }
 
         float wheelRadius = Math.Max(tyreModel.Radius, 0.1f);
         Vector3 rayOrigin = wheelPosition + wheelUp * (wheelRadius + GroundProbeMargin);
@@ -879,19 +966,23 @@ public class RallyCarComponent : SyncScript
         float rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
 
         wheelSettings.GroundProbeHits.Clear();
-        simulation.RayCastPenetrating(ref rayOrigin, ref rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
+        simulation.RayCastPenetrating(in rayOrigin, in rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
 
         float bestDistance = float.PositiveInfinity;
         foreach (var hit in wheelSettings.GroundProbeHits)
         {
             if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
-                continue;
+            {
+	            continue;
+            }
 
             bestDistance = MathF.Min(bestDistance, hit.Distance);
         }
 
         if (!float.IsFinite(bestDistance))
-            return 0f;
+        {
+	        return 0f;
+        }
 
         return ComputeGroundProbeContactScale(bestDistance, wheelRadius, GroundProbeMargin);
     }
@@ -938,7 +1029,9 @@ public class RallyCarComponent : SyncScript
     {
         float lengthSquared = value.LengthSquared();
         if (lengthSquared < 1e-6f)
-            return fallback;
+        {
+	        return fallback;
+        }
 
         return value / MathF.Sqrt(lengthSquared);
     }
