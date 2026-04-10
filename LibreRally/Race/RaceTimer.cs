@@ -18,11 +18,11 @@ public class RaceTimer : SyncScript
 
     public string GetTimeString()
     {
-        int totalCs = (int)(_elapsed * 100);
-        int cs = totalCs % 100;
-        int totalSec = totalCs / 100;
-        int secs = totalSec % 60;
-        int mins = totalSec / 60;
+        var totalCs = (int)(_elapsed * 100);
+        var cs = totalCs % 100;
+        var totalSec = totalCs / 100;
+        var secs = totalSec % 60;
+        var mins = totalSec / 60;
         return $"{mins:D2}:{secs:D2}.{cs:D2}";
     }
 

@@ -39,11 +39,11 @@ public static class PcConfigLoader
 
     public static PcConfig Load(string pcFilePath)
     {
-        string text = File.ReadAllText(pcFilePath);
+        var text = File.ReadAllText(pcFilePath);
         using var doc = JsonDocument.Parse(text, Options);
         var root = doc.RootElement;
 
-        string mainPart = "";
+        var mainPart = "";
         if (root.TryGetProperty("mainPartName", out var mpn) && mpn.ValueKind == JsonValueKind.String)
         {
 	        mainPart = mpn.GetString() ?? "";
@@ -54,7 +54,7 @@ public static class PcConfigLoader
         {
             foreach (var prop in partsEl.EnumerateObject())
             {
-                string value = prop.Value.ValueKind == JsonValueKind.String
+                var value = prop.Value.ValueKind == JsonValueKind.String
                     ? prop.Value.GetString() ?? ""
                     : "";
                 parts[prop.Name] = value;
@@ -66,14 +66,14 @@ public static class PcConfigLoader
         {
             foreach (var prop in varsEl.EnumerateObject())
             {
-                float val = prop.Value.ValueKind switch
+                var val = prop.Value.ValueKind switch
                 {
                     JsonValueKind.Number => prop.Value.GetSingle(),
-                    JsonValueKind.String => float.TryParse(prop.Value.GetString(), out float v) ? v : 0f,
+                    JsonValueKind.String => float.TryParse(prop.Value.GetString(), out var v) ? v : 0f,
                     _ => 0f,
                 };
                 // Strip leading $ if present
-                string key = prop.Name.StartsWith("$") ? prop.Name[1..] : prop.Name;
+                var key = prop.Name.StartsWith("$") ? prop.Name[1..] : prop.Name;
                 vars[key] = val;
             }
         }
@@ -96,7 +96,7 @@ public static class PcConfigLoader
         if (!string.IsNullOrEmpty(preferredName))
         {
             // Exact name (with or without .pc extension)
-            string nameWithExt = preferredName.EndsWith(".pc", StringComparison.OrdinalIgnoreCase)
+            var nameWithExt = preferredName.EndsWith(".pc", StringComparison.OrdinalIgnoreCase)
                 ? preferredName : preferredName + ".pc";
             var exact = Array.Find(pcFiles, f =>
                 string.Equals(Path.GetFileName(f), nameWithExt, StringComparison.OrdinalIgnoreCase));

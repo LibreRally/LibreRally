@@ -39,15 +39,15 @@ public static class JBeamParser
     public static List<JBeamPart> ParseFile(string path, Dictionary<string, float>? vars = null)
     {
         _vars = vars;
-        string raw = System.IO.File.ReadAllText(path);
+        var raw = System.IO.File.ReadAllText(path);
         return Parse(raw);
     }
 
     public static List<JBeamPart> Parse(string jbeamText)
     {
         // Some jbeam files contain multiple top-level objects — merge them before preprocessing.
-        string merged = MergeRootObjects(jbeamText);
-        string preprocessed = PreprocessJBeam(merged);
+        var merged = MergeRootObjects(jbeamText);
+        var preprocessed = PreprocessJBeam(merged);
 
         JsonDocument doc;
         try
@@ -65,7 +65,7 @@ public static class JBeamParser
 	        return parts;
         }
 
-        foreach (JsonProperty partProp in doc.RootElement.EnumerateObject())
+        foreach (var partProp in doc.RootElement.EnumerateObject())
         {
             if (partProp.Value.ValueKind != JsonValueKind.Object)
             {
@@ -94,8 +94,8 @@ public static class JBeamParser
     private static string PreprocessJBeam(string input)
     {
         var sb = new StringBuilder(input.Length + input.Length / 8);
-        int i = 0;
-        bool afterValue = false; // true when last emitted token was a complete JSON value
+        var i = 0;
+        var afterValue = false; // true when last emitted token was a complete JSON value
 
         void MaybeComma()
         {
@@ -110,7 +110,7 @@ public static class JBeamParser
 
         while (i < input.Length)
         {
-            char c = input[i];
+            var c = input[i];
 
             // ── Whitespace ─────────────────────────────────────────────────
             if (char.IsWhiteSpace(c)) { sb.Append(c); i++; continue; }
@@ -142,10 +142,10 @@ public static class JBeamParser
             {
                 MaybeComma();
                 sb.Append(c); i++;
-                bool esc = false;
+                var esc = false;
                 while (i < input.Length)
                 {
-                    char sc = input[i]; sb.Append(sc); i++;
+                    var sc = input[i]; sb.Append(sc); i++;
                     if (esc) { esc = false; continue; }
                     if (sc == '\\') { esc = true; continue; }
                     if (sc == '"')
@@ -170,7 +170,7 @@ public static class JBeamParser
                 MaybeComma();
                 while (i < input.Length)
                 {
-                    char nc = input[i];
+                    var nc = input[i];
                     if (char.IsDigit(nc) || nc == '.' || nc == 'e' || nc == 'E' || nc == '+' || nc == '-')
                     { sb.Append(nc); i++; }
                     else
@@ -205,7 +205,7 @@ public static class JBeamParser
 
     private static JBeamPart? ParsePart(string name, JsonElement obj)
     {
-        string slotType = "";
+        var slotType = "";
         if (obj.TryGetProperty("slotType", out var st))
         {
             if (st.ValueKind == JsonValueKind.String)
@@ -260,7 +260,7 @@ public static class JBeamParser
 
     private static void ParseSlotsArray(JsonElement arr, List<JBeamSlot> slots, bool legacy)
     {
-        bool headerSeen = false;
+        var headerSeen = false;
         foreach (var elem in arr.EnumerateArray())
         {
             if (elem.ValueKind != JsonValueKind.Array)
@@ -274,9 +274,9 @@ public static class JBeamParser
 
             // Legacy:  [type(0), default(1), description(2), {options}(3)?]
             // Slots2:  [name(0), allowTypes(1), denyTypes(2), default(3), description(4), {options}(5)?]
-            int defaultIdx  = legacy ? 1 : 3;
-            int descIdx     = legacy ? 2 : 4;
-            int optionsIdx  = legacy ? 3 : 5;
+            var defaultIdx  = legacy ? 1 : 3;
+            var descIdx     = legacy ? 2 : 4;
+            var optionsIdx  = legacy ? 3 : 5;
 
             if (items.Count <= defaultIdx)
             {
@@ -284,7 +284,7 @@ public static class JBeamParser
             }
 
             // Skip entries where default is not a string (e.g. empty array or missing)
-            string? defaultVal = items[defaultIdx].ValueKind == JsonValueKind.String
+            var defaultVal = items[defaultIdx].ValueKind == JsonValueKind.String
                 ? items[defaultIdx].GetString()
                 : null;
             if (string.IsNullOrEmpty(defaultVal))
@@ -292,9 +292,9 @@ public static class JBeamParser
 	            continue;
             }
 
-            string type = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
+            var type = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
 
-            bool core = false;
+            var core = false;
             Vector3? nodeOffset = null;
             if (items.Count > optionsIdx && items[optionsIdx].ValueKind == JsonValueKind.Object)
             {
@@ -333,7 +333,7 @@ public static class JBeamParser
 	        return nodes;
         }
 
-        bool headerSeen = false;
+        var headerSeen = false;
         var props = NodeDefaults.Default with { Groups = new List<string>() };
 
         foreach (var elem in arr.EnumerateArray())
@@ -357,14 +357,14 @@ public static class JBeamParser
 	                continue;
                 }
 
-                string id = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
-                float x = GetFloat(items[1]);
-                float y = GetFloat(items[2]);
-                float z = GetFloat(items[3]);
+                var id = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
+                var x = GetFloat(items[1]);
+                var y = GetFloat(items[2]);
+                var z = GetFloat(items[3]);
 
                 // Inline property override
                 var rowProps = props with { Groups = new List<string>(props.Groups) };
-                for (int i = 4; i < items.Count; i++)
+                for (var i = 4; i < items.Count; i++)
                 {
                     if (items[i].ValueKind == JsonValueKind.Object)
                     {
@@ -380,11 +380,11 @@ public static class JBeamParser
 
     private static NodeProperties ApplyNodeProps(NodeProperties current, JsonElement obj)
     {
-        float weight = current.Weight;
-        bool collision = current.Collision;
-        bool selfCollision = current.SelfCollision;
-        string material = current.Material;
-        float friction = current.FrictionCoef;
+        var weight = current.Weight;
+        var collision = current.Collision;
+        var selfCollision = current.SelfCollision;
+        var material = current.Material;
+        var friction = current.FrictionCoef;
         var groups = new List<string>(current.Groups);
 
         if (obj.TryGetProperty("nodeWeight", out var nw))
@@ -451,7 +451,7 @@ public static class JBeamParser
 	        return beams;
         }
 
-        bool headerSeen = false;
+        var headerSeen = false;
         var props = BeamDefaults.Default;
 
         foreach (var elem in arr.EnumerateArray())
@@ -475,15 +475,15 @@ public static class JBeamParser
 	                continue;
                 }
 
-                string id1 = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
-                string id2 = items[1].ValueKind == JsonValueKind.String ? items[1].GetString() ?? "" : "";
+                var id1 = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
+                var id2 = items[1].ValueKind == JsonValueKind.String ? items[1].GetString() ?? "" : "";
                 if (string.IsNullOrEmpty(id1) || string.IsNullOrEmpty(id2))
                 {
 	                continue;
                 }
 
                 var rowProps = props;
-                for (int i = 2; i < items.Count; i++)
+                for (var i = 2; i < items.Count; i++)
                 {
                     if (items[i].ValueKind == JsonValueKind.Object)
                     {
@@ -499,14 +499,14 @@ public static class JBeamParser
 
     private static BeamProperties ApplyBeamProps(BeamProperties current, JsonElement obj)
     {
-        float spring = current.Spring;
-        float damp = current.Damp;
-        float deform = current.Deform;
-        float strength = current.Strength;
-        string type = current.BeamType;
-        string deformGroup = current.DeformGroup;
-        float triggerRatio = current.DeformationTriggerRatio;
-        bool optional = current.Optional;
+        var spring = current.Spring;
+        var damp = current.Damp;
+        var deform = current.Deform;
+        var strength = current.Strength;
+        var type = current.BeamType;
+        var deformGroup = current.DeformGroup;
+        var triggerRatio = current.DeformationTriggerRatio;
+        var optional = current.Optional;
 
         if (obj.TryGetProperty("beamSpring", out var bs))
         {
@@ -563,7 +563,7 @@ public static class JBeamParser
 	        return flexBodies;
         }
 
-        bool headerSeen = false;
+        var headerSeen = false;
         foreach (var elem in arr.EnumerateArray())
         {
             if (elem.ValueKind == JsonValueKind.Object)
@@ -580,7 +580,7 @@ public static class JBeamParser
 	                continue;
                 }
 
-                string mesh = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
+                var mesh = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
                 var groups = new List<string>();
                 System.Numerics.Vector3? flexPos = null;
                 System.Numerics.Vector3? flexRot = null;
@@ -600,7 +600,7 @@ public static class JBeamParser
 
                 // Items[3] (or later) may be an object with a "pos" sub-object giving the
                 // absolute BeamNG-space position of the mesh — exactly what we need for wheel centres.
-                for (int i = 3; i < items.Count; i++)
+                for (var i = 3; i < items.Count; i++)
                 {
                     if (items[i].ValueKind != JsonValueKind.Object)
                     {
@@ -660,16 +660,16 @@ public static class JBeamParser
             if (headers == null)
             {
                 headers = new string[items.Count];
-                for (int i = 0; i < items.Count; i++)
+                for (var i = 0; i < items.Count; i++)
                     headers[i] = items[i].ValueKind == JsonValueKind.String
                         ? (items[i].GetString() ?? "").TrimEnd(':')
                         : "";
                 continue;
             }
 
-            for (int i = 0; i < Math.Min(headers.Length, items.Count); i++)
+            for (var i = 0; i < Math.Min(headers.Length, items.Count); i++)
             {
-                string val = items[i].ValueKind == JsonValueKind.String ? items[i].GetString() ?? "" : "";
+                var val = items[i].ValueKind == JsonValueKind.String ? items[i].GetString() ?? "" : "";
                 if (!string.IsNullOrEmpty(val))
                 {
 	                dict[headers[i]] = val;
@@ -696,8 +696,8 @@ public static class JBeamParser
             // Resolve $variable references from the active vars table
             if (s.StartsWith("$") && !s.StartsWith("$=") && _vars != null)
             {
-                string varName = s[1..]; // strip leading $
-                if (_vars.TryGetValue(varName, out float resolved))
+                var varName = s[1..]; // strip leading $
+                if (_vars.TryGetValue(varName, out var resolved))
                 {
 	                return resolved;
                 }
@@ -705,12 +705,12 @@ public static class JBeamParser
                 return 0f;
             }
 
-            if (TryEvaluateArithmeticExpression(s, out float expr))
+            if (TryEvaluateArithmeticExpression(s, out var expr))
             {
 	            return expr;
             }
 
-            return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
+            return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0f;
         }
         return 0f;
     }
@@ -751,7 +751,7 @@ public static class JBeamParser
 	        return false;
         }
 
-        string expr = ReplaceVariablesWithValues(raw[2..].Trim());
+        var expr = ReplaceVariablesWithValues(raw[2..].Trim());
         if (string.IsNullOrWhiteSpace(expr))
         {
 	        return false;
@@ -779,7 +779,7 @@ public static class JBeamParser
         }
 
         var sb = new StringBuilder(expr.Length + 16);
-        for (int i = 0; i < expr.Length; i++)
+        for (var i = 0; i < expr.Length; i++)
         {
             if (expr[i] != '$')
             {
@@ -787,16 +787,16 @@ public static class JBeamParser
                 continue;
             }
 
-            int start = i + 1;
-            int end = start;
+            var start = i + 1;
+            var end = start;
             while (end < expr.Length &&
                    (char.IsLetterOrDigit(expr[end]) || expr[end] == '_'))
             {
                 end++;
             }
 
-            string varName = expr[start..end];
-            float resolved = 0f;
+            var varName = expr[start..end];
+            var resolved = 0f;
             if (!string.IsNullOrEmpty(varName) && _vars != null)
             {
 	            _vars.TryGetValue(varName, out resolved);
@@ -826,7 +826,7 @@ public static class JBeamParser
 
         public float ParseExpression()
         {
-            float value = ParseTerm();
+            var value = ParseTerm();
             while (true)
             {
                 SkipWhitespace();
@@ -849,7 +849,7 @@ public static class JBeamParser
 
         private float ParseTerm()
         {
-            float value = ParseFactor();
+            var value = ParseFactor();
             while (true)
             {
                 SkipWhitespace();
@@ -885,7 +885,7 @@ public static class JBeamParser
 
             if (Match('('))
             {
-                float value = ParseExpression();
+                var value = ParseExpression();
                 SkipWhitespace();
                 Expect(')');
                 return value;
@@ -897,7 +897,7 @@ public static class JBeamParser
         private float ParseNumber()
         {
             SkipWhitespace();
-            int start = _index;
+            var start = _index;
             while (_index < _text.Length &&
                    (char.IsDigit(_text[_index]) || _text[_index] == '.'))
             {
@@ -943,7 +943,7 @@ public static class JBeamParser
     {
         // ── Fix 1: file starts with "key": instead of { "key": ──────────────
         // Trim leading whitespace/comments and check if first non-whitespace is a string literal.
-        int k = 0;
+        var k = 0;
         while (k < input.Length && char.IsWhiteSpace(input[k])) k++;
         if (k < input.Length && input[k] == '"')
         {
@@ -952,12 +952,12 @@ public static class JBeamParser
         }
 
         // ── Quick check: count depth-0 close-brace events ────────────────────
-        int depth = 0;
-        int rootCloseCount = 0;
-        int i = 0;
+        var depth = 0;
+        var rootCloseCount = 0;
+        var i = 0;
         while (i < input.Length)
         {
-            char c = input[i];
+            var c = input[i];
             if (c == '/' && i + 1 < input.Length && input[i + 1] == '*')
             { i += 2; while (i < input.Length - 1 && !(input[i] == '*' && input[i + 1] == '/')) i++; i += 2; continue; }
             if (c == '/' && i + 1 < input.Length && input[i + 1] == '/')
@@ -995,12 +995,12 @@ public static class JBeamParser
         i = 0;
         while (i < input.Length)
         {
-            char c = input[i];
+            var c = input[i];
 
             // Block comment — copy verbatim
             if (c == '/' && i + 1 < input.Length && input[i + 1] == '*')
             {
-                int start = i; i += 2;
+                var start = i; i += 2;
                 while (i < input.Length - 1 && !(input[i] == '*' && input[i + 1] == '/')) i++;
                 i += 2;
                 sb.Append(input, start, i - start);
@@ -1009,7 +1009,7 @@ public static class JBeamParser
             // Line comment — copy verbatim
             if (c == '/' && i + 1 < input.Length && input[i + 1] == '/')
             {
-                int start = i;
+                var start = i;
                 while (i < input.Length && input[i] != '\n') i++;
                 sb.Append(input, start, i - start);
                 continue;
@@ -1020,7 +1020,7 @@ public static class JBeamParser
                 sb.Append(c); i++;
                 while (i < input.Length)
                 {
-                    char sc = input[i]; sb.Append(sc); i++;
+                    var sc = input[i]; sb.Append(sc); i++;
                     if (sc == '\\') { if (i < input.Length) { sb.Append(input[i]); i++; } continue; }
                     if (sc == '"')
                     {
@@ -1044,10 +1044,10 @@ public static class JBeamParser
                 if (depth == 0)
                 {
                     // Look ahead past whitespace/comments to see if another '{' follows
-                    int j = i + 1;
+                    var j = i + 1;
                     while (j < input.Length)
                     {
-                        char jc = input[j];
+                        var jc = input[j];
                         if (char.IsWhiteSpace(jc)) { j++; continue; }
                         if (jc == '/' && j + 1 < input.Length && input[j + 1] == '*')
                         { j += 2; while (j < input.Length - 1 && !(input[j] == '*' && input[j + 1] == '/')) j++; j += 2; continue; }

@@ -118,9 +118,9 @@ public static class VehiclePhysicsBuilder
         var upperCollisionNodes = collisionNodes.Where(n => n.Position.Z >= BodySplitZ).ToList();
         var lowerCollisionNodes = collisionNodes.Where(n => n.Position.Z < BodySplitZ).ToList();
 
-        float totalMass = sprungNodes.Sum(n => n.Weight);
-        float upperMass = upperMassNodes.Sum(n => n.Weight);
-        float lowerMass = lowerMassNodes.Sum(n => n.Weight);
+        var totalMass = sprungNodes.Sum(n => n.Weight);
+        var upperMass = upperMassNodes.Sum(n => n.Weight);
+        var lowerMass = lowerMassNodes.Sum(n => n.Weight);
         if (upperCollisionNodes.Count < 5)
         {
             upperCollisionNodes = collisionNodes;
@@ -143,9 +143,9 @@ public static class VehiclePhysicsBuilder
 	            return;
             }
 
-            BoundingBox aabb = ComputeAABB(nodes.Select(n => n.Position));
-            Vector3 extents = aabb.Maximum - aabb.Minimum;
-            Vector3 center = (aabb.Minimum + aabb.Maximum) * 0.5f;
+            var aabb = ComputeAABB(nodes.Select(n => n.Position));
+            var extents = aabb.Maximum - aabb.Minimum;
+            var center = (aabb.Minimum + aabb.Maximum) * 0.5f;
             if (centralFloorProxy)
             {
                 // Keep the low mass in the middle of the car instead of spanning into the
@@ -174,8 +174,8 @@ public static class VehiclePhysicsBuilder
 	        AddBoxSpec(collisionNodes, Math.Max(totalMass, 1f));
         }
 
-        Vector3 centerOfMass = Vector3.Zero;
-        float boxMassSum = 0f;
+        var centerOfMass = Vector3.Zero;
+        var boxMassSum = 0f;
         foreach (var spec in boxSpecs)
         {
             centerOfMass += spec.Center * spec.Mass;
@@ -233,9 +233,9 @@ public static class VehiclePhysicsBuilder
 	        return (new Entity(part.Name), new BodyComponent { Collider = new CompoundCollider() });
         }
 
-        Vector3 centroid = ComputeCentroid(partNodes.Select(n => n.Position));
-        BoundingBox aabb = ComputeAABB(partNodes.Select(n => n.Position));
-        float totalMass = partNodes.Sum(n => n.Weight);
+        var centroid = ComputeCentroid(partNodes.Select(n => n.Position));
+        var aabb = ComputeAABB(partNodes.Select(n => n.Position));
+        var totalMass = partNodes.Sum(n => n.Weight);
 
         var extents = aabb.Maximum - aabb.Minimum;
 
@@ -324,7 +324,7 @@ public static class VehiclePhysicsBuilder
                 }
 
                 // Match flexbodies whose groups include the exact wheel group (e.g. "wheel_FR")
-                bool matchesGroup = fb.NodeGroups.Any(g =>
+                var matchesGroup = fb.NodeGroups.Any(g =>
                     g.Equals("wheel" + suffix, StringComparison.OrdinalIgnoreCase)
                     || g.Equals("wheelhub" + suffix, StringComparison.OrdinalIgnoreCase));
                 if (!matchesGroup)
@@ -397,7 +397,7 @@ public static class VehiclePhysicsBuilder
 	                continue;
                 }
 
-                bool isRearHub = node.Groups.Any(g =>
+                var isRearHub = node.Groups.Any(g =>
                     g.Contains("hub_R", StringComparison.OrdinalIgnoreCase)
                     && !g.Contains("hub_FR", StringComparison.OrdinalIgnoreCase)
                     && !g.Contains("hub_FL", StringComparison.OrdinalIgnoreCase));
@@ -406,7 +406,7 @@ public static class VehiclePhysicsBuilder
 	                continue;
                 }
 
-                string l = node.Position.X < 0 ? "wheel_RR" : "wheel_RL";
+                var l = node.Position.X < 0 ? "wheel_RR" : "wheel_RL";
                 if (!wheelGroupNodes.ContainsKey(l))
                 {
 	                wheelGroupNodes[l] = new List<AssembledNode>();
@@ -435,7 +435,7 @@ public static class VehiclePhysicsBuilder
         // rally_pro_asphalt.pc provides:
         //   spring_F_asphalt=60000 N/m,  damp_bump_F_asphalt=4400,  damp_rebound_F_asphalt=11500
         //   spring_R_asphalt=50000 N/m,  damp_bump_R_asphalt=4400,  damp_rebound_R_asphalt=9000
-        float sprungMass = (float)def.Nodes.Values
+        var sprungMass = (float)def.Nodes.Values
             .Where(n => n.Position.Z >= 0.10f)
             .Where(n => !IsWheelLikeNode(n))
             .Sum(n => n.Weight);
@@ -444,32 +444,32 @@ public static class VehiclePhysicsBuilder
 	        sprungMass = (float)def.Nodes.Values.Sum(n => n.Weight);
         }
 
-        float quarterMass = sprungMass / 4.0f;
+        var quarterMass = sprungMass / 4.0f;
         quarterMass = Math.Max(quarterMass, 50f);
 
         float GetVar(string name, float fallback) =>
-            def.Vars.TryGetValue(name, out float v) && v > 0 ? v : fallback;
+            def.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
 
-        float springF   = GetVar("spring_F_asphalt",   GetVar("spring_F",  60000f));
-        float springR   = GetVar("spring_R_asphalt",   GetVar("spring_R",  50000f));
-        float dampBumpF = GetVar("damp_bump_F_asphalt", GetVar("damp_bump_F", 4400f));
-        float dampRebF  = GetVar("damp_rebound_F_asphalt", GetVar("damp_rebound_F", 11500f));
-        float dampBumpR = GetVar("damp_bump_R_asphalt", GetVar("damp_bump_R", 4400f));
-        float dampRebR  = GetVar("damp_rebound_R_asphalt", GetVar("damp_rebound_R", 9000f));
+        var springF   = GetVar("spring_F_asphalt",   GetVar("spring_F",  60000f));
+        var springR   = GetVar("spring_R_asphalt",   GetVar("spring_R",  50000f));
+        var dampBumpF = GetVar("damp_bump_F_asphalt", GetVar("damp_bump_F", 4400f));
+        var dampRebF  = GetVar("damp_rebound_F_asphalt", GetVar("damp_rebound_F", 11500f));
+        var dampBumpR = GetVar("damp_bump_R_asphalt", GetVar("damp_bump_R", 4400f));
+        var dampRebR  = GetVar("damp_rebound_R_asphalt", GetVar("damp_rebound_R", 9000f));
 
         // Average bump+rebound for single BEPU damping value; BEPU uses SpringDampingRatio
-        float dampF = (dampBumpF + dampRebF) * 0.5f;
-        float dampR = (dampBumpR + dampRebR) * 0.5f;
+        var dampF = (dampBumpF + dampRebF) * 0.5f;
+        var dampR = (dampBumpR + dampRebR) * 0.5f;
 
         float ComputeFreq(float k) =>
             Math.Clamp((float)(Math.Sqrt(k / quarterMass) / (2 * Math.PI)), 1.0f, 6.0f);
         float ComputeRatio(float c, float k) =>
             Math.Clamp(c / (2f * (float)Math.Sqrt(k * quarterMass)), 0.4f, 2.0f);
 
-        float springFreqF  = ComputeFreq(springF);
-        float dampRatioF   = ComputeRatio(dampF, springF);
-        float springFreqR  = ComputeFreq(springR);
-        float dampRatioR   = ComputeRatio(dampR, springR);
+        var springFreqF  = ComputeFreq(springF);
+        var dampRatioF   = ComputeRatio(dampF, springF);
+        var springFreqR  = ComputeFreq(springR);
+        var dampRatioR   = ComputeRatio(dampR, springR);
 
         Console.Error.WriteLine($"[VehiclePhysicsBuilder] sprungMass={sprungMass:F0}kg quarterMass={quarterMass:F0}kg " +
                           $"F: spring={springF:F0}N/m freq={springFreqF:F2}Hz ratio={dampRatioF:F2} " +
@@ -477,18 +477,18 @@ public static class VehiclePhysicsBuilder
         Console.Error.WriteLine($"[VehiclePhysicsBuilder] Wheel centres from flexbodies: {string.Join(", ", wheelCentresFromFlexbodies.Keys)}");
 
         // Wheel radius from vars (default 0.305m ≈ 195/65 R15)
-        float wheelRadius = GetVar("tireWidth", 0f);  // not typically a var; use fixed default
+        var wheelRadius = GetVar("tireWidth", 0f);  // not typically a var; use fixed default
         wheelRadius = 0.305f;
 
-        float staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
+        var staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
         float ComputeStaticSag(float springRate) => staticNormalLoad / Math.Max(springRate, 1f);
         float ComputeBumpTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 6f, 0.08f, 0.18f);
         float ComputeReboundTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 4f, 0.06f, 0.16f);
 
-        float bumpTravelF = ComputeBumpTravel(springF);
-        float reboundTravelF = ComputeReboundTravel(springF);
-        float bumpTravelR = ComputeBumpTravel(springR);
-        float reboundTravelR = ComputeReboundTravel(springR);
+        var bumpTravelF = ComputeBumpTravel(springF);
+        var reboundTravelF = ComputeReboundTravel(springF);
+        var bumpTravelR = ComputeBumpTravel(springR);
+        var reboundTravelR = ComputeReboundTravel(springR);
 
         Entity GetWheel(string label, bool isFront)
         {
@@ -508,10 +508,10 @@ public static class VehiclePhysicsBuilder
                 Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label}: no position data — using fallback");
                 pos = Vector3.Zero;
             }
-            float freq  = isFront ? springFreqF  : springFreqR;
-            float ratio = isFront ? dampRatioF   : dampRatioR;
-            float bumpTravel = isFront ? bumpTravelF : bumpTravelR;
-            float reboundTravel = isFront ? reboundTravelF : reboundTravelR;
+            var freq  = isFront ? springFreqF  : springFreqR;
+            var ratio = isFront ? dampRatioF   : dampRatioR;
+            var bumpTravel = isFront ? bumpTravelF : bumpTravelR;
+            var reboundTravel = isFront ? reboundTravelF : reboundTravelR;
             return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
         }
 
@@ -532,12 +532,12 @@ public static class VehiclePhysicsBuilder
 
         var positions = nodes.Select(n => n.Position).ToList();
 
-        float meanY  = positions.Average(p => p.Y);  // BeamNG Y = longitudinal
-        float minZ   = positions.Min(p => p.Z);       // lowest valid node ≈ hub lower ball joint
-        float centreZ = Math.Max(minZ + SpindleOffset, WheelRadius);
+        var meanY  = positions.Average(p => p.Y);  // BeamNG Y = longitudinal
+        var minZ   = positions.Min(p => p.Z);       // lowest valid node ≈ hub lower ball joint
+        var centreZ = Math.Max(minZ + SpindleOffset, WheelRadius);
 
         // The outermost lateral node gives the wheel contact-patch lateral position.
-        float outerX = positions.OrderByDescending(p => Math.Abs(p.X)).First().X;
+        var outerX = positions.OrderByDescending(p => Math.Abs(p.X)).First().X;
 
         return new Vector3(outerX, centreZ, -meanY);  // BeamNG → Stride
     }
@@ -587,8 +587,8 @@ public static class VehiclePhysicsBuilder
         var localOffsetB = Vector3.Zero;
         var suspensionAxis = Vector3.UnitY;
         const float TargetOffset = 0f;
-        float minimumOffset = -Math.Max(reboundTravel, 0f);
-        float maximumOffset = Math.Max(bumpTravel, 0f);
+        var minimumOffset = -Math.Max(reboundTravel, 0f);
+        var maximumOffset = Math.Max(bumpTravel, 0f);
 
         // ── Suspension ────────────────────────────────────────────────────────
         // PointOnLine constrains the wheel centre to a vertical rail fixed in chassis space.
@@ -708,15 +708,15 @@ public static class VehiclePhysicsBuilder
         }
 
         var allPositions = def.Nodes.Values.Select(n => n.Position).ToList();
-        float minX = allPositions.Min(p => p.X);
-        float maxX = allPositions.Max(p => p.X);
-        float minY = allPositions.Min(p => p.Y);  // jbeam Y = forward
-        float maxY = allPositions.Max(p => p.Y);
-        float groundZ = allPositions.Min(p => p.Z); // jbeam Z = up → wheel bottom
+        var minX = allPositions.Min(p => p.X);
+        var maxX = allPositions.Max(p => p.X);
+        var minY = allPositions.Min(p => p.Y);  // jbeam Y = forward
+        var maxY = allPositions.Max(p => p.Y);
+        var groundZ = allPositions.Min(p => p.Z); // jbeam Z = up → wheel bottom
 
-        float wheelZ = groundZ + 0.34f;
-        float wheelY_front = minY;
-        float wheelY_rear = maxY;
+        var wheelZ = groundZ + 0.34f;
+        var wheelY_front = minY;
+        var wheelY_rear = maxY;
 
         return new Dictionary<string, List<AssembledNode>>
         {
@@ -738,7 +738,7 @@ public static class VehiclePhysicsBuilder
 
     private static bool IsWheelLikeNode(AssembledNode node)
     {
-        foreach (string group in node.Groups)
+        foreach (var group in node.Groups)
         {
             if (group.StartsWith("wheel", StringComparison.OrdinalIgnoreCase) ||
                 group.Contains("wheelhub", StringComparison.OrdinalIgnoreCase) ||
@@ -764,11 +764,11 @@ public static class VehiclePhysicsBuilder
 	        return Vector3.Zero;
         }
 
-        System.Numerics.Vector3 weightedSum = System.Numerics.Vector3.Zero;
-        float totalWeight = 0f;
+        var weightedSum = System.Numerics.Vector3.Zero;
+        var totalWeight = 0f;
         foreach (var node in list)
         {
-            float weight = MathF.Max(node.Weight, 0f);
+            var weight = MathF.Max(node.Weight, 0f);
             weightedSum += node.Position * weight;
             totalWeight += weight;
         }

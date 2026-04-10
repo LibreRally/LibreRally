@@ -1,5 +1,5 @@
-# Remove the line below if you want to inherit .editorconfig settings from higher directories
 root = true
+# Remove the line below if you want to inherit .editorconfig settings from higher directories
 
 # C# files
 [*.cs]
@@ -7,7 +7,7 @@ root = true
 #### Core EditorConfig Options ####
 
 # Indentation and spacing
-indent_size = 4
+indent_size = tab
 indent_style = tab
 tab_width = 4
 
@@ -30,7 +30,7 @@ dotnet_search_reference_assemblies = true
 # Organize usings
 dotnet_separate_import_directive_groups = false
 dotnet_sort_system_directives_first = false
-file_header_template = unset
+file_header_template = 
 
 # this. and Me. preferences
 dotnet_style_qualification_for_event = false
@@ -250,3 +250,16 @@ dotnet_naming_style.begins_with_i.capitalization = pascal_case
 comment_sense.visibility_level = protected
 comment_sense.require_capitalization = true
 comment_sense.require_ending_punctuation = true
+
+[*]
+
+# Microsoft .NET properties
+csharp_prefer_braces = true:none
+
+# ReSharper properties
+resharper_blank_lines_before_single_line_comment = 1
+resharper_csharp_indent_style = tab
+resharper_csharp_insert_final_newline = true
+resharper_csharp_wrap_lines = false
+resharper_empty_string = string_empty
+resharper_place_primary_constructor_initializer_on_same_line = false

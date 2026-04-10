@@ -33,7 +33,7 @@ public class RaceController : SyncScript
 
     public override void Update()
     {
-        float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+        var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
 
         if (_state == State.Countdown)
         {

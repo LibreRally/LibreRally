@@ -49,7 +49,7 @@ public class VehicleLoader
 
         // 0. Load .pc config (parts selection + physics variables)
         PcConfig? pcConfig = null;
-        string? pcPath = PcConfigLoader.FindBestConfig(vehicleFolderPath, configFileName);
+        var pcPath = PcConfigLoader.FindBestConfig(vehicleFolderPath, configFileName);
         if (pcPath != null)
         {
             try
@@ -69,27 +69,27 @@ public class VehicleLoader
         }
 
         // 1. Parse + assemble jbeam (with pc config for parts selection + variable substitution)
-        VehicleDefinition definition = JBeamAssembler.Assemble(vehicleFolderPath, pcConfig);
+        var definition = JBeamAssembler.Assemble(vehicleFolderPath, pcConfig);
 
         // 2. Build physics entity hierarchy
-        VehicleBuilderResult result = VehiclePhysicsBuilder.Build(definition);
-        Entity rootEntity = result.RootEntity;
+        var result = VehiclePhysicsBuilder.Build(definition);
+        var rootEntity = result.RootEntity;
 
         // 3. Attach visual meshes (best-effort — falls back to a visible box)
         TryAttachMeshes(vehicleFolderPath, result, definition, pcConfig);
 
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
-            definition.Vars.TryGetValue(name, out float v) && v > 0 ? v : fallback;
+            definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
 
-        float finalDrive  = V("finaldrive_F", 4.55f);
-        float wheelRadius = 0.305f;
-        float maxRpm      = V("maxRPM",  7500f);
-        float idleRpm     = V("idleRPM",  900f);
-        float peakTorque  = 222f; // sunburst2 2.0T rally engine peak Nm (crank)
+        var finalDrive  = V("finaldrive_F", 4.55f);
+        var wheelRadius = 0.305f;
+        var maxRpm      = V("maxRPM",  7500f);
+        var idleRpm     = V("idleRPM",  900f);
+        var peakTorque  = 222f; // sunburst2 2.0T rally engine peak Nm (crank)
 
         // Build gear ratio array: index 0 = reverse, 1-6 = forward gears
-        float gearR = V("gear_R", 3.25f);
+        var gearR = V("gear_R", 3.25f);
         float[] gears = {
             gearR,
             V("gear_1", 3.64f), V("gear_2", 2.38f), V("gear_3", 1.76f),
@@ -107,11 +107,11 @@ public class VehicleLoader
         };
 
         // Estimate vehicle geometry from JBeam nodes (wheelbase, track width, CG height)
-        float wheelbase = EstimateWheelbase(result);
-        float trackWidth = EstimateTrackWidth(result);
-        float vehicleMass = EstimateVehicleMass(definition);
-        float cgHeight = V("cg_height", 0.45f);
-        float quarterLoad = vehicleMass * 9.81f / 4f;
+        var wheelbase = EstimateWheelbase(result);
+        var trackWidth = EstimateTrackWidth(result);
+        var vehicleMass = EstimateVehicleMass(definition);
+        var cgHeight = V("cg_height", 0.45f);
+        var quarterLoad = vehicleMass * 9.81f / 4f;
         var diagnostics = new VehicleLoadDiagnostics(vehicleFolderPath, pcPath, vehicleMass);
 
         // Configure differentials from JBeam vars if available
@@ -137,7 +137,7 @@ public class VehicleLoader
 
         // Assign tyre models and static loads to each wheel
         Entity[] wheelEntities = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR };
-        for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+        for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
         {
             dynamics.TyreModels[i] = tyreModel;
             dynamics.StaticNormalLoads[i] = quarterLoad;
@@ -201,7 +201,7 @@ public class VehicleLoader
                 return;
             }
 
-            string vehiclesRoot = Path.GetDirectoryName(folder)!;
+            var vehiclesRoot = Path.GetDirectoryName(folder)!;
             var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(folder, vehiclesRoot);
             var mainSource = daeSources[0];
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
@@ -221,7 +221,7 @@ public class VehicleLoader
                 ["wheel_RR"] = 0,
             };
             var missingWheelMeshes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            int wheelVisualCount = AttachWheelFlexBodyMeshes(
+            var wheelVisualCount = AttachWheelFlexBodyMeshes(
                 definition,
                 daeSources,
                 wheelEntities,
@@ -280,7 +280,7 @@ public class VehicleLoader
             .ToList();
 
         var result = new List<ColladaSource>();
-        foreach (string daeFile in daeFiles)
+        foreach (var daeFile in daeFiles)
         {
             try
             {
@@ -309,11 +309,11 @@ public class VehicleLoader
         string vehiclesRoot,
         HashSet<string> missingWheelMeshes)
     {
-        int attached = 0;
+        var attached = 0;
         foreach (var flexBody in GetWheelVisualFlexBodies(definition))
         {
-            if (!TryResolveWheelKey(flexBody, out string? wheelKey) ||
-                !wheelEntities.TryGetValue(wheelKey, out Entity? wheelEntity))
+            if (!TryResolveWheelKey(flexBody, out var wheelKey) ||
+                !wheelEntities.TryGetValue(wheelKey, out var wheelEntity))
             {
                 continue;
             }
@@ -362,7 +362,7 @@ public class VehicleLoader
 
     private static bool TryResolveWheelKey(AssembledFlexBody flexBody, out string? wheelKey)
     {
-        foreach (string group in flexBody.NodeGroups)
+        foreach (var group in flexBody.NodeGroups)
         {
             if (group.Equals("wheel_FL", StringComparison.OrdinalIgnoreCase) ||
                 group.Equals("wheelhub_FL", StringComparison.OrdinalIgnoreCase))
@@ -457,8 +457,8 @@ public class VehicleLoader
         AssembledFlexBody flexBody,
         List<ColladaMesh> sourceMeshes)
     {
-        bool geometryAlreadyPositioned = sourceMeshes.Any(mesh => mesh.HasBakedTransform) ||
-                                         flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
+        var geometryAlreadyPositioned = sourceMeshes.Any(mesh => mesh.HasBakedTransform) ||
+                                        flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
 
         meshEntity.Transform.Position = geometryAlreadyPositioned || !flexBody.Position.HasValue
             ? -wheelEntity.Transform.Position
@@ -483,7 +483,7 @@ public class VehicleLoader
         }
 
         var sum = System.Numerics.Vector3.Zero;
-        int count = 0;
+        var count = 0;
         foreach (var mesh in sourceMeshes)
         {
             foreach (var vertex in mesh.Vertices)
@@ -504,9 +504,9 @@ public class VehicleLoader
 
     private static Quaternion BeamNGRotationToStride(System.Numerics.Vector3 rotationDegrees)
     {
-        float rx = MathUtil.DegreesToRadians(rotationDegrees.X);
-        float ry = MathUtil.DegreesToRadians(rotationDegrees.Y);
-        float rz = MathUtil.DegreesToRadians(rotationDegrees.Z);
+        var rx = MathUtil.DegreesToRadians(rotationDegrees.X);
+        var ry = MathUtil.DegreesToRadians(rotationDegrees.Y);
+        var rz = MathUtil.DegreesToRadians(rotationDegrees.Z);
 
         var rotX = Quaternion.RotationX(rx);
         var rotY = Quaternion.RotationAxis(-Vector3.UnitZ, ry);
@@ -534,10 +534,10 @@ public class VehicleLoader
         PcConfig? pcConfig,
         Dictionary<string, int>? tireLikeAttachments)
     {
-        var frontSpec = TryGetTireSpec(pcConfig, front: true, out TireSpec parsedFront)
+        var frontSpec = TryGetTireSpec(pcConfig, front: true, out var parsedFront)
             ? parsedFront
             : new TireSpec(0.305f, 0.205f);
-        var rearSpec = TryGetTireSpec(pcConfig, front: false, out TireSpec parsedRear)
+        var rearSpec = TryGetTireSpec(pcConfig, front: false, out var parsedRear)
             ? parsedRear
             : frontSpec;
 
@@ -552,7 +552,7 @@ public class VehicleLoader
         foreach (var (wheelKey, data) in wheelSpecs)
         {
             if (tireLikeAttachments != null &&
-                tireLikeAttachments.TryGetValue(wheelKey, out int count) &&
+                tireLikeAttachments.TryGetValue(wheelKey, out var count) &&
                 count > 0)
             {
                 continue;
@@ -576,8 +576,8 @@ public class VehicleLoader
 	        return false;
         }
 
-        string slotPrefix = front ? "tire_F" : "tire_R";
-        string? partName = pcConfig.Parts
+        var slotPrefix = front ? "tire_F" : "tire_R";
+        var partName = pcConfig.Parts
             .Where(kv => kv.Key.StartsWith(slotPrefix, StringComparison.OrdinalIgnoreCase))
             .Select(kv => kv.Value)
             .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
@@ -593,10 +593,10 @@ public class VehicleLoader
 	        return false;
         }
 
-        float widthMetres = int.Parse(match.Groups["width"].Value) / 1000f;
-        float aspectRatio = int.Parse(match.Groups["aspect"].Value) / 100f;
-        float rimDiameterMetres = int.Parse(match.Groups["rim"].Value) * 0.0254f;
-        float radius = rimDiameterMetres * 0.5f + (widthMetres * aspectRatio);
+        var widthMetres = int.Parse(match.Groups["width"].Value) / 1000f;
+        var aspectRatio = int.Parse(match.Groups["aspect"].Value) / 100f;
+        var rimDiameterMetres = int.Parse(match.Groups["rim"].Value) * 0.0254f;
+        var radius = rimDiameterMetres * 0.5f + (widthMetres * aspectRatio);
 
         spec = new TireSpec(radius, widthMetres);
         return true;
@@ -613,8 +613,8 @@ public class VehicleLoader
                 new Color4(0.09f, 0.09f, 0.09f, 1f))
         });
 
-        float rimRadius = Math.Max(spec.Radius * 0.62f, 0.12f);
-        float rimWidth = spec.Width * 0.68f;
+        var rimRadius = Math.Max(spec.Radius * 0.62f, 0.12f);
+        var rimWidth = spec.Width * 0.68f;
         var rimEntity = new Entity($"{name}_rim");
         rimEntity.Add(new ModelComponent
         {
@@ -625,8 +625,8 @@ public class VehicleLoader
         });
         entity.AddChild(rimEntity);
 
-        float hubRadius = rimRadius * 0.26f;
-        float hubWidth = rimWidth * 0.42f;
+        var hubRadius = rimRadius * 0.26f;
+        var hubWidth = rimWidth * 0.42f;
         var hubEntity = new Entity($"{name}_hub");
         hubEntity.Add(new ModelComponent
         {
@@ -651,20 +651,20 @@ public class VehicleLoader
         void AddVertex(float x, float y, float z, Vector3 normal, Vector2 uv)
             => vertices.Add(new VertexPositionNormalTexture(new Vector3(x, y, z), normal, uv));
 
-        for (int i = 0; i <= Segments; i++)
+        for (var i = 0; i <= Segments; i++)
         {
-            float t = i / (float)Segments;
-            float angle = MathUtil.TwoPi * t;
-            float y = MathF.Cos(angle) * radius;
-            float z = MathF.Sin(angle) * radius;
+            var t = i / (float)Segments;
+            var angle = MathUtil.TwoPi * t;
+            var y = MathF.Cos(angle) * radius;
+            var z = MathF.Sin(angle) * radius;
             var normal = Vector3.Normalize(new Vector3(0f, y, z));
             AddVertex(-halfWidth, y, z, normal, new Vector2(t, 1f));
             AddVertex(halfWidth, y, z, normal, new Vector2(t, 0f));
         }
 
-        for (int i = 0; i < Segments; i++)
+        for (var i = 0; i < Segments; i++)
         {
-            int baseIndex = i * 2;
+            var baseIndex = i * 2;
             indices.AddRange(new[]
             {
                 baseIndex, baseIndex + 1, baseIndex + 2,
@@ -672,32 +672,32 @@ public class VehicleLoader
             });
         }
 
-        int leftCenter = vertices.Count;
+        var leftCenter = vertices.Count;
         AddVertex(-halfWidth, 0f, 0f, -Vector3.UnitX, new Vector2(0.5f, 0.5f));
-        int rightCenter = vertices.Count;
+        var rightCenter = vertices.Count;
         AddVertex(halfWidth, 0f, 0f, Vector3.UnitX, new Vector2(0.5f, 0.5f));
 
-        int leftStart = rightCenter + 1;
-        for (int i = 0; i <= Segments; i++)
+        var leftStart = rightCenter + 1;
+        for (var i = 0; i <= Segments; i++)
         {
-            float t = i / (float)Segments;
-            float angle = MathUtil.TwoPi * t;
-            float y = MathF.Cos(angle) * radius;
-            float z = MathF.Sin(angle) * radius;
+            var t = i / (float)Segments;
+            var angle = MathUtil.TwoPi * t;
+            var y = MathF.Cos(angle) * radius;
+            var z = MathF.Sin(angle) * radius;
             AddVertex(-halfWidth, y, z, -Vector3.UnitX, new Vector2(0.5f + (y / (radius * 2f)), 0.5f + (z / (radius * 2f))));
         }
 
-        int rightStart = vertices.Count;
-        for (int i = 0; i <= Segments; i++)
+        var rightStart = vertices.Count;
+        for (var i = 0; i <= Segments; i++)
         {
-            float t = i / (float)Segments;
-            float angle = MathUtil.TwoPi * t;
-            float y = MathF.Cos(angle) * radius;
-            float z = MathF.Sin(angle) * radius;
+            var t = i / (float)Segments;
+            var angle = MathUtil.TwoPi * t;
+            var y = MathF.Cos(angle) * radius;
+            var z = MathF.Sin(angle) * radius;
             AddVertex(halfWidth, y, z, Vector3.UnitX, new Vector2(0.5f + (y / (radius * 2f)), 0.5f + (z / (radius * 2f))));
         }
 
-        for (int i = 0; i < Segments; i++)
+        for (var i = 0; i < Segments; i++)
         {
             indices.AddRange(new[] { leftCenter, leftStart + i + 1, leftStart + i });
             indices.AddRange(new[] { rightCenter, rightStart + i, rightStart + i + 1 });
@@ -764,20 +764,20 @@ public class VehicleLoader
         }
 
         var rootEntity = new Entity($"{vehicleName}_mesh");
-        int built = 0;
+        var built = 0;
 
         foreach (var group in groups)
         {
-            string symbol = group.Key;
+            var symbol = group.Key;
 
             // Merge all sub-meshes that share this material symbol
             var allVerts = new List<VertexPositionNormalTexture>();
             var allIndices = new List<int>();
             foreach (var cm in group)
             {
-                int baseIndex = allVerts.Count;
+                var baseIndex = allVerts.Count;
                 allVerts.AddRange(ConvertToVertexArray(cm.Vertices));
-                foreach (int idx in cm.Indices)
+                foreach (var idx in cm.Indices)
                     allIndices.Add(idx + baseIndex);
             }
             if (allVerts.Count == 0)
@@ -806,16 +806,16 @@ public class VehicleLoader
 
             // ── Three-level texture lookup ────────────────────────────────────
             // 1. BeamNG JSON: strip "-material" suffix → exact material name
-            string matName = StripMaterialSuffix(symbol);
+            var matName = StripMaterialSuffix(symbol);
             Texture? texture = null;
 
-            if (jsonMaterials.TryGetValue(matName, out string? absolutePath))
+            if (jsonMaterials.TryGetValue(matName, out var absolutePath))
             {
 	            texture = TryLoadTextureFromPath(absolutePath);
             }
 
             // 2. Collada library_images chain (filename only, look in Textures/)
-            if (texture == null && colladaTextureMap.TryGetValue(symbol, out string? colladaFile))
+            if (texture == null && colladaTextureMap.TryGetValue(symbol, out var colladaFile))
             {
 	            texture = TryLoadTexture(vehicleFolder, colladaFile);
             }
@@ -835,7 +835,7 @@ public class VehicleLoader
 
     private static string StripMaterialSuffix(string symbol)
     {
-        string s = symbol;
+        var s = symbol;
         if (s.EndsWith("-material", StringComparison.OrdinalIgnoreCase))
         {
 	        s = s[..^"-material".Length];
@@ -902,28 +902,28 @@ public class VehicleLoader
     {
         // Search directories: root folder first, then Textures/ subfolder
         var searchDirs = new List<string> { vehicleFolder };
-        string texturesDir = Path.Combine(vehicleFolder, "Textures");
+        var texturesDir = Path.Combine(vehicleFolder, "Textures");
         if (Directory.Exists(texturesDir))
         {
 	        searchDirs.Add(texturesDir);
         }
 
-        foreach (string dir in searchDirs)
+        foreach (var dir in searchDirs)
         {
             // 1. Try exact match if it has an extension
             if (!string.IsNullOrEmpty(Path.GetExtension(filename)))
             {
-                string direct = Path.Combine(dir, filename);
+                var direct = Path.Combine(dir, filename);
                 if (File.Exists(direct))
                 {
 	                return TryLoadTextureFromPath(direct);
                 }
 
                 // 2. Try replacing the extension — DAE often says .color.png but files are .color.dds
-                string noExt = Path.GetFileNameWithoutExtension(filename);
-                foreach (string ext in new[] { ".dds", ".png", ".jpg", ".jpeg", ".tga" })
+                var noExt = Path.GetFileNameWithoutExtension(filename);
+                foreach (var ext in new[] { ".dds", ".png", ".jpg", ".jpeg", ".tga" })
                 {
-                    string path = Path.Combine(dir, noExt + ext);
+                    var path = Path.Combine(dir, noExt + ext);
                     if (File.Exists(path))
                     {
 	                    return TryLoadTextureFromPath(path);
@@ -933,9 +933,9 @@ public class VehicleLoader
             else
             {
                 // 3. No extension — try appending common extensions
-                foreach (string ext in new[] { ".dds", ".png", ".jpg", ".jpeg", ".tga" })
+                foreach (var ext in new[] { ".dds", ".png", ".jpg", ".jpeg", ".tga" })
                 {
-                    string path = Path.Combine(dir, filename + ext);
+                    var path = Path.Combine(dir, filename + ext);
                     if (!File.Exists(path))
                     {
                         var found = Directory.GetFiles(dir, filename + ext, SearchOption.TopDirectoryOnly);
@@ -961,7 +961,7 @@ public class VehicleLoader
         System.Collections.Generic.List<ColladaVertex> vertices)
     {
         var result = new VertexPositionNormalTexture[vertices.Count];
-        for (int i = 0; i < vertices.Count; i++)
+        for (var i = 0; i < vertices.Count; i++)
         {
             var v = vertices[i];
             // Convert BeamNG → Stride coordinate space
@@ -1069,9 +1069,9 @@ public class VehicleLoader
     private static int[] BuildBoxIndices()
     {
         var idx = new List<int>();
-        for (int f = 0; f < 6; f++)
+        for (var f = 0; f < 6; f++)
         {
-            int b = f * 4;
+            var b = f * 4;
             idx.AddRange(new[] { b, b+1, b+2, b, b+2, b+3 });
         }
         return idx.ToArray();
@@ -1090,7 +1090,7 @@ public class VehicleLoader
         var fl = result.WheelFL.Transform.Position;
         var rl = result.WheelRL.Transform.Position;
         // Wheelbase is the Z-distance (forward axis) between front and rear
-        float wb = MathF.Abs(fl.Z - rl.Z);
+        var wb = MathF.Abs(fl.Z - rl.Z);
         return wb > 0.5f ? wb : 2.55f; // fallback
     }
 
@@ -1101,7 +1101,7 @@ public class VehicleLoader
     {
         var fl = result.WheelFL.Transform.Position;
         var fr = result.WheelFR.Transform.Position;
-        float tw = MathF.Abs(fl.X - fr.X);
+        var tw = MathF.Abs(fl.X - fr.X);
         return tw > 0.5f ? tw : 1.50f; // fallback
     }
 
@@ -1110,7 +1110,7 @@ public class VehicleLoader
     /// </summary>
     private static float EstimateVehicleMass(VehicleDefinition definition)
     {
-        float totalMass = 0f;
+        var totalMass = 0f;
         foreach (var node in definition.Nodes.Values)
             totalMass += node.Weight;
         return totalMass > 100f ? totalMass : 1200f; // fallback

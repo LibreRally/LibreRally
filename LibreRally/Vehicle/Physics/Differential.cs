@@ -163,12 +163,12 @@ public static class DifferentialSolver
         out float torqueRight)
     {
         // Start with 50/50 base split
-        float half = inputTorque * 0.5f;
+        var half = inputTorque * 0.5f;
         torqueLeft = half;
         torqueRight = half;
 
         // Compute speed difference
-        float deltaOmega = omegaLeft - omegaRight;
+        var deltaOmega = omegaLeft - omegaRight;
         if (MathF.Abs(deltaOmega) < 0.01f)
         {
 	        return; // wheels at same speed — no locking torque needed
@@ -177,12 +177,12 @@ public static class DifferentialSolver
         // Locking torque: proportional to input torque magnitude and speed difference.
         // tanh provides smooth onset and saturation.
         const float ReferenceOmega = 5f; // rad/s normalisation for tanh
-        float lockingTorque = config.LockingCoefficient * MathF.Abs(inputTorque)
-            * MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+        var lockingTorque = config.LockingCoefficient * MathF.Abs(inputTorque)
+                                                      * MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
 
         // Transfer torque from the faster-spinning wheel to the slower one.
         // Clamp by bias ratio: T_slow / T_fast ≤ biasRatio.
-        float maxTransfer = MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f);
+        var maxTransfer = MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f);
         lockingTorque = MathF.Min(lockingTorque, maxTransfer);
 
         if (deltaOmega > 0f)

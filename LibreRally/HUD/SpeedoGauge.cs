@@ -61,7 +61,12 @@ public class SpeedoGauge : GameSystemBase
     public override void Initialize()
     {
         base.Initialize();
-        _game = (Game)Services.GetService<IGame>();
+        _game = (Game?)Services.GetService<IGame>();
+        if (_game is null)
+        {
+	        return;
+        }
+
         _sb = new SpriteBatch(_game.GraphicsDevice);
         _pixel = CreateWhitePixel(_game.GraphicsDevice);
     }
@@ -89,18 +94,18 @@ public class SpeedoGauge : GameSystemBase
 	        return;
         }
 
-        int sw = back.Width;
-        int sh = back.Height;
+        var sw = back.Width;
+        var sh = back.Height;
 
-        float speedCx = sw - 255f;
-        float rpmCx = sw - 110f;
-        float cy = sh - 132f;
-        float midCx = (speedCx + rpmCx) * 0.5f;
+        var speedCx = sw - 255f;
+        var rpmCx = sw - 110f;
+        var cy = sh - 132f;
+        var midCx = (speedCx + rpmCx) * 0.5f;
 
-        float panelLeft = speedCx - BezelRadius - 28f;
-        float panelTop = cy - BezelRadius - 20f;
-        float panelRight = rpmCx + BezelRadius + 16f;
-        float panelBottom = cy + BezelRadius + 36f;
+        var panelLeft = speedCx - BezelRadius - 28f;
+        var panelTop = cy - BezelRadius - 20f;
+        var panelRight = rpmCx + BezelRadius + 16f;
+        var panelBottom = cy + BezelRadius + 36f;
 
         cmd.SetRenderTargetAndViewport(null, back);
         _sb.Begin(ctx, SpriteSortMode.Deferred, BlendStates.AlphaBlend);
@@ -132,7 +137,7 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawSpeedDial(float cx, float cy)
     {
-        float speedFrac = Math.Clamp(SpeedKmh / MaxSpeedKmh, 0f, 1f);
+        var speedFrac = Math.Clamp(SpeedKmh / MaxSpeedKmh, 0f, 1f);
 
         DrawDialBase(cx, cy);
         DrawArcBandFraction(cx, cy, TrackRadius, TrackThickness, SpeedWarningFrac, 1f, new Color(118, 44, 30, 78), true);
@@ -144,7 +149,7 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawRpmDial(float cx, float cy)
     {
-        float rpmFrac = Math.Clamp(EngineRpm / MaxRpm, 0f, 1f);
+        var rpmFrac = Math.Clamp(EngineRpm / MaxRpm, 0f, 1f);
 
         DrawDialBase(cx, cy);
         DrawArcBandFraction(cx, cy, TrackRadius, TrackThickness, RpmAmberFrac, RpmRedlineFrac, new Color(126, 92, 24, 84), true);
@@ -188,11 +193,11 @@ public class SpeedoGauge : GameSystemBase
     private void DrawTicks(float cx, float cy, int majorTickCount, int minorTicksPerGap)
     {
         minorTicksPerGap = Math.Max(minorTicksPerGap, 0);
-        int sectionCount = Math.Max(majorTickCount - 1, 1);
+        var sectionCount = Math.Max(majorTickCount - 1, 1);
 
-        for (int i = 0; i < majorTickCount; i++)
+        for (var i = 0; i < majorTickCount; i++)
         {
-            float frac = majorTickCount <= 1 ? 0f : (float)i / (majorTickCount - 1);
+            var frac = majorTickCount <= 1 ? 0f : (float)i / (majorTickCount - 1);
             DrawTick(cx, cy, frac, MajorTickInnerRadius, TickOuterRadius, new Color(232, 236, 240, 230), 2.5f);
 
             if (i >= sectionCount)
@@ -200,9 +205,9 @@ public class SpeedoGauge : GameSystemBase
 	            continue;
             }
 
-            for (int j = 1; j <= minorTicksPerGap; j++)
+            for (var j = 1; j <= minorTicksPerGap; j++)
             {
-                float minorFrac = (i + (float)j / (minorTicksPerGap + 1)) / sectionCount;
+                var minorFrac = (i + (float)j / (minorTicksPerGap + 1)) / sectionCount;
                 DrawTick(cx, cy, minorFrac, MinorTickInnerRadius, TickOuterRadius - 1f, new Color(170, 176, 186, 140), 1.2f);
             }
         }
@@ -210,7 +215,7 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawTick(float cx, float cy, float fraction, float innerRadius, float outerRadius, Color color, float thickness)
     {
-        float angleDeg = StartDeg + SweepDeg * Math.Clamp(fraction, 0f, 1f);
+        var angleDeg = StartDeg + SweepDeg * Math.Clamp(fraction, 0f, 1f);
         var start = PointOnCircle(cx, cy, innerRadius, angleDeg);
         var end = PointOnCircle(cx, cy, outerRadius, angleDeg);
         DrawLine(start, end, color, thickness);
@@ -218,8 +223,8 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawNeedle(float cx, float cy, float fraction, Color color)
     {
-        float angleDeg = StartDeg + SweepDeg * Math.Clamp(fraction, 0f, 1f);
-        float angleRad = angleDeg * MathF.PI / 180f;
+        var angleDeg = StartDeg + SweepDeg * Math.Clamp(fraction, 0f, 1f);
+        var angleRad = angleDeg * MathF.PI / 180f;
         var direction = new Vector2(MathF.Cos(angleRad), -MathF.Sin(angleRad));
         var tail = new Vector2(cx, cy) - direction * NeedleTailLength;
         var tip = new Vector2(cx, cy) + direction * NeedleLength;
@@ -262,8 +267,8 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawGearIndicator(float cx, float cy)
     {
-        float x = cx - GearIndicatorWidth * 0.5f;
-        float y = cy - GearIndicatorHeight * 0.5f;
+        var x = cx - GearIndicatorWidth * 0.5f;
+        var y = cy - GearIndicatorHeight * 0.5f;
 
         DrawRect(new RectangleF(x + 3f, y + 4f, GearIndicatorWidth, GearIndicatorHeight), new Color(0, 0, 0, 52));
         DrawRect(new RectangleF(x, y, GearIndicatorWidth, GearIndicatorHeight), new Color(10, 12, 15, 226));
@@ -287,7 +292,7 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawSevenSegmentDigit(float cx, float cy, int digit, Color onColor, Color glowColor, Color offColor)
     {
-        (bool a, bool b, bool c, bool d, bool e, bool f, bool g) = digit switch
+        (var a, var b, var c, var d, var e, var f, var g) = digit switch
         {
             0 => (true,  true,  true,  true,  true,  true,  false),
             1 => (false, true,  true,  false, false, false, false),
@@ -302,14 +307,14 @@ public class SpeedoGauge : GameSystemBase
             _ => (false, false, false, false, false, false, false),
         };
 
-        float hX = cx - GearSegmentLength * 0.5f;
-        float topY = cy - (GearSegmentLength + GearSegmentThickness);
-        float midY = cy - GearSegmentThickness * 0.5f;
-        float bottomY = cy + GearSegmentLength;
-        float leftX = hX - GearSegmentThickness;
-        float rightX = hX + GearSegmentLength;
-        float upperY = topY + GearSegmentThickness;
-        float lowerY = midY + GearSegmentThickness;
+        var hX = cx - GearSegmentLength * 0.5f;
+        var topY = cy - (GearSegmentLength + GearSegmentThickness);
+        var midY = cy - GearSegmentThickness * 0.5f;
+        var bottomY = cy + GearSegmentLength;
+        var leftX = hX - GearSegmentThickness;
+        var rightX = hX + GearSegmentLength;
+        var upperY = topY + GearSegmentThickness;
+        var lowerY = midY + GearSegmentThickness;
 
         DrawDigitSegment(new RectangleF(hX, topY, GearSegmentLength, GearSegmentThickness), a, onColor, glowColor, offColor);
         DrawDigitSegment(new RectangleF(rightX, upperY, GearSegmentThickness, GearSegmentLength), b, onColor, glowColor, offColor);
@@ -363,7 +368,7 @@ public class SpeedoGauge : GameSystemBase
 
         if (value > 0.001f)
         {
-            float innerWidth = (w - 2f) * Math.Clamp(value, 0f, 1f);
+            var innerWidth = (w - 2f) * Math.Clamp(value, 0f, 1f);
             DrawRect(new RectangleF(x + 1f, y + 1f, innerWidth, h - 2f), fillColor);
         }
 
@@ -383,7 +388,7 @@ public class SpeedoGauge : GameSystemBase
 	        return;
         }
 
-        float angle = MathF.Atan2(delta.Y, delta.X);
+        var angle = MathF.Atan2(delta.Y, delta.X);
         var center = (start + end) * 0.5f;
         _sb!.Draw(_pixel!, center, null, color, angle, new Vector2(0.5f, 0.5f), new Vector2(length, thickness));
     }
@@ -395,19 +400,19 @@ public class SpeedoGauge : GameSystemBase
 
     private void DrawFilledCircle(float cx, float cy, float radius, Color color)
     {
-        int radiusCeiling = (int)MathF.Ceiling(radius);
-        float radiusSquared = radius * radius;
+        var radiusCeiling = (int)MathF.Ceiling(radius);
+        var radiusSquared = radius * radius;
 
-        for (int y = -radiusCeiling; y <= radiusCeiling; y++)
+        for (var y = -radiusCeiling; y <= radiusCeiling; y++)
         {
             float yPos = y;
-            float xSquared = radiusSquared - (yPos * yPos);
+            var xSquared = radiusSquared - (yPos * yPos);
             if (xSquared < 0f)
             {
 	            continue;
             }
 
-            float xExtent = MathF.Sqrt(xSquared);
+            var xExtent = MathF.Sqrt(xSquared);
             DrawRect(new RectangleF(cx - xExtent, cy + yPos - 0.5f, xExtent * 2f, 1f), color);
         }
     }
@@ -436,14 +441,14 @@ public class SpeedoGauge : GameSystemBase
 	        return;
         }
 
-        int segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
-        Vector2 first = Vector2.Zero;
-        Vector2 last = Vector2.Zero;
+        var segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
+        var first = Vector2.Zero;
+        var last = Vector2.Zero;
 
-        for (int i = 0; i < segmentCount; i++)
+        for (var i = 0; i < segmentCount; i++)
         {
-            float segmentStart = startDeg + (sweepDeg * i / segmentCount);
-            float segmentEnd = startDeg + (sweepDeg * (i + 1) / segmentCount);
+            var segmentStart = startDeg + (sweepDeg * i / segmentCount);
+            var segmentEnd = startDeg + (sweepDeg * (i + 1) / segmentCount);
             var p0 = PointOnCircle(cx, cy, radius, segmentStart);
             var p1 = PointOnCircle(cx, cy, radius, segmentEnd);
 
@@ -459,7 +464,7 @@ public class SpeedoGauge : GameSystemBase
 
         if (roundCaps)
         {
-            float capRadius = thickness * 0.5f;
+            var capRadius = thickness * 0.5f;
             DrawFilledCircle(first.X, first.Y, capRadius, color);
             DrawFilledCircle(last.X, last.Y, capRadius, color);
         }
@@ -474,18 +479,18 @@ public class SpeedoGauge : GameSystemBase
 	        return;
         }
 
-        float sweepDeg = SweepDeg * (endFrac - startFrac);
-        int segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
-        Vector2 first = Vector2.Zero;
-        Vector2 last = Vector2.Zero;
-        Color firstColor = colorAtFraction(startFrac);
-        Color lastColor = colorAtFraction(endFrac);
+        var sweepDeg = SweepDeg * (endFrac - startFrac);
+        var segmentCount = Math.Max(1, GetArcSegments(radius, sweepDeg));
+        var first = Vector2.Zero;
+        var last = Vector2.Zero;
+        var firstColor = colorAtFraction(startFrac);
+        var lastColor = colorAtFraction(endFrac);
 
-        for (int i = 0; i < segmentCount; i++)
+        for (var i = 0; i < segmentCount; i++)
         {
-            float segmentStartFrac = Lerp(startFrac, endFrac, (float)i / segmentCount);
-            float segmentEndFrac = Lerp(startFrac, endFrac, (float)(i + 1) / segmentCount);
-            float segmentMidFrac = (segmentStartFrac + segmentEndFrac) * 0.5f;
+            var segmentStartFrac = Lerp(startFrac, endFrac, (float)i / segmentCount);
+            var segmentEndFrac = Lerp(startFrac, endFrac, (float)(i + 1) / segmentCount);
+            var segmentMidFrac = (segmentStartFrac + segmentEndFrac) * 0.5f;
 
             var p0 = PointOnCircle(cx, cy, radius, StartDeg + SweepDeg * segmentStartFrac);
             var p1 = PointOnCircle(cx, cy, radius, StartDeg + SweepDeg * segmentEndFrac);
@@ -502,7 +507,7 @@ public class SpeedoGauge : GameSystemBase
 
         if (roundCaps)
         {
-            float capRadius = thickness * 0.5f;
+            var capRadius = thickness * 0.5f;
             DrawFilledCircle(first.X, first.Y, capRadius, firstColor);
             DrawFilledCircle(last.X, last.Y, capRadius, lastColor);
         }
@@ -515,7 +520,7 @@ public class SpeedoGauge : GameSystemBase
 
     private static Vector2 PointOnCircle(float cx, float cy, float radius, float angleDeg)
     {
-        float angleRad = angleDeg * MathF.PI / 180f;
+        var angleRad = angleDeg * MathF.PI / 180f;
         return new Vector2(cx + MathF.Cos(angleRad) * radius, cy - MathF.Sin(angleRad) * radius);
     }
 
