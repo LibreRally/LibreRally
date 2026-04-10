@@ -110,6 +110,7 @@ public class VehicleLoader
         float vehicleMass = EstimateVehicleMass(definition);
         float cgHeight = V("cg_height", 0.45f);
         float quarterLoad = vehicleMass * 9.81f / 4f;
+        var diagnostics = new VehicleLoadDiagnostics(vehicleFolderPath, pcPath, vehicleMass);
 
         // Configure differentials from JBeam vars if available
         var frontDiff = DifferentialConfig.CreateLimitedSlip(
@@ -168,8 +169,12 @@ public class VehicleLoader
                  string.Join(" ", gears.Skip(1).Select((g, i) => $"{i+1}={g:F2}")) +
                  $" | FD={finalDrive:F2} | MaxRPM={maxRpm:F0} | PeakTorque={peakTorque:F0}Nm");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
+        Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
+                 $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
+        if (pcPath != null)
+            Log.Info($"[VehicleLoader] Active config path: {pcPath}");
 
-        return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR);
+        return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR, diagnostics);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -231,7 +236,8 @@ public class VehicleLoader
             AttachFallbackTires(result, pcConfig, tireLikeAttachments);
 
             var chassisMeshes = mainSource.Meshes
-                .Where(cm => !wheelMeshNames.Contains(cm.GeometryName))
+                .Where(cm => !wheelMeshNames.Contains(cm.GeometryName) &&
+                             !wheelMeshNames.Contains(cm.SceneNodeName))
                 .ToList();
 
             var meshEntity = BuildMeshEntity(
@@ -391,7 +397,8 @@ public class VehicleLoader
         foreach (var candidate in daeSources)
         {
             meshes = candidate.Meshes
-                .Where(cm => cm.GeometryName.Equals(geometryName, StringComparison.OrdinalIgnoreCase))
+                .Where(cm => cm.GeometryName.Equals(geometryName, StringComparison.OrdinalIgnoreCase) ||
+                             cm.SceneNodeName.Equals(geometryName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
             if (meshes.Count > 0)
             {
@@ -439,7 +446,8 @@ public class VehicleLoader
         AssembledFlexBody flexBody,
         List<ColladaMesh> sourceMeshes)
     {
-        bool geometryAlreadyPositioned = flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
+        bool geometryAlreadyPositioned = sourceMeshes.Any(mesh => mesh.HasBakedTransform) ||
+                                         flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
 
         meshEntity.Transform.Position = geometryAlreadyPositioned || !flexBody.Position.HasValue
             ? -wheelEntity.Transform.Position
@@ -1035,4 +1043,15 @@ public class VehicleLoader
 }
 
 /// <summary>A loaded vehicle with its root entity and assembled definition.</summary>
-public record LoadedVehicle(VehicleDefinition Definition, Entity RootEntity, RallyCarComponent CarComponent, Entity ChassisEntity, Entity WheelFL, Entity WheelFR, Entity WheelRL, Entity WheelRR);
+public record VehicleLoadDiagnostics(string VehicleFolderPath, string? ConfigPath, float EstimatedMassKg);
+
+public record LoadedVehicle(
+    VehicleDefinition Definition,
+    Entity RootEntity,
+    RallyCarComponent CarComponent,
+    Entity ChassisEntity,
+    Entity WheelFL,
+    Entity WheelFR,
+    Entity WheelRL,
+    Entity WheelRR,
+    VehicleLoadDiagnostics Diagnostics);

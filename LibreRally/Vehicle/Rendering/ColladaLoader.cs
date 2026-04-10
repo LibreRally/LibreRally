@@ -16,6 +16,8 @@ public class ColladaMesh
     public string Name { get; init; } = "";
     public string GeometryName { get; init; } = "";
     public string MaterialName { get; init; } = "";
+    public string SceneNodeName { get; init; } = "";
+    public bool HasBakedTransform { get; init; }
     public List<ColladaVertex> Vertices { get; init; } = new();
     public List<int> Indices { get; init; } = new();
 }
@@ -28,34 +30,240 @@ public class ColladaMesh
 public static class ColladaLoader
 {
     private static readonly XNamespace Ns = "http://www.collada.org/2005/11/COLLADASchema";
+    private sealed record ColladaGeometry(string Id, string Name, List<ColladaMesh> Meshes);
 
     public static List<ColladaMesh> Load(string daeFilePath)
     {
         var doc = XDocument.Load(daeFilePath);
         var root = doc.Root ?? throw new InvalidDataException("Empty Collada file.");
 
-        var meshes = new List<ColladaMesh>();
-        var geometryLib = root.Element(Ns + "library_geometries");
-        if (geometryLib == null) return meshes;
+        var geometryLibrary = LoadGeometryLibrary(root);
+        if (geometryLibrary.Count == 0)
+            return new List<ColladaMesh>();
 
-        foreach (var geometry in geometryLib.Elements(Ns + "geometry"))
-        {
-            string geoName = geometry.Attribute("name")?.Value
-                ?? geometry.Attribute("id")?.Value
-                ?? "unknown";
-
-            var mesh = geometry.Element(Ns + "mesh");
-            if (mesh == null) continue;
-
-            meshes.AddRange(ParseMesh(geoName, mesh));
-        }
-
-        return meshes;
+        var sceneMeshes = LoadSceneMeshes(root, geometryLibrary);
+        return sceneMeshes.Count > 0
+            ? sceneMeshes
+            : geometryLibrary.Values.SelectMany(geometry => geometry.Meshes).ToList();
     }
 
     // BeamNG flex-body deformation meshes (steering rack morph targets etc.) have vertices
     // spanning tens of metres.  Any axis extent above this threshold flags them for exclusion.
     private const float MaxGeomExtentMetres = 7f;
+
+    private static Dictionary<string, ColladaGeometry> LoadGeometryLibrary(XElement root)
+    {
+        var result = new Dictionary<string, ColladaGeometry>(StringComparer.OrdinalIgnoreCase);
+        var geometryLib = root.Element(Ns + "library_geometries");
+        if (geometryLib == null)
+            return result;
+
+        foreach (var geometry in geometryLib.Elements(Ns + "geometry"))
+        {
+            string geometryId = geometry.Attribute("id")?.Value
+                ?? geometry.Attribute("name")?.Value
+                ?? "";
+            if (string.IsNullOrWhiteSpace(geometryId))
+                continue;
+
+            string geometryName = geometry.Attribute("name")?.Value
+                ?? geometryId;
+
+            var mesh = geometry.Element(Ns + "mesh");
+            if (mesh == null)
+                continue;
+
+            result[geometryId] = new ColladaGeometry(
+                geometryId,
+                geometryName,
+                ParseMesh(geometryName, mesh).ToList());
+        }
+
+        return result;
+    }
+
+    private static List<ColladaMesh> LoadSceneMeshes(
+        XElement root,
+        IReadOnlyDictionary<string, ColladaGeometry> geometryLibrary)
+    {
+        var sceneLibrary = root.Element(Ns + "library_visual_scenes");
+        if (sceneLibrary == null)
+            return new List<ColladaMesh>();
+
+        IEnumerable<XElement> visualScenes = sceneLibrary.Elements(Ns + "visual_scene");
+        string? activeSceneId = root.Element(Ns + "scene")?
+            .Element(Ns + "instance_visual_scene")?
+            .Attribute("url")?
+            .Value?
+            .TrimStart('#');
+
+        if (!string.IsNullOrWhiteSpace(activeSceneId))
+        {
+            var activeVisualScenes = visualScenes
+                .Where(visualScene => string.Equals(
+                    visualScene.Attribute("id")?.Value,
+                    activeSceneId,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (activeVisualScenes.Count > 0)
+                visualScenes = activeVisualScenes;
+        }
+
+        var result = new List<ColladaMesh>();
+        foreach (var visualScene in visualScenes)
+        {
+            foreach (var node in visualScene.Elements(Ns + "node"))
+                AddSceneMeshes(node, Matrix4x4.Identity, geometryLibrary, result);
+        }
+
+        return result;
+    }
+
+    private static void AddSceneMeshes(
+        XElement node,
+        Matrix4x4 parentTransform,
+        IReadOnlyDictionary<string, ColladaGeometry> geometryLibrary,
+        List<ColladaMesh> result)
+    {
+        Matrix4x4 localTransform = ParseNodeTransform(node);
+        Matrix4x4 worldTransform = Matrix4x4.Multiply(localTransform, parentTransform);
+        string nodeName = node.Attribute("name")?.Value
+            ?? node.Attribute("id")?.Value
+            ?? "";
+
+        foreach (var instanceGeometry in node.Elements(Ns + "instance_geometry"))
+        {
+            string geometryId = instanceGeometry.Attribute("url")?.Value?.TrimStart('#') ?? "";
+            if (string.IsNullOrWhiteSpace(geometryId) ||
+                !geometryLibrary.TryGetValue(geometryId, out ColladaGeometry? geometry) ||
+                ShouldSkipSceneGeometry(nodeName, geometryId, geometry.Name))
+            {
+                continue;
+            }
+
+            foreach (var mesh in geometry.Meshes)
+                result.Add(BakeSceneTransform(mesh, worldTransform, nodeName));
+        }
+
+        foreach (var childNode in node.Elements(Ns + "node"))
+            AddSceneMeshes(childNode, worldTransform, geometryLibrary, result);
+    }
+
+    private static Matrix4x4 ParseNodeTransform(XElement node)
+    {
+        var matrixElement = node.Element(Ns + "matrix");
+        if (matrixElement == null)
+            return Matrix4x4.Identity;
+
+        float[] values = ParseFloatArray(matrixElement.Value);
+        if (values.Length != 16)
+            return Matrix4x4.Identity;
+
+        // BeamNG serializes Collada node transforms with translation in the last column.
+        // Transpose into System.Numerics row-vector layout so Vector3.Transform applies them correctly.
+        return new Matrix4x4(
+            values[0], values[4], values[8], values[12],
+            values[1], values[5], values[9], values[13],
+            values[2], values[6], values[10], values[14],
+            values[3], values[7], values[11], values[15]);
+    }
+
+    private static ColladaMesh BakeSceneTransform(
+        ColladaMesh sourceMesh,
+        Matrix4x4 transform,
+        string sceneNodeName)
+    {
+        bool hasBakedTransform = !IsApproximatelyIdentity(transform);
+        Matrix4x4 normalTransform = transform;
+        if (hasBakedTransform && Matrix4x4.Invert(transform, out Matrix4x4 inverseTransform))
+            normalTransform = Matrix4x4.Transpose(inverseTransform);
+
+        var vertices = new List<ColladaVertex>(sourceMesh.Vertices.Count);
+        foreach (var vertex in sourceMesh.Vertices)
+        {
+            Vector3 position = hasBakedTransform
+                ? Vector3.Transform(vertex.Position, transform)
+                : vertex.Position;
+
+            Vector3 normal = hasBakedTransform
+                ? Vector3.TransformNormal(vertex.Normal, normalTransform)
+                : vertex.Normal;
+            if (normal.LengthSquared() > 1e-8f)
+                normal = Vector3.Normalize(normal);
+            else
+                normal = Vector3.UnitY;
+
+            vertices.Add(new ColladaVertex(position, normal, vertex.TexCoord));
+        }
+
+        return new ColladaMesh
+        {
+            Name = string.IsNullOrWhiteSpace(sceneNodeName)
+                ? sourceMesh.Name
+                : $"{sceneNodeName}_{sourceMesh.Name}",
+            GeometryName = sourceMesh.GeometryName,
+            MaterialName = sourceMesh.MaterialName,
+            SceneNodeName = sceneNodeName,
+            HasBakedTransform = hasBakedTransform,
+            Vertices = vertices,
+            Indices = ShouldFlipTriangleWinding(transform)
+                ? FlipTriangleWinding(sourceMesh.Indices)
+                : new List<int>(sourceMesh.Indices),
+        };
+    }
+
+    private static bool ShouldSkipSceneGeometry(string nodeName, string geometryId, string geometryName)
+        => IsHelperGeometryName(nodeName) ||
+           IsHelperGeometryName(geometryId) ||
+           IsHelperGeometryName(geometryName);
+
+    private static bool IsHelperGeometryName(string value)
+        => !string.IsNullOrWhiteSpace(value) &&
+           (value.Contains("_empty", StringComparison.OrdinalIgnoreCase) ||
+            value.Contains("_helper", StringComparison.OrdinalIgnoreCase));
+
+    private static bool ShouldFlipTriangleWinding(Matrix4x4 transform)
+        => !IsApproximatelyIdentity(transform) && transform.GetDeterminant() < 0f;
+
+    private static List<int> FlipTriangleWinding(List<int> indices)
+    {
+        var result = new List<int>(indices.Count);
+        int triangleCount = indices.Count / 3;
+        for (int i = 0; i < triangleCount; i++)
+        {
+            int baseIndex = i * 3;
+            result.Add(indices[baseIndex]);
+            result.Add(indices[baseIndex + 2]);
+            result.Add(indices[baseIndex + 1]);
+        }
+
+        for (int i = triangleCount * 3; i < indices.Count; i++)
+            result.Add(indices[i]);
+
+        return result;
+    }
+
+    private static bool IsApproximatelyIdentity(Matrix4x4 matrix)
+    {
+        const float Epsilon = 1e-4f;
+        return MathF.Abs(matrix.M11 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M12) < Epsilon &&
+               MathF.Abs(matrix.M13) < Epsilon &&
+               MathF.Abs(matrix.M14) < Epsilon &&
+               MathF.Abs(matrix.M21) < Epsilon &&
+               MathF.Abs(matrix.M22 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M23) < Epsilon &&
+               MathF.Abs(matrix.M24) < Epsilon &&
+               MathF.Abs(matrix.M31) < Epsilon &&
+               MathF.Abs(matrix.M32) < Epsilon &&
+               MathF.Abs(matrix.M33 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M34) < Epsilon &&
+               MathF.Abs(matrix.M41) < Epsilon &&
+               MathF.Abs(matrix.M42) < Epsilon &&
+               MathF.Abs(matrix.M43) < Epsilon &&
+               MathF.Abs(matrix.M44 - 1f) < Epsilon;
+    }
 
     private static IEnumerable<ColladaMesh> ParseMesh(string geometryName, XElement mesh)
     {

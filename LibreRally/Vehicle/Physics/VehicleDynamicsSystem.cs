@@ -86,7 +86,7 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Current normal load per wheel after load transfer (N). Read by telemetry.</summary>
     public readonly float[] CurrentNormalLoads = new float[WheelCount];
 
-    /// <summary>Suspension compression per wheel (m). Positive = compressed.</summary>
+    /// <summary>Signed suspension travel per wheel (m). Positive = compressed, negative = rebound.</summary>
     public readonly float[] SuspensionCompression = new float[WheelCount];
 
     /// <summary>Whether each wheel currently has ground contact.</summary>
@@ -129,8 +129,9 @@ public sealed class VehicleDynamicsSystem
     /// <param name="wheelPositions">World-space position of each wheel contact point.</param>
     /// <param name="wheelVelocities">World-space linear velocity at each wheel.</param>
     /// <param name="wheelOrientations">World-space orientation frames for each wheel (Right, Up, Forward).</param>
+    /// <param name="wheelContactScales">Per-wheel contact confidence/load scales in the range [0, 1].</param>
     /// <param name="wheelGrounded">Whether each wheel has ground contact.</param>
-    /// <param name="suspensionCompressions">Suspension compression for each wheel (m).</param>
+    /// <param name="suspensionCompressions">Signed suspension travel for each wheel (m). Positive = compressed.</param>
     /// <param name="engineTorqueAtWheels">Total engine torque after gearbox at wheel level (N·m).</param>
     /// <param name="brakeTorque">Brake torque per wheel (N·m).</param>
     /// <param name="camberAngles">Camber angle per wheel (rad).</param>
@@ -141,6 +142,7 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<Vector3> wheelPositions,
         ReadOnlySpan<Vector3> wheelVelocities,
         ReadOnlySpan<Matrix> wheelOrientations,
+        ReadOnlySpan<float> wheelContactScales,
         ReadOnlySpan<bool> wheelGrounded,
         ReadOnlySpan<float> suspensionCompressions,
         float engineTorqueAtWheels,
@@ -150,7 +152,6 @@ public sealed class VehicleDynamicsSystem
     {
         if (dt < 1e-6f) return;
 
-        Vector3 chassisPosition = chassisWorld.TranslationVector;
         Vector3 chassisVelocity = chassisBody.LinearVelocity;
 
         // ── 1. Estimate chassis acceleration for load transfer ───────────────
@@ -167,7 +168,7 @@ public sealed class VehicleDynamicsSystem
         float lateralAccel = Vector3.Dot(acceleration, rightDir);
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
-        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded);
+        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
 
         // ── 3. Compute anti-roll bar forces ──────────────────────────────────
         ComputeAntiRollForces(suspensionCompressions);
@@ -178,8 +179,8 @@ public sealed class VehicleDynamicsSystem
         // ── 5. Evaluate tyre model for each wheel ───────────────────────────
         ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
 
-        // ── 6. Apply all forces as impulses to BEPU chassis body ─────────────
-        ApplyForces(chassisBody, chassisPosition, wheelPositions, wheelOrientations, dt);
+        // ── 6. Apply all forces as impulses to the chassis at the wheel contact locations ─
+        ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
     }
 
     /// <summary>
@@ -195,8 +196,11 @@ public sealed class VehicleDynamicsSystem
     /// Positive a_y (rightward) shifts load to the left wheels.
     /// Reference: Milliken, RCVD §18.3.</para>
     /// </summary>
-    private void ComputeLoadTransfer(float longitudinalAccel, float lateralAccel,
-        ReadOnlySpan<bool> wheelGrounded)
+    private void ComputeLoadTransfer(
+        float longitudinalAccel,
+        float lateralAccel,
+        ReadOnlySpan<bool> wheelGrounded,
+        ReadOnlySpan<float> wheelContactScales)
     {
         float wheelbase = MathF.Max(Wheelbase, 0.1f);
         float trackWidth = MathF.Max(TrackWidth, 0.1f);
@@ -211,7 +215,10 @@ public sealed class VehicleDynamicsSystem
         for (int i = 0; i < WheelCount; i++)
         {
             CurrentNormalLoads[i] = StaticNormalLoads[i];
-            WheelGrounded[i] = wheelGrounded[i];
+            float contactScale = i < wheelContactScales.Length
+                ? Math.Clamp(wheelContactScales[i], 0f, 1f)
+                : wheelGrounded[i] ? 1f : 0f;
+            WheelGrounded[i] = wheelGrounded[i] || contactScale > 0.05f;
         }
 
         // Longitudinal: acceleration shifts load rearward (front loses, rear gains)
@@ -229,10 +236,14 @@ public sealed class VehicleDynamicsSystem
         // Clamp — wheel cannot push up (negative load means wheel has lifted)
         for (int i = 0; i < WheelCount; i++)
         {
+            float contactScale = i < wheelContactScales.Length
+                ? Math.Clamp(wheelContactScales[i], 0f, 1f)
+                : wheelGrounded[i] ? 1f : 0f;
+
             if (!WheelGrounded[i])
                 CurrentNormalLoads[i] = 0f;
             else
-                CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f);
+                CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f) * contactScale;
         }
     }
 
@@ -386,16 +397,19 @@ public sealed class VehicleDynamicsSystem
     }
 
     /// <summary>
-    /// Applies all computed tyre forces and self-aligning torques as impulses to the BEPU chassis body.
-    /// Forces are applied at each wheel's contact point to generate appropriate moments.
+    /// Applies all computed tyre forces to the chassis at each wheel position.
+    /// The wheel rigid bodies provide collision/suspension geometry, while the tyre model
+    /// is authoritative for contact-patch grip and therefore pushes the sprung mass directly.
     /// </summary>
     private void ApplyForces(
         BodyComponent chassisBody,
-        Vector3 chassisPosition,
+        in Matrix chassisWorld,
         ReadOnlySpan<Vector3> wheelPositions,
         ReadOnlySpan<Matrix> wheelOrientations,
         float dt)
     {
+        Vector3 chassisPosition = chassisWorld.TranslationVector;
+
         for (int i = 0; i < WheelCount; i++)
         {
             if (!WheelGrounded[i])
@@ -414,13 +428,11 @@ public sealed class VehicleDynamicsSystem
 
             Vector3 forceWorld = wheelForward * fx + wheelRight * fy;
             Vector3 impulse = forceWorld * dt;
+            Vector3 contactOffset = wheelPositions[i] - chassisPosition;
 
-            // Apply at wheel contact point to generate correct yaw/pitch/roll moments
-            Vector3 offset = wheelPositions[i] - chassisPosition;
-            chassisBody.ApplyImpulse(impulse, offset);
+            chassisBody.Awake = true;
+            chassisBody.ApplyImpulse(impulse, contactOffset);
         }
-
-        chassisBody.Awake = true;
     }
 
     /// <summary>

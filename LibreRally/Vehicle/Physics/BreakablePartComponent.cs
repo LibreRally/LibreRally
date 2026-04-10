@@ -1,16 +1,11 @@
-using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
-using Stride.Core.Mathematics;
 using Stride.Engine;
 
 namespace LibreRally.Vehicle.Physics;
 
 /// <summary>
-/// Monitors the velocity change of this part each frame and breaks the weld constraint
-/// when the estimated impulse exceeds <see cref="BreakStrength"/>.
-///
-/// Uses (ΔV × mass) as a proxy for the collision impulse because
-/// <see cref="WeldConstraintComponent"/> does not expose its internal constraint force.
+/// Monitors the weld constraint each frame and breaks it when the measured
+/// constraint force exceeds <see cref="BreakStrength"/>.
 ///
 /// Once broken, the part's <see cref="BodyComponent"/> becomes a free rigid body
 /// that interacts normally with the physics world.
@@ -21,7 +16,7 @@ namespace LibreRally.Vehicle.Physics;
 public class BreakablePartComponent : SyncScript
 {
     /// <summary>
-    /// Impulse threshold (N·s) above which the part detaches.
+    /// Force threshold (N) above which the part detaches.
     /// Sourced from the minimum beamStrength of cross-boundary beams in the jbeam.
     /// </summary>
     public float BreakStrength { get; set; } = 50000f;
@@ -30,28 +25,13 @@ public class BreakablePartComponent : SyncScript
     public WeldConstraintComponent? WeldConstraint { get; set; }
 
     private bool _broken;
-    private BodyComponent? _body;
-
-    public override void Start()
-    {
-        _body = Entity.Get<BodyComponent>();
-    }
 
     public override void Update()
     {
-        if (_broken || WeldConstraint == null || _body == null) return;
+        if (_broken || WeldConstraint == null || !WeldConstraint.Attached) return;
 
-        // Estimate the impulse that acted on this part this frame:
-        //   impulse ≈ ΔV × mass
-        var deltaV = _body.LinearVelocity - _body.PreviousLinearVelocity;
-        float deltaVMag = deltaV.Length();
-        if (deltaVMag < 0.001f) return;
-
-        float inverseMass = _body.BodyInertia.InverseMass;
-        float mass = inverseMass > 0f ? 1f / inverseMass : 500f;
-        float impulse = deltaVMag * mass;
-
-        if (impulse > BreakStrength)
+        float force = WeldConstraint.GetAccumulatedForceMagnitude();
+        if (force > BreakStrength)
             Break();
     }
 

@@ -19,25 +19,25 @@ namespace LibreRally;
 [ComponentCategory("LibreRally")]
 public class VehicleSpawner : SyncScript
 {
-    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\basic_car";
+    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\sunburst2";
 
     /// <summary>
     /// Name of the .pc config file to load (with or without .pc extension).
     /// E.g. "rally_pro_asphalt" or "rally_pro_asphalt.pc".
     /// Leave empty to auto-detect (prefers rally_pro_asphalt.pc if present).
     /// </summary>
-    public string ConfigFileName { get; set; } = "basic_car";
+    public string ConfigFileName { get; set; } = "rally_pro_asphalt.pc";
 
     public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
 
     private string _status = "Loading...";
-    private Entity? _chassis;
-    private Entity[] _wheels = Array.Empty<Entity>();
-    private bool _showDebug = false;
+    private bool _showDebug = true;
+    private VehicleTelemetryOverlay? _telemetryOverlay;
 
     public override void Start()
     {
         AddGroundPhysics();
+        EnsureTelemetryOverlay();
 
         try
         {
@@ -47,17 +47,21 @@ public class VehicleSpawner : SyncScript
         {
             Log.Error($"Failed to load vehicle: {ex}");
             _status = $"Load error: {ex.Message}";
+            if (_telemetryOverlay != null)
+                _telemetryOverlay.StatusText = _status;
         }
     }
 
     private void LoadVehicle()
     {
+        string requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
         var basePath = Path.IsPathRooted(VehicleFolderPath)
             ? VehicleFolderPath
             : Path.Combine(AppContext.BaseDirectory, VehicleFolderPath);
+        Log.Info($"[VehicleSpawner] Load request: folder='{VehicleFolderPath}' resolved='{basePath}' config='{requestedConfig}'");
 
         var loader = new VehicleLoader((Game)Game);
-        LoadedVehicle vehicle = loader.Load(basePath, string.IsNullOrEmpty(ConfigFileName) ? null : ConfigFileName);
+        LoadedVehicle vehicle = loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
 
         // CRITICAL: apply SpawnPosition to each physics entity directly.
         // They must be at scene root level (no offset parent) so BEPU writes correct world positions back.
@@ -68,14 +72,16 @@ public class VehicleSpawner : SyncScript
         vehicle.RootEntity.Transform.Position = Vector3.Zero;
         SceneSystem.SceneInstance.RootScene.Entities.Add(vehicle.RootEntity);
 
-        _chassis = vehicle.ChassisEntity;
-        _wheels  = new[] { vehicle.WheelFL, vehicle.WheelFR, vehicle.WheelRL, vehicle.WheelRR };
-        _status = $"Loaded: {vehicle.Definition.VehicleName}  nodes={vehicle.Definition.Nodes.Count}";
-        Log.Info(_status);
+        string activeConfig = vehicle.Diagnostics.ConfigPath != null
+            ? Path.GetFileName(vehicle.Diagnostics.ConfigPath)
+            : "<jbeam defaults>";
+        _status = $"Loaded: {vehicle.Definition.VehicleName} cfg={activeConfig} mass={vehicle.Diagnostics.EstimatedMassKg:F0}kg";
+        Log.Info($"[VehicleSpawner] {_status} folder='{vehicle.Diagnostics.VehicleFolderPath}'");
 
         AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
         AttachHud(vehicle.CarComponent);
         AttachSpeedoGauge(vehicle.CarComponent);
+        AttachTelemetryOverlay(vehicle.CarComponent);
     }
 
     private SpeedoGauge? _speedoGauge;
@@ -97,6 +103,32 @@ public class VehicleSpawner : SyncScript
     }
 
     private RallyCarComponent? _car;
+
+    private void AttachTelemetryOverlay(RallyCarComponent car)
+    {
+        EnsureTelemetryOverlay();
+        if (_telemetryOverlay == null)
+            return;
+
+        _telemetryOverlay.Car = car;
+        _telemetryOverlay.StatusText = _status;
+        _telemetryOverlay.OverlayVisible = _showDebug;
+    }
+
+    private void EnsureTelemetryOverlay()
+    {
+        if (_telemetryOverlay != null)
+            return;
+
+        _telemetryOverlay = new VehicleTelemetryOverlay(Services)
+        {
+            Car = _car,
+            StatusText = _status,
+            OverlayVisible = _showDebug,
+        };
+
+        ((Game)Game).GameSystems.Add(_telemetryOverlay);
+    }
 
     private void AttachHud(RallyCarComponent car)
     {
@@ -254,19 +286,17 @@ public class VehicleSpawner : SyncScript
         }
 
         // Toggle debug info with F3
-        if (Input.IsKeyPressed(Keys.F3)) _showDebug = !_showDebug;
+        if (Input.IsKeyPressed(Keys.F3))
+            _showDebug = !_showDebug;
 
-        if (_showDebug && _chassis != null)
+        if (_telemetryOverlay != null)
         {
-            var p = _chassis.Transform.WorldMatrix.TranslationVector;
-            DebugText.Print($"Car: {p.X:F1}, {p.Y:F1}, {p.Z:F1}  | {_status}", new Int2(10, 10));
-            for (int i = 0; i < _wheels.Length; i++)
-            {
-                var wp = _wheels[i].Transform.WorldMatrix.TranslationVector;
-                DebugText.Print($"W{i}({_wheels[i].Name}): {wp.X:F2},{wp.Y:F2},{wp.Z:F2}", new Int2(10, 30 + i * 16));
-            }
+            _telemetryOverlay.Car = _car;
+            _telemetryOverlay.StatusText = _status;
+            _telemetryOverlay.OverlayVisible = _showDebug;
         }
-        else if (_chassis == null)
+
+        if (_car == null)
         {
             DebugText.Print(_status, new Int2(10, 10));
         }
