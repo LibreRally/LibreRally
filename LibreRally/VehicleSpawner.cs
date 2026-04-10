@@ -19,7 +19,7 @@ namespace LibreRally;
 [ComponentCategory("LibreRally")]
 public class VehicleSpawner : SyncScript
 {
-    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\sunburst2";
+    public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\basic_car";
 
     /// <summary>
     /// Name of the .pc config file to load (with or without .pc extension).
