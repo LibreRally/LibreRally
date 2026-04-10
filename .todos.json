@@ -1,0 +1,7 @@
+{
+  "sunburst-dae-audit": {
+    "completedAt": "2026-04-09T17:46:55.1075899Z",
+    "status": "done",
+    "notes": "Completed full DAE structure audit. Found 416 geometries with per-node transforms not applied by importer. Root cause: ColladaLoader reads geometries directly without parsing visual_scene node transforms. Engine pulleys, suspension parts, interior components all affected."
+  }
+}

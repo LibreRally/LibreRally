@@ -387,9 +387,17 @@ public sealed class TyreModel
             float airInertia = WheelInertia > 0f
                 ? WheelInertia
                 : MathF.Max(0.5f, Radius * Radius * InertiaScalar);
-            float airBrakeDir = state.AngularVelocity > 0f ? -1f : (state.AngularVelocity < 0f ? 1f : 0f);
-            float airNetTorque = driveTorque + brakeTorque * airBrakeDir;
-            state.AngularVelocity += (airNetTorque / airInertia) * dt;
+
+            state.AngularVelocity += (driveTorque / airInertia) * dt;
+
+            if (brakeTorque > 0f)
+            {
+                float brakeOmegaChange = (brakeTorque / airInertia) * dt;
+                if (state.AngularVelocity > 0f)
+                    state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+                else if (state.AngularVelocity < 0f)
+                    state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+            }
             return;
         }
 
@@ -473,8 +481,11 @@ public sealed class TyreModel
 
         // Blend brush-model transient force with steady-state Pacejka.
         float brushForce = -effectiveBrushStiffness * state.LateralDeflection;
-        float blendAlpha = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
-        float blendedFy = blendAlpha * rawFy + (1f - blendAlpha) * brushForce;
+        float speedBlend = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
+        float latSlipVel = MathF.Abs(lateralVelocity);
+        float latSlideBlend = Math.Clamp(latSlipVel - 1f, 0f, 1f);
+        float blendAlphaLat = MathF.Max(speedBlend, latSlideBlend);
+        float blendedFy = blendAlphaLat * rawFy + (1f - blendAlphaLat) * brushForce;
 
         // ── Contact-patch brush model (longitudinal transient) ───────────────
         // Mirrors the lateral transient for longitudinal forces.
@@ -496,7 +507,10 @@ public sealed class TyreModel
             -maxLongDeflection, maxLongDeflection);
 
         float brushFx = effectiveBrushStiffness * state.LongitudinalDeflection;
-        float blendedFx = blendAlpha * rawFx + (1f - blendAlpha) * brushFx;
+        float longSlipVelMag = MathF.Abs(wheelLinearSpeed - longitudinalVelocity);
+        float longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
+        float blendAlphaLong = MathF.Max(speedBlend, longSlideBlend);
+        float blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
 
         // ── Camber thrust ────────────────────────────────────────────────────
         // Small lateral force from wheel inclination. Fy_camber = γ · Cγ · Fz.
@@ -568,9 +582,18 @@ public sealed class TyreModel
         float wheelInertia = WheelInertia > 0f
             ? WheelInertia
             : MathF.Max(0.5f, (normalLoad / 9.81f * 0.05f) * Radius * Radius * InertiaScalar);
-        float brakeDir = state.AngularVelocity > 0f ? -1f : (state.AngularVelocity < 0f ? 1f : 0f);
-        float netTorque = driveTorque + brakeTorque * brakeDir - longitudinalForce * effectiveRollingRadius;
+
+        float netTorque = driveTorque - longitudinalForce * effectiveRollingRadius;
         state.AngularVelocity += (netTorque / wheelInertia) * dt;
+
+        if (brakeTorque > 0f)
+        {
+            float brakeOmegaChange = (brakeTorque / wheelInertia) * dt;
+            if (state.AngularVelocity > 0f)
+                state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
+            else if (state.AngularVelocity < 0f)
+                state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
+        }
 
         // ── Thermal model ────────────────────────────────────────────────────
         // Temperature rises with slip energy dissipation and cools toward ambient.

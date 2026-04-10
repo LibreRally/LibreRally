@@ -423,6 +423,14 @@ public static class VehiclePhysicsBuilder
         wheelRadius = 0.305f;
 
         float staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
+        float ComputeStaticSag(float springRate) => staticNormalLoad / Math.Max(springRate, 1f);
+        float ComputeBumpTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 6f, 0.08f, 0.18f);
+        float ComputeReboundTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 4f, 0.06f, 0.16f);
+
+        float bumpTravelF = ComputeBumpTravel(springF);
+        float reboundTravelF = ComputeReboundTravel(springF);
+        float bumpTravelR = ComputeBumpTravel(springR);
+        float reboundTravelR = ComputeReboundTravel(springR);
 
         Entity GetWheel(string label, bool isFront)
         {
@@ -444,7 +452,9 @@ public static class VehiclePhysicsBuilder
             }
             float freq  = isFront ? springFreqF  : springFreqR;
             float ratio = isFront ? dampRatioF   : dampRatioR;
-            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius, staticNormalLoad);
+            float bumpTravel = isFront ? bumpTravelF : bumpTravelR;
+            float reboundTravel = isFront ? reboundTravelF : reboundTravelR;
+            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
         }
 
         return (GetWheel("wheel_FL", true), GetWheel("wheel_FR", true),
@@ -483,7 +493,9 @@ public static class VehiclePhysicsBuilder
         float springFreq = 2.5f,
         float dampingRatio = 0.9f,
         float wheelRadius = 0.305f,
-        float staticNormalLoad = 0f)
+        float staticNormalLoad = 0f,
+        float bumpTravel = 0.1f,
+        float reboundTravel = 0.08f)
     {
         const float WheelWidth  = 0.175f;
         const float WheelMass   = 18f;
@@ -491,7 +503,10 @@ public static class VehiclePhysicsBuilder
         var entity = new Entity(name) { Transform = { Position = position } };
         var body = new BodyComponent
         {
-            FrictionCoefficient = 1.5f,
+            // The slip-based tyre model is authoritative for contact-patch grip. Keep the
+            // passive wheel collider nearly frictionless so BEPU support contacts don't
+            // double-count longitudinal/lateral grip and pin the car in place.
+            FrictionCoefficient = 0.05f,
             Collider = new CompoundCollider
             {
                 Colliders =
@@ -511,6 +526,11 @@ public static class VehiclePhysicsBuilder
         entity.Add(body);
 
         var localOffsetA = position - chassisWorldPos;
+        var localOffsetB = Vector3.Zero;
+        var suspensionAxis = Vector3.UnitY;
+        const float TargetOffset = 0f;
+        float minimumOffset = -Math.Max(reboundTravel, 0f);
+        float maximumOffset = Math.Max(bumpTravel, 0f);
 
         // ── Suspension ────────────────────────────────────────────────────────
         // PointOnLine constrains the wheel centre to a vertical rail fixed in chassis space.
@@ -518,8 +538,8 @@ public static class VehiclePhysicsBuilder
         {
             A = chassisBody, B = body,
             LocalOffsetA  = localOffsetA,
-            LocalOffsetB  = Vector3.Zero,
-            LocalDirection = Vector3.UnitY,
+            LocalOffsetB  = localOffsetB,
+            LocalDirection = suspensionAxis,
             ServoMaximumForce = 80000f,
         });
 
@@ -528,12 +548,24 @@ public static class VehiclePhysicsBuilder
         {
             A = chassisBody, B = body,
             LocalOffsetA     = localOffsetA,
-            LocalOffsetB     = Vector3.Zero,
-            LocalPlaneNormal = Vector3.UnitY,
-            TargetOffset     = 0f,
+            LocalOffsetB     = localOffsetB,
+            LocalPlaneNormal = suspensionAxis,
+            TargetOffset     = TargetOffset,
             SpringFrequency    = springFreq,
             SpringDampingRatio = dampingRatio,
             ServoMaximumForce  = 80000f,
+        });
+
+        entity.Add(new LinearAxisLimitConstraintComponent
+        {
+            A = chassisBody, B = body,
+            LocalOffsetA = localOffsetA,
+            LocalOffsetB = localOffsetB,
+            LocalAxis = suspensionAxis,
+            MinimumOffset = minimumOffset,
+            MaximumOffset = maximumOffset,
+            SpringFrequency = Math.Clamp(springFreq * 4f, 10f, 20f),
+            SpringDampingRatio = 1.1f,
         });
 
         // ── Angular constraints ───────────────────────────────────────────────
@@ -599,6 +631,12 @@ public static class VehiclePhysicsBuilder
             DriveMotor = driveMotor,
             SteerMotor = steerMotor,
             StaticNormalLoad = staticNormalLoad,
+            SuspensionLocalOffsetA = localOffsetA,
+            SuspensionLocalOffsetB = localOffsetB,
+            SuspensionLocalAxis = suspensionAxis,
+            SuspensionTargetOffset = TargetOffset,
+            SuspensionMinimumOffset = minimumOffset,
+            SuspensionMaximumOffset = maximumOffset,
             TyreModel = new TyreModel(wheelRadius),
         });
         return entity;
