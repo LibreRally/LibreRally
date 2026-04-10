@@ -74,7 +74,7 @@ public class RallyCameraScript : SyncScript
 	        return;
         }
 
-        float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+        var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
         if (dt <= 0f || dt > 0.1f)
         {
 	        dt = 0.016f;
@@ -131,7 +131,7 @@ public class RallyCameraScript : SyncScript
         // WorldMatrix.Backward = local +Z in world space = car nose direction for this car.
         var carNoseDir = targetTransform.WorldMatrix.Backward;
         carNoseDir.Y = 0f;
-        float yaw = carNoseDir.LengthSquared() > 0.001f
+        var yaw = carNoseDir.LengthSquared() > 0.001f
             ? MathF.Atan2(carNoseDir.X, carNoseDir.Z)
             : 0f;
         var yawOnly = Quaternion.RotationY(yaw);
@@ -161,9 +161,9 @@ public class RallyCameraScript : SyncScript
         }
 
         lookDir.Normalize();
-        float horizontal = MathF.Sqrt(lookDir.X * lookDir.X + lookDir.Z * lookDir.Z);
-        float yaw   = MathF.Atan2(-lookDir.X, -lookDir.Z);
-        float pitch = MathF.Atan2(lookDir.Y,  horizontal);
+        var horizontal = MathF.Sqrt(lookDir.X * lookDir.X + lookDir.Z * lookDir.Z);
+        var yaw   = MathF.Atan2(-lookDir.X, -lookDir.Z);
+        var pitch = MathF.Atan2(lookDir.Y,  horizontal);
         Entity.Transform.Rotation = Quaternion.RotationYawPitchRoll(yaw, pitch, 0f);
     }
 
@@ -184,13 +184,13 @@ public class RallyCameraScript : SyncScript
 
     private static Vector2 ApplyLookDeadZone(Vector2 thumb)
     {
-        float magnitude = thumb.Length();
+        var magnitude = thumb.Length();
         if (magnitude <= LookDeadZone || magnitude <= float.Epsilon)
         {
 	        return Vector2.Zero;
         }
 
-        float scaledMagnitude = MathF.Min(1f, (magnitude - LookDeadZone) / (1f - LookDeadZone));
+        var scaledMagnitude = MathF.Min(1f, (magnitude - LookDeadZone) / (1f - LookDeadZone));
         return thumb * (scaledMagnitude / magnitude);
     }
 
@@ -212,7 +212,7 @@ public class RallyCameraScript : SyncScript
             return currentAngles;
         }
 
-        float t = MathF.Min(1f, recentreSpeed * dt);
+        var t = MathF.Min(1f, recentreSpeed * dt);
         currentAngles.X = MathUtil.Lerp(currentAngles.X, 0f, t);
         currentAngles.Y = MathUtil.Lerp(currentAngles.Y, 0f, t);
         if (MathF.Abs(currentAngles.X) < 0.001f)

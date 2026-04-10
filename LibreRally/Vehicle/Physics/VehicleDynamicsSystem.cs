@@ -112,7 +112,7 @@ public sealed class VehicleDynamicsSystem
 
     public VehicleDynamicsSystem()
     {
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
         {
             WheelStates[i] = TyreState.CreateDefault();
             WheelSurfaces[i] = SurfaceProperties.ForType(SurfaceType.Tarmac);
@@ -155,20 +155,20 @@ public sealed class VehicleDynamicsSystem
 	        return;
         }
 
-        Vector3 chassisVelocity = chassisBody.LinearVelocity;
+        var chassisVelocity = chassisBody.LinearVelocity;
 
         // ── 1. Estimate chassis acceleration for load transfer ───────────────
         // Use finite difference of velocity for acceleration estimation.
         // Reference: Milliken, RCVD §5.6, load transfer from measured acceleration.
-        Vector3 acceleration = (chassisVelocity - _previousVelocity) / dt;
+        var acceleration = (chassisVelocity - _previousVelocity) / dt;
         _previousVelocity = chassisVelocity;
 
         // Project acceleration into chassis-local frame.
         // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
-        Vector3 forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
-        Vector3 rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        float longitudinalAccel = Vector3.Dot(acceleration, forwardDir);
-        float lateralAccel = Vector3.Dot(acceleration, rightDir);
+        var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        var longitudinalAccel = Vector3.Dot(acceleration, forwardDir);
+        var lateralAccel = Vector3.Dot(acceleration, rightDir);
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
@@ -205,20 +205,20 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<bool> wheelGrounded,
         ReadOnlySpan<float> wheelContactScales)
     {
-        float wheelbase = MathF.Max(Wheelbase, 0.1f);
-        float trackWidth = MathF.Max(TrackWidth, 0.1f);
+        var wheelbase = MathF.Max(Wheelbase, 0.1f);
+        var trackWidth = MathF.Max(TrackWidth, 0.1f);
 
         // Longitudinal load transfer: ΔF = (m · a_x · h_cg) / L
-        float longTransfer = (VehicleMass * longitudinalAccel * CgHeight) / wheelbase;
+        var longTransfer = (VehicleMass * longitudinalAccel * CgHeight) / wheelbase;
 
         // Lateral load transfer: ΔF = (m · a_y · h_cg) / T
-        float latTransfer = (VehicleMass * lateralAccel * CgHeight) / trackWidth;
+        var latTransfer = (VehicleMass * lateralAccel * CgHeight) / trackWidth;
 
         // Start from static loads, then add transfer
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
         {
             CurrentNormalLoads[i] = StaticNormalLoads[i];
-            float contactScale = i < wheelContactScales.Length
+            var contactScale = i < wheelContactScales.Length
                 ? Math.Clamp(wheelContactScales[i], 0f, 1f)
                 : wheelGrounded[i] ? 1f : 0f;
             WheelGrounded[i] = wheelGrounded[i] || contactScale > 0.05f;
@@ -237,9 +237,9 @@ public sealed class VehicleDynamicsSystem
         CurrentNormalLoads[RR] -= latTransfer * 0.5f;
 
         // Clamp — wheel cannot push up (negative load means wheel has lifted)
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
         {
-            float contactScale = i < wheelContactScales.Length
+            var contactScale = i < wheelContactScales.Length
                 ? Math.Clamp(wheelContactScales[i], 0f, 1f)
                 : wheelGrounded[i] ? 1f : 0f;
 
@@ -270,14 +270,14 @@ public sealed class VehicleDynamicsSystem
     private void ComputeAntiRollForces(ReadOnlySpan<float> suspensionCompressions)
     {
         // Cache suspension compression
-        for (int i = 0; i < WheelCount && i < suspensionCompressions.Length; i++)
+        for (var i = 0; i < WheelCount && i < suspensionCompressions.Length; i++)
             SuspensionCompression[i] = suspensionCompressions[i];
 
         // Front axle anti-roll bar
         if (FrontAntiRollStiffness > 0f)
         {
-            float deltaFront = SuspensionCompression[FL] - SuspensionCompression[FR];
-            float rollForce = deltaFront * FrontAntiRollStiffness;
+            var deltaFront = SuspensionCompression[FL] - SuspensionCompression[FR];
+            var rollForce = deltaFront * FrontAntiRollStiffness;
             // Opposing forces: push down compressed side, push up extended side
             CurrentNormalLoads[FL] += rollForce;
             CurrentNormalLoads[FR] -= rollForce;
@@ -286,14 +286,14 @@ public sealed class VehicleDynamicsSystem
         // Rear axle anti-roll bar
         if (RearAntiRollStiffness > 0f)
         {
-            float deltaRear = SuspensionCompression[RL] - SuspensionCompression[RR];
-            float rollForce = deltaRear * RearAntiRollStiffness;
+            var deltaRear = SuspensionCompression[RL] - SuspensionCompression[RR];
+            var rollForce = deltaRear * RearAntiRollStiffness;
             CurrentNormalLoads[RL] += rollForce;
             CurrentNormalLoads[RR] -= rollForce;
         }
 
         // Re-clamp after anti-roll adjustments
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
             CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f);
     }
 
@@ -309,19 +309,19 @@ public sealed class VehicleDynamicsSystem
     private void ComputeDrivetrainTorque(float engineTorqueAtWheels)
     {
         // Center diff splits to front and rear axles
-        float omegaFrontAxle = (WheelStates[FL].AngularVelocity + WheelStates[FR].AngularVelocity) * 0.5f;
-        float omegaRearAxle = (WheelStates[RL].AngularVelocity + WheelStates[RR].AngularVelocity) * 0.5f;
+        var omegaFrontAxle = (WheelStates[FL].AngularVelocity + WheelStates[FR].AngularVelocity) * 0.5f;
+        var omegaRearAxle = (WheelStates[RL].AngularVelocity + WheelStates[RR].AngularVelocity) * 0.5f;
 
         var centerDiff = CenterDiff;
         DifferentialSolver.SplitTorque(in centerDiff, engineTorqueAtWheels,
             omegaFrontAxle, omegaRearAxle,
-            out float frontAxleTorque, out float rearAxleTorque);
+            out var frontAxleTorque, out var rearAxleTorque);
 
         // Front diff splits between FL and FR
         var frontDiff = FrontDiff;
         DifferentialSolver.SplitTorque(in frontDiff, frontAxleTorque,
             WheelStates[FL].AngularVelocity, WheelStates[FR].AngularVelocity,
-            out float torqueFL, out float torqueFR);
+            out var torqueFL, out var torqueFR);
         WheelDriveTorques[FL] = torqueFL;
         WheelDriveTorques[FR] = torqueFR;
 
@@ -329,7 +329,7 @@ public sealed class VehicleDynamicsSystem
         var rearDiff = RearDiff;
         DifferentialSolver.SplitTorque(in rearDiff, rearAxleTorque,
             WheelStates[RL].AngularVelocity, WheelStates[RR].AngularVelocity,
-            out float torqueRL, out float torqueRR);
+            out var torqueRL, out var torqueRR);
         WheelDriveTorques[RL] = torqueRL;
         WheelDriveTorques[RR] = torqueRR;
     }
@@ -345,7 +345,7 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<float> camberAngles,
         float dt)
     {
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
         {
             var tyreModel = TyreModels[i];
             if (tyreModel == null)
@@ -379,13 +379,13 @@ public sealed class VehicleDynamicsSystem
 
             // Decompose wheel velocity into longitudinal and lateral components
             // in the wheel's local frame.
-            Vector3 wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
-            Vector3 wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-            Vector3 wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+            var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
+            var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
+            var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
 
-            Vector3 vel = wheelVelocities[i];
-            float longVel = Vector3.Dot(vel, wheelForward);
-            float latVel = Vector3.Dot(vel, wheelRight);
+            var vel = wheelVelocities[i];
+            var longVel = Vector3.Dot(vel, wheelForward);
+            var latVel = Vector3.Dot(vel, wheelRight);
 
             tyreModel.Update(
                 ref WheelStates[i],
@@ -415,17 +415,17 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<Matrix> wheelOrientations,
         float dt)
     {
-        Vector3 chassisPosition = chassisWorld.TranslationVector;
+        var chassisPosition = chassisWorld.TranslationVector;
 
-        for (int i = 0; i < WheelCount; i++)
+        for (var i = 0; i < WheelCount; i++)
         {
             if (!WheelGrounded[i])
             {
 	            continue;
             }
 
-            float fx = LongitudinalForces[i];
-            float fy = LateralForces[i];
+            var fx = LongitudinalForces[i];
+            var fy = LateralForces[i];
 
             if (MathF.Abs(fx) < 0.01f && MathF.Abs(fy) < 0.01f)
             {
@@ -433,13 +433,13 @@ public sealed class VehicleDynamicsSystem
             }
 
             // Build force vector in world space using wheel orientation
-            Vector3 wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
-            Vector3 wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-            Vector3 wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+            var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
+            var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
+            var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
 
-            Vector3 forceWorld = wheelForward * fx + wheelRight * fy;
-            Vector3 impulse = forceWorld * dt;
-            Vector3 contactOffset = wheelPositions[i] - chassisPosition;
+            var forceWorld = wheelForward * fx + wheelRight * fy;
+            var impulse = forceWorld * dt;
+            var contactOffset = wheelPositions[i] - chassisPosition;
 
             chassisBody.Awake = true;
             chassisBody.ApplyImpulse(impulse, contactOffset);
@@ -458,7 +458,7 @@ public sealed class VehicleDynamicsSystem
 
     private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
     {
-        float lengthSq = value.LengthSquared();
+        var lengthSq = value.LengthSquared();
         if (lengthSq < 1e-6f)
         {
 	        return fallback;

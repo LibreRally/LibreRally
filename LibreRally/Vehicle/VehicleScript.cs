@@ -65,7 +65,7 @@ public class VehicleScript : SyncScript
 	        return;
         }
 
-        float dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+        var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
         if (dt <= 0f)
         {
 	        return;
@@ -78,7 +78,7 @@ public class VehicleScript : SyncScript
     {
         // ── Input ──────────────────────────────────────────────────────────
         float throttle = 0f, brake = 0f, steerInput = 0f;
-        bool handbrake = false;
+        var handbrake = false;
 
         if (Input.IsKeyDown(Keys.W))
         {
@@ -119,7 +119,7 @@ public class VehicleScript : SyncScript
 
         // ── Chassis velocity ───────────────────────────────────────────────
         var vel = _chassis!.LinearVelocity;
-        float speed = vel.Length();
+        var speed = vel.Length();
 
         // Forward in Stride chassis space is -Z
         var chassisForward = Vector3.Transform(-Vector3.UnitZ, _chassis.Entity.Transform.Rotation);
@@ -134,7 +134,7 @@ public class VehicleScript : SyncScript
         // ── Braking ───────────────────────────────────────────────────────
         if ((brake > 0.01f || handbrake) && speed > 0.01f)
         {
-            float multiplier = handbrake ? 1.5f : brake;
+            var multiplier = handbrake ? 1.5f : brake;
             var brakeImpulse = -vel * (BrakeTorque * multiplier * dt);
             _chassis.ApplyImpulse(brakeImpulse, Vector3.Zero);
         }

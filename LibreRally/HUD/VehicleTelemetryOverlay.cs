@@ -91,11 +91,11 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
 
     private void DrawInputBars()
     {
-        float barBaseY = PanelY + 86f;
+        var barBaseY = PanelY + 86f;
         DrawBar(barBaseY, Car?.ThrottleInput ?? 0f, new Color(68, 218, 102, 220));
         DrawBar(barBaseY + 18f, Car?.BrakeInput ?? 0f, new Color(255, 92, 70, 220));
 
-        float steerFraction = Car == null ? 0.5f : Math.Clamp((Car.SteeringInput + 1f) * 0.5f, 0f, 1f);
+        var steerFraction = Car == null ? 0.5f : Math.Clamp((Car.SteeringInput + 1f) * 0.5f, 0f, 1f);
         DrawCenteredBar(barBaseY + 36f, steerFraction, new Color(118, 214, 255, 220));
     }
 
@@ -104,10 +104,10 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
         DrawRect(new RectangleF(BarX, y, BarWidth, BarHeight), new Color(16, 18, 22, 194));
         DrawRect(new RectangleF(BarX + 1f, y + 1f, BarWidth - 2f, BarHeight - 2f), new Color(42, 46, 54, 205));
 
-        float clamped = Math.Clamp(value, 0f, 1f);
+        var clamped = Math.Clamp(value, 0f, 1f);
         if (clamped > 0.001f)
         {
-            float innerWidth = (BarWidth - 2f) * clamped;
+            var innerWidth = (BarWidth - 2f) * clamped;
             DrawRect(new RectangleF(BarX + 1f, y + 1f, innerWidth, BarHeight - 2f), fillColor);
         }
 
@@ -119,15 +119,15 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
         DrawRect(new RectangleF(BarX, y, BarWidth, BarHeight), new Color(16, 18, 22, 194));
         DrawRect(new RectangleF(BarX + 1f, y + 1f, BarWidth - 2f, BarHeight - 2f), new Color(42, 46, 54, 205));
 
-        float midX = BarX + (BarWidth * 0.5f);
+        var midX = BarX + (BarWidth * 0.5f);
         DrawRect(new RectangleF(midX - 1f, y + 1f, 2f, BarHeight - 2f), new Color(255, 255, 255, 42));
 
-        float clamped = Math.Clamp((value - 0.5f) * 2f, -1f, 1f);
+        var clamped = Math.Clamp((value - 0.5f) * 2f, -1f, 1f);
         if (Math.Abs(clamped) > 0.001f)
         {
-            float halfWidth = (BarWidth - 2f) * 0.5f;
-            float fillWidth = halfWidth * Math.Abs(clamped);
-            float fillX = clamped >= 0f ? midX : midX - fillWidth;
+            var halfWidth = (BarWidth - 2f) * 0.5f;
+            var fillWidth = halfWidth * Math.Abs(clamped);
+            var fillX = clamped >= 0f ? midX : midX - fillWidth;
             DrawRect(new RectangleF(fillX, y + 1f, fillWidth, BarHeight - 2f), fillColor);
         }
 
@@ -136,8 +136,8 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
 
     private void DrawTelemetryText()
     {
-        int x = (int)PanelX + 14;
-        int y = (int)PanelY + 12;
+        var x = (int)PanelX + 14;
+        var y = (int)PanelY + 12;
         const int line = 16;
 
         DrawText("Vehicle Telemetry (F3)", x, y, new Color(236, 240, 247, 255));
@@ -189,7 +189,7 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
         DrawText("g=grounded load/Fx/Fy=kN tq=Nm om=rad/s sus=mm", x, y, new Color(214, 219, 227, 255));
         y += line;
 
-        for (int i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+        for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
         {
             DrawText(
                 $"{WheelNames[i]} g:{(dynamics.WheelGrounded[i] ? "Y" : "N")} " +

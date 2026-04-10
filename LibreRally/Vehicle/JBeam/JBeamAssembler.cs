@@ -31,7 +31,7 @@ public static class JBeamAssembler
 
         // Parse all files → flat dictionary: partName → JBeamPart
         var partLibrary = new Dictionary<string, JBeamPart>(StringComparer.OrdinalIgnoreCase);
-        foreach (string file in jbeamFiles)
+        foreach (var file in jbeamFiles)
         {
             List<JBeamPart> parts;
             try { parts = JBeamParser.ParseFile(file, vars); }
@@ -105,7 +105,7 @@ public static class JBeamAssembler
         foreach (var slot in part.Slots)
         {
             // .pc config overrides the default; empty string = no part
-            string partName = slot.Default;
+            var partName = slot.Default;
             if (pcParts != null && pcParts.TryGetValue(slot.Type, out var pcOverride))
             {
 	            partName = pcOverride;
@@ -277,7 +277,7 @@ public static class JBeamAssembler
 
             // Break strength = min beamStrength of beams in any deformGroup that crosses
             // from this part's nodes to chassis nodes
-            float breakStrength = ComputeBreakStrength(
+            var breakStrength = ComputeBreakStrength(
                 exclusiveNodes,
                 allBeams,
                 nodeToPartName,
@@ -339,7 +339,7 @@ public static class JBeamAssembler
 	        return false;
         }
 
-        foreach (string pattern in DetachableSlotPatterns)
+        foreach (var pattern in DetachableSlotPatterns)
         {
             if (slotType.Contains(pattern, StringComparison.OrdinalIgnoreCase))
             {
@@ -356,12 +356,12 @@ public static class JBeamAssembler
         string partName)
     {
         var partSet = new HashSet<string>(partNodeIds, StringComparer.OrdinalIgnoreCase);
-        float minStrength = float.MaxValue;
+        var minStrength = float.MaxValue;
 
         foreach (var beam in allBeams)
         {
-            bool id1InPart = partSet.Contains(beam.Id1);
-            bool id2InPart = partSet.Contains(beam.Id2);
+            var id1InPart = partSet.Contains(beam.Id1);
+            var id2InPart = partSet.Contains(beam.Id2);
 
             // A beam that crosses the boundary (one node in, one node out)
             if (id1InPart ^ id2InPart)

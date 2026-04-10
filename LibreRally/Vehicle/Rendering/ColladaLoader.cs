@@ -64,16 +64,16 @@ public static class ColladaLoader
 
         foreach (var geometry in geometryLib.Elements(Ns + "geometry"))
         {
-            string geometryId = geometry.Attribute("id")?.Value
-                ?? geometry.Attribute("name")?.Value
-                ?? "";
+            var geometryId = geometry.Attribute("id")?.Value
+                             ?? geometry.Attribute("name")?.Value
+                             ?? "";
             if (string.IsNullOrWhiteSpace(geometryId))
             {
 	            continue;
             }
 
-            string geometryName = geometry.Attribute("name")?.Value
-                                  ?? geometryId;
+            var geometryName = geometry.Attribute("name")?.Value
+                               ?? geometryId;
 
             var mesh = geometry.Element(Ns + "mesh");
             if (mesh == null)
@@ -100,8 +100,8 @@ public static class ColladaLoader
 	        return new List<ColladaMesh>();
         }
 
-        IEnumerable<XElement> visualScenes = sceneLibrary.Elements(Ns + "visual_scene");
-        string? activeSceneId = root.Element(Ns + "scene")?
+        var visualScenes = sceneLibrary.Elements(Ns + "visual_scene");
+        var activeSceneId = root.Element(Ns + "scene")?
             .Element(Ns + "instance_visual_scene")?
             .Attribute("url")?
             .Value?
@@ -138,17 +138,17 @@ public static class ColladaLoader
         IReadOnlyDictionary<string, ColladaGeometry> geometryLibrary,
         List<ColladaMesh> result)
     {
-        Matrix4x4 localTransform = ParseNodeTransform(node);
-        Matrix4x4 worldTransform = Matrix4x4.Multiply(localTransform, parentTransform);
-        string nodeName = node.Attribute("name")?.Value
-            ?? node.Attribute("id")?.Value
-            ?? "";
+        var localTransform = ParseNodeTransform(node);
+        var worldTransform = Matrix4x4.Multiply(localTransform, parentTransform);
+        var nodeName = node.Attribute("name")?.Value
+                       ?? node.Attribute("id")?.Value
+                       ?? "";
 
         foreach (var instanceGeometry in node.Elements(Ns + "instance_geometry"))
         {
-            string geometryId = instanceGeometry.Attribute("url")?.Value?.TrimStart('#') ?? "";
+            var geometryId = instanceGeometry.Attribute("url")?.Value?.TrimStart('#') ?? "";
             if (string.IsNullOrWhiteSpace(geometryId) ||
-                !geometryLibrary.TryGetValue(geometryId, out ColladaGeometry? geometry) ||
+                !geometryLibrary.TryGetValue(geometryId, out var geometry) ||
                 ShouldSkipSceneGeometry(nodeName, geometryId, geometry.Name))
             {
                 continue;
@@ -170,7 +170,7 @@ public static class ColladaLoader
 	        return Matrix4x4.Identity;
         }
 
-        float[] values = ParseFloatArray(matrixElement.Value);
+        var values = ParseFloatArray(matrixElement.Value);
         if (values.Length != 16)
         {
 	        return Matrix4x4.Identity;
@@ -190,9 +190,9 @@ public static class ColladaLoader
         Matrix4x4 transform,
         string sceneNodeName)
     {
-        bool hasBakedTransform = !IsApproximatelyIdentity(transform);
-        Matrix4x4 normalTransform = transform;
-        if (hasBakedTransform && Matrix4x4.Invert(transform, out Matrix4x4 inverseTransform))
+        var hasBakedTransform = !IsApproximatelyIdentity(transform);
+        var normalTransform = transform;
+        if (hasBakedTransform && Matrix4x4.Invert(transform, out var inverseTransform))
         {
 	        normalTransform = Matrix4x4.Transpose(inverseTransform);
         }
@@ -200,11 +200,11 @@ public static class ColladaLoader
         var vertices = new List<ColladaVertex>(sourceMesh.Vertices.Count);
         foreach (var vertex in sourceMesh.Vertices)
         {
-            Vector3 position = hasBakedTransform
+            var position = hasBakedTransform
                 ? Vector3.Transform(vertex.Position, transform)
                 : vertex.Position;
 
-            Vector3 normal = hasBakedTransform
+            var normal = hasBakedTransform
                 ? Vector3.TransformNormal(vertex.Normal, normalTransform)
                 : vertex.Normal;
             if (normal.LengthSquared() > 1e-8f)
@@ -251,16 +251,16 @@ public static class ColladaLoader
     private static List<int> FlipTriangleWinding(List<int> indices)
     {
         var result = new List<int>(indices.Count);
-        int triangleCount = indices.Count / 3;
-        for (int i = 0; i < triangleCount; i++)
+        var triangleCount = indices.Count / 3;
+        for (var i = 0; i < triangleCount; i++)
         {
-            int baseIndex = i * 3;
+            var baseIndex = i * 3;
             result.Add(indices[baseIndex]);
             result.Add(indices[baseIndex + 2]);
             result.Add(indices[baseIndex + 1]);
         }
 
-        for (int i = triangleCount * 3; i < indices.Count; i++)
+        for (var i = triangleCount * 3; i < indices.Count; i++)
             result.Add(indices[i]);
 
         return result;
@@ -293,7 +293,7 @@ public static class ColladaLoader
         var sources = new Dictionary<string, float[]>(StringComparer.OrdinalIgnoreCase);
         foreach (var source in mesh.Elements(Ns + "source"))
         {
-            string id = "#" + (source.Attribute("id")?.Value ?? "");
+            var id = "#" + (source.Attribute("id")?.Value ?? "");
             var floatArray = source.Element(Ns + "float_array");
             if (floatArray != null)
             {
@@ -303,8 +303,8 @@ public static class ColladaLoader
 
         // Resolve <vertices> indirection
         var verticesElem = mesh.Element(Ns + "vertices");
-        string verticesId = "#" + (verticesElem?.Attribute("id")?.Value ?? "");
-        string positionSourceId = "";
+        var verticesId = "#" + (verticesElem?.Attribute("id")?.Value ?? "");
+        var positionSourceId = "";
         if (verticesElem != null)
         {
             foreach (var input in verticesElem.Elements(Ns + "input"))
@@ -319,12 +319,12 @@ public static class ColladaLoader
 
         // Skip BeamNG flex-body / morph-target geometry whose vertices span huge distances.
         // (e.g. steer_01a…steer_05a span ±19 m — they are deformation targets, not real meshes.)
-        if (sources.TryGetValue(positionSourceId, out float[]? rawPos) && rawPos.Length >= 3)
+        if (sources.TryGetValue(positionSourceId, out var rawPos) && rawPos.Length >= 3)
         {
             float minX = float.MaxValue, maxX = float.MinValue;
             float minY = float.MaxValue, maxY = float.MinValue;
             float minZ = float.MaxValue, maxZ = float.MinValue;
-            for (int i = 0; i + 2 < rawPos.Length; i += 3)
+            for (var i = 0; i + 2 < rawPos.Length; i += 3)
             {
                 if (rawPos[i    ] < minX)
                 {
@@ -367,7 +367,7 @@ public static class ColladaLoader
         // Process <triangles> and <polylist> primitives
         foreach (var prim in mesh.Elements(Ns + "triangles").Concat(mesh.Elements(Ns + "polylist")))
         {
-            string material = prim.Attribute("material")?.Value ?? "";
+            var material = prim.Attribute("material")?.Value ?? "";
             var colladaMesh = BuildPrimitiveMesh(
                 geometryName,
                 $"{geometryName}_{material}",
@@ -393,12 +393,12 @@ public static class ColladaLoader
     {
         // Gather inputs: semantic → (source, offset)
         var inputs = new Dictionary<string, (string Source, int Offset)>(StringComparer.OrdinalIgnoreCase);
-        int maxOffset = 0;
+        var maxOffset = 0;
         foreach (var input in prim.Elements(Ns + "input"))
         {
-            string semantic = input.Attribute("semantic")?.Value ?? "";
-            string source = input.Attribute("source")?.Value ?? "";
-            int offset = int.TryParse(input.Attribute("offset")?.Value, out int o) ? o : 0;
+            var semantic = input.Attribute("semantic")?.Value ?? "";
+            var source = input.Attribute("source")?.Value ?? "";
+            var offset = int.TryParse(input.Attribute("offset")?.Value, out var o) ? o : 0;
             inputs[semantic] = (source, offset);
             if (offset > maxOffset)
             {
@@ -406,11 +406,11 @@ public static class ColladaLoader
             }
         }
 
-        int stride = maxOffset + 1;
+        var stride = maxOffset + 1;
 
-        float[] positions = GetSourceByRole(sources, inputs, verticesId, "VERTEX", "POSITION");
-        float[] normals = GetSourceByRole(sources, inputs, null, "NORMAL", null);
-        float[] uvs = GetSourceByRole(sources, inputs, null, "TEXCOORD", null);
+        var positions = GetSourceByRole(sources, inputs, verticesId, "VERTEX", "POSITION");
+        var normals = GetSourceByRole(sources, inputs, null, "NORMAL", null);
+        var uvs = GetSourceByRole(sources, inputs, null, "TEXCOORD", null);
 
         // Parse index list
         var pElem = prim.Element(Ns + "p");
@@ -419,15 +419,15 @@ public static class ColladaLoader
 	        return null;
         }
 
-        int[] rawIndices = ParseIntArray(pElem.Value);
+        var rawIndices = ParseIntArray(pElem.Value);
         if (rawIndices.Length == 0)
         {
 	        return null;
         }
 
-        int posOffset = inputs.TryGetValue("VERTEX", out var vIn) ? vIn.Offset : 0;
-        int normOffset = inputs.TryGetValue("NORMAL", out var nIn) ? nIn.Offset : -1;
-        int uvOffset = inputs.TryGetValue("TEXCOORD", out var uIn) ? uIn.Offset : -1;
+        var posOffset = inputs.TryGetValue("VERTEX", out var vIn) ? vIn.Offset : 0;
+        var normOffset = inputs.TryGetValue("NORMAL", out var nIn) ? nIn.Offset : -1;
+        var uvOffset = inputs.TryGetValue("TEXCOORD", out var uIn) ? uIn.Offset : -1;
 
         var vertices = new List<ColladaVertex>();
         var indices = new List<int>();
@@ -435,25 +435,25 @@ public static class ColladaLoader
 
         int GetOrAddVertex(int baseIdx)
         {
-            int pi = rawIndices[baseIdx + posOffset];
-            int ni = normOffset >= 0 ? rawIndices[baseIdx + normOffset] : -1;
-            int ui = uvOffset >= 0 ? rawIndices[baseIdx + uvOffset] : -1;
+            var pi = rawIndices[baseIdx + posOffset];
+            var ni = normOffset >= 0 ? rawIndices[baseIdx + normOffset] : -1;
+            var ui = uvOffset >= 0 ? rawIndices[baseIdx + uvOffset] : -1;
 
             var key = (pi, ni, ui);
-            if (!vertexMap.TryGetValue(key, out int existingIdx))
+            if (!vertexMap.TryGetValue(key, out var existingIdx))
             {
                 existingIdx = vertices.Count;
                 vertexMap[key] = existingIdx;
 
-                Vector3 pos = positions.Length >= (pi + 1) * 3
+                var pos = positions.Length >= (pi + 1) * 3
                     ? new Vector3(positions[pi * 3], positions[pi * 3 + 1], positions[pi * 3 + 2])
                     : Vector3.Zero;
 
-                Vector3 norm = ni >= 0 && normals.Length >= (ni + 1) * 3
+                var norm = ni >= 0 && normals.Length >= (ni + 1) * 3
                     ? new Vector3(normals[ni * 3], normals[ni * 3 + 1], normals[ni * 3 + 2])
                     : Vector3.UnitY;
 
-                Vector2 uv = ui >= 0 && uvs.Length >= (ui + 1) * 2
+                var uv = ui >= 0 && uvs.Length >= (ui + 1) * 2
                     ? new Vector2(uvs[ui * 2], uvs[ui * 2 + 1])
                     : Vector2.Zero;
 
@@ -471,10 +471,10 @@ public static class ColladaLoader
 	            return null;
             }
 
-            int[] polyVertexCounts = ParseIntArray(vcountElem.Value);
-            int cursor = 0;
+            var polyVertexCounts = ParseIntArray(vcountElem.Value);
+            var cursor = 0;
 
-            foreach (int polyVertCount in polyVertexCounts)
+            foreach (var polyVertCount in polyVertexCounts)
             {
                 if (polyVertCount < 3)
                 {
@@ -482,18 +482,18 @@ public static class ColladaLoader
                     continue;
                 }
 
-                int polygonIndexCount = polyVertCount * stride;
+                var polygonIndexCount = polyVertCount * stride;
                 if (cursor + polygonIndexCount > rawIndices.Length)
                 {
 	                break;
                 }
 
-                int first = GetOrAddVertex(cursor);
-                int prev = GetOrAddVertex(cursor + stride);
+                var first = GetOrAddVertex(cursor);
+                var prev = GetOrAddVertex(cursor + stride);
 
-                for (int pv = 2; pv < polyVertCount; pv++)
+                for (var pv = 2; pv < polyVertCount; pv++)
                 {
-                    int current = GetOrAddVertex(cursor + pv * stride);
+                    var current = GetOrAddVertex(cursor + pv * stride);
                     indices.Add(first);
                     indices.Add(prev);
                     indices.Add(current);
@@ -505,10 +505,10 @@ public static class ColladaLoader
         }
         else
         {
-            int vertCount = rawIndices.Length / stride;
-            for (int vi = 0; vi < vertCount; vi++)
+            var vertCount = rawIndices.Length / stride;
+            for (var vi = 0; vi < vertCount; vi++)
             {
-                int baseIdx = vi * stride;
+                var baseIdx = vi * stride;
                 indices.Add(GetOrAddVertex(baseIdx));
             }
         }
@@ -540,7 +540,7 @@ public static class ColladaLoader
         }
 
         // For VERTEX semantic, resolve through the vertices element
-        string key = inputDef.Source;
+        var key = inputDef.Source;
         if (alternateId != null && key == alternateId && fallbackKey != null)
         {
 	        key = alternateId + "_" + fallbackKey;
@@ -571,17 +571,17 @@ public static class ColladaLoader
             var imageFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var img in root.Descendants(Ns + "image"))
             {
-                string id = img.Attribute("id")?.Value ?? "";
+                var id = img.Attribute("id")?.Value ?? "";
                 var initFrom = img.Element(Ns + "init_from");
                 if (initFrom == null || string.IsNullOrEmpty(id))
                 {
 	                continue;
                 }
 
-                string rawPath = Uri.UnescapeDataString(initFrom.Value.Trim());
+                var rawPath = Uri.UnescapeDataString(initFrom.Value.Trim());
                 // Normalise path separators before extracting filename
                 rawPath = rawPath.Replace('/', System.IO.Path.DirectorySeparatorChar);
-                string filename = System.IO.Path.GetFileName(rawPath);
+                var filename = System.IO.Path.GetFileName(rawPath);
                 if (!string.IsNullOrEmpty(filename))
                 {
 	                imageFiles[id] = filename;
@@ -592,7 +592,7 @@ public static class ColladaLoader
             var effectToFilename = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var effect in root.Descendants(Ns + "effect"))
             {
-                string effectId = effect.Attribute("id")?.Value ?? "";
+                var effectId = effect.Attribute("id")?.Value ?? "";
                 if (string.IsNullOrEmpty(effectId))
                 {
 	                continue;
@@ -604,7 +604,7 @@ public static class ColladaLoader
 
                 foreach (var newparam in effect.Descendants(Ns + "newparam"))
                 {
-                    string sid = newparam.Attribute("sid")?.Value ?? "";
+                    var sid = newparam.Attribute("sid")?.Value ?? "";
                     if (string.IsNullOrEmpty(sid))
                     {
 	                    continue;
@@ -613,7 +613,7 @@ public static class ColladaLoader
                     var surface = newparam.Element(Ns + "surface");
                     if (surface != null)
                     {
-                        string imgRef = surface.Element(Ns + "init_from")?.Value.Trim() ?? "";
+                        var imgRef = surface.Element(Ns + "init_from")?.Value.Trim() ?? "";
                         if (!string.IsNullOrEmpty(imgRef))
                         {
 	                        surfaceToImage[sid] = imgRef;
@@ -623,7 +623,7 @@ public static class ColladaLoader
                     var sampler = newparam.Element(Ns + "sampler2D");
                     if (sampler != null)
                     {
-                        string srcRef = sampler.Element(Ns + "source")?.Value.Trim() ?? "";
+                        var srcRef = sampler.Element(Ns + "source")?.Value.Trim() ?? "";
                         if (!string.IsNullOrEmpty(srcRef))
                         {
 	                        samplerToSurface[sid] = srcRef;
@@ -632,7 +632,7 @@ public static class ColladaLoader
                 }
 
                 // Find the diffuse texture reference first; fall back to any texture
-                XElement? texElem = effect.Descendants(Ns + "texture")
+                var texElem = effect.Descendants(Ns + "texture")
                     .FirstOrDefault(t => t.Ancestors().Any(a => a.Name.LocalName == "diffuse"));
                 texElem ??= effect.Descendants(Ns + "texture").FirstOrDefault();
 
@@ -641,18 +641,18 @@ public static class ColladaLoader
 	                continue;
                 }
 
-                string texRef = texElem.Attribute("texture")?.Value ?? "";
+                var texRef = texElem.Attribute("texture")?.Value ?? "";
 
                 string? filename = null;
                 // sampler → surface → image
-                if (samplerToSurface.TryGetValue(texRef, out string? surfaceId) &&
-                    surfaceToImage.TryGetValue(surfaceId, out string? imageId) &&
-                    imageFiles.TryGetValue(imageId, out string? fn))
+                if (samplerToSurface.TryGetValue(texRef, out var surfaceId) &&
+                    surfaceToImage.TryGetValue(surfaceId, out var imageId) &&
+                    imageFiles.TryGetValue(imageId, out var fn))
                 {
                     filename = fn;
                 }
                 // direct image reference
-                else if (imageFiles.TryGetValue(texRef, out string? directFn))
+                else if (imageFiles.TryGetValue(texRef, out var directFn))
                 {
                     filename = directFn;
                 }
@@ -667,8 +667,8 @@ public static class ColladaLoader
             var materialToEffect = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var mat in root.Descendants(Ns + "material"))
             {
-                string matId = mat.Attribute("id")?.Value ?? "";
-                string effectUrl = mat.Element(Ns + "instance_effect")?
+                var matId = mat.Attribute("id")?.Value ?? "";
+                var effectUrl = mat.Element(Ns + "instance_effect")?
                     .Attribute("url")?.Value?.TrimStart('#') ?? "";
                 if (!string.IsNullOrEmpty(matId) && !string.IsNullOrEmpty(effectUrl))
                 {
@@ -679,15 +679,15 @@ public static class ColladaLoader
             // Step 4 — visual_scene bind_material: symbol → material id → filename
             foreach (var instMat in root.Descendants(Ns + "instance_material"))
             {
-                string symbol = instMat.Attribute("symbol")?.Value ?? "";
-                string target = instMat.Attribute("target")?.Value?.TrimStart('#') ?? "";
+                var symbol = instMat.Attribute("symbol")?.Value ?? "";
+                var target = instMat.Attribute("target")?.Value?.TrimStart('#') ?? "";
                 if (string.IsNullOrEmpty(symbol) || string.IsNullOrEmpty(target))
                 {
 	                continue;
                 }
 
-                if (materialToEffect.TryGetValue(target, out string? effectId) &&
-                    effectToFilename.TryGetValue(effectId, out string? filename))
+                if (materialToEffect.TryGetValue(target, out var effectId) &&
+                    effectToFilename.TryGetValue(effectId, out var filename))
                 {
                     result.TryAdd(symbol, filename);
                 }
@@ -705,7 +705,7 @@ public static class ColladaLoader
     {
         var parts = value.Split((char[])null!, StringSplitOptions.RemoveEmptyEntries);
         var result = new float[parts.Length];
-        for (int i = 0; i < parts.Length; i++)
+        for (var i = 0; i < parts.Length; i++)
             float.TryParse(parts[i], System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out result[i]);
         return result;
@@ -715,7 +715,7 @@ public static class ColladaLoader
     {
         var parts = value.Split((char[])null!, StringSplitOptions.RemoveEmptyEntries);
         var result = new int[parts.Length];
-        for (int i = 0; i < parts.Length; i++)
+        for (var i = 0; i < parts.Length; i++)
             int.TryParse(parts[i], out result[i]);
         return result;
     }

@@ -33,7 +33,7 @@ public class BreakablePartComponent : SyncScript
 	        return;
         }
 
-        float force = WeldConstraint.GetAccumulatedForceMagnitude();
+        var force = WeldConstraint.GetAccumulatedForceMagnitude();
         if (force > BreakStrength)
         {
 	        Break();

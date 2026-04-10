@@ -56,14 +56,14 @@ public class VehicleSpawner : SyncScript
 
     private void LoadVehicle()
     {
-        string requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
+        var requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
         var basePath = Path.IsPathRooted(VehicleFolderPath)
             ? VehicleFolderPath
             : Path.Combine(AppContext.BaseDirectory, VehicleFolderPath);
         Log.Info($"[VehicleSpawner] Load request: folder='{VehicleFolderPath}' resolved='{basePath}' config='{requestedConfig}'");
 
         var loader = new VehicleLoader((Game)Game);
-        LoadedVehicle vehicle = loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
+        var vehicle = loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
 
         // CRITICAL: apply SpawnPosition to each physics entity directly.
         // They must be at scene root level (no offset parent) so BEPU writes correct world positions back.
@@ -74,7 +74,7 @@ public class VehicleSpawner : SyncScript
         vehicle.RootEntity.Transform.Position = Vector3.Zero;
         SceneSystem.SceneInstance.RootScene.Entities.Add(vehicle.RootEntity);
 
-        string activeConfig = vehicle.Diagnostics.ConfigPath != null
+        var activeConfig = vehicle.Diagnostics.ConfigPath != null
             ? Path.GetFileName(vehicle.Diagnostics.ConfigPath)
             : "<jbeam defaults>";
         _status = $"Loaded: {vehicle.Definition.VehicleName} cfg={activeConfig} mass={vehicle.Diagnostics.EstimatedMassKg:F0}kg";
@@ -211,7 +211,7 @@ public class VehicleSpawner : SyncScript
             };
             var image = Image.New2D(2, 2, 1, PixelFormat.R8G8B8A8_UNorm);
             var imageData = image.GetPixelBuffer(0, 0).GetPixels<byte>();
-            for (int i = 0; i < pixelBytes.Length; i++) imageData[i] = pixelBytes[i];
+            for (var i = 0; i < pixelBytes.Length; i++) imageData[i] = pixelBytes[i];
             var checkerTex = Texture.New(gd, image);
             image.Dispose();
 

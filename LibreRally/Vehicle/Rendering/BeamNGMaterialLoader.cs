@@ -65,7 +65,7 @@ public static class BeamNGMaterialLoader
 
         foreach (var matEntry in doc.RootElement.EnumerateObject())
         {
-            string matName = matEntry.Name;
+            var matName = matEntry.Name;
             // Skip metadata keys (not material definitions)
             if (matName is "version" or "persistentId")
             {
@@ -78,13 +78,13 @@ public static class BeamNGMaterialLoader
 	            continue;
             }
 
-            string? texPath = FindBestTexturePath(matElem);
+            var texPath = FindBestTexturePath(matElem);
             if (texPath == null)
             {
 	            continue;
             }
 
-            string? resolved = ResolveVehiclePath(texPath, vehiclesRootDir);
+            var resolved = ResolveVehiclePath(texPath, vehiclesRootDir);
             if (!string.IsNullOrEmpty(resolved))
             {
 	            result.TryAdd(matName, resolved);
@@ -111,7 +111,7 @@ public static class BeamNGMaterialLoader
             }
 
             // PBR format (version 1.5+): baseColorMap
-            if (TryGetNonNullPath(stage, "baseColorMap", out string? path))
+            if (TryGetNonNullPath(stage, "baseColorMap", out var path))
             {
 	            return path;
             }
@@ -140,7 +140,7 @@ public static class BeamNGMaterialLoader
 	        return false;
         }
 
-        string raw = elem.GetString()!;
+        var raw = elem.GetString()!;
         // Ignore BeamNG placeholder textures
         if (IsNullTexture(raw))
         {
@@ -153,7 +153,7 @@ public static class BeamNGMaterialLoader
 
     private static bool IsNullTexture(string path)
     {
-        string filename = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+        var filename = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
         return filename.StartsWith("null") || filename == "desktop";
     }
 
@@ -171,7 +171,7 @@ public static class BeamNGMaterialLoader
         }
 
         // Normalise: remove leading slashes, convert forward-slashes
-        string normalised = vehiclePath.TrimStart('/', '\\');
+        var normalised = vehiclePath.TrimStart('/', '\\');
 
         // Strip the "vehicles/" prefix that BeamNG uses as a virtual root
         const string vehiclesPrefix = "vehicles/";
@@ -180,7 +180,7 @@ public static class BeamNGMaterialLoader
 	        normalised = normalised[vehiclesPrefix.Length..];
         }
 
-        string fullPath = Path.Combine(vehiclesRootDir,
+        var fullPath = Path.Combine(vehiclesRootDir,
             normalised.Replace('/', Path.DirectorySeparatorChar));
 
         if (File.Exists(fullPath))
@@ -191,7 +191,7 @@ public static class BeamNGMaterialLoader
         // Fallback: if the original reference was a .dds, try .png (for copyright-free placeholders)
         if (Path.GetExtension(fullPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
         {
-            string pngPath = Path.ChangeExtension(fullPath, ".png");
+            var pngPath = Path.ChangeExtension(fullPath, ".png");
             if (File.Exists(pngPath))
             {
 	            return pngPath;

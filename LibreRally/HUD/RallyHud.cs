@@ -34,18 +34,18 @@ public class RallyHud : SyncScript
 
         // Digital overlay aligned to the dual-dial gauge drawn by SpeedoGauge.
         var gd = ((Stride.Engine.Game)Game).GraphicsDevice;
-        int sw = gd.Presenter?.BackBuffer?.Width  ?? 1280;
-        int sh = gd.Presenter?.BackBuffer?.Height ?? 720;
-        int speedCx = sw - 255;
-        int rpmCx   = sw - 110;
-        int cy      = sh - 132;
-        int midCx   = (speedCx + rpmCx) / 2;
+        var sw = gd.Presenter?.BackBuffer?.Width  ?? 1280;
+        var sh = gd.Presenter?.BackBuffer?.Height ?? 720;
+        var speedCx = sw - 255;
+        var rpmCx   = sw - 110;
+        var cy      = sh - 132;
+        var midCx   = (speedCx + rpmCx) / 2;
 
-        string speedStr = $"{Car.SpeedKmh:F0}";
+        var speedStr = $"{Car.SpeedKmh:F0}";
         DebugText.Print(speedStr, new Int2(speedCx - speedStr.Length * 4, cy - 8));
         DebugText.Print("km/h", new Int2(speedCx - 14, cy + 10));
 
-        string rpmStr = $"{Car.EngineRpm / 1000f:F1}";
+        var rpmStr = $"{Car.EngineRpm / 1000f:F1}";
         DebugText.Print(rpmStr, new Int2(rpmCx - rpmStr.Length * 4, cy - 8));
         DebugText.Print("x1000", new Int2(rpmCx - 18, cy + 10));
 
