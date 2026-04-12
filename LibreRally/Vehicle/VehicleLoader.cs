@@ -81,6 +81,18 @@ public class VehicleLoader
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
             definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
+        float VAny(float fallback, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (definition.Vars.TryGetValue(name, out var v) && v > 0)
+                {
+                    return v;
+                }
+            }
+
+            return fallback;
+        }
 
         var powertrain = VehiclePowertrainResolver.Resolve(definition);
         var wheelRadius = 0.305f;
@@ -109,8 +121,8 @@ public class VehicleLoader
             CgHeight = cgHeight,
             Wheelbase = wheelbase,
             TrackWidth = trackWidth,
-            FrontAntiRollStiffness = V("antiroll_front", 8000f),
-            RearAntiRollStiffness = V("antiroll_rear", 5000f),
+            FrontAntiRollStiffness = VAny(8000f, "antiroll_front", "arb_spring_F"),
+            RearAntiRollStiffness = VAny(5000f, "antiroll_rear", "arb_spring_R"),
             FrontDiff = powertrain.FrontDiff,
             RearDiff = powertrain.RearDiff,
             CenterDiff = powertrain.CenterDiff,

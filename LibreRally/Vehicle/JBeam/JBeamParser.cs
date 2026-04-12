@@ -282,6 +282,7 @@ public static class JBeamParser
             FlexBodies = ParseFlexBodies(obj),
             Variables = ParseVariables(obj),
             PowertrainDevices = ParsePowertrain(obj),
+            PressureWheels = ParsePressureWheels(obj),
             Engine = ParseEngineDefinition(obj),
             Gearbox = ParseGearboxDefinition(obj),
             VehicleController = ParseVehicleControllerDefinition(obj),
@@ -828,6 +829,68 @@ public static class JBeamParser
         }
 
         return devices;
+    }
+
+    private static List<JBeamPressureWheel> ParsePressureWheels(JsonElement obj)
+    {
+        var pressureWheels = new List<JBeamPressureWheel>();
+        if (!obj.TryGetProperty("pressureWheels", out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return pressureWheels;
+        }
+
+        var headerSeen = false;
+        foreach (var elem in arr.EnumerateArray())
+        {
+            if (elem.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = elem.EnumerateArray().ToList();
+            if (!headerSeen)
+            {
+                headerSeen = true;
+                continue;
+            }
+
+            if (items.Count < 8)
+            {
+                continue;
+            }
+
+            var name = SafeGetString(items[0]);
+            var wheelKey = ToWheelKey(name);
+            if (wheelKey.Length == 0)
+            {
+                continue;
+            }
+
+            pressureWheels.Add(new JBeamPressureWheel(
+                Name: name,
+                WheelKey: wheelKey,
+                HubGroup: SafeGetString(items[1]),
+                Group: SafeGetString(items[2]),
+                Node1: SafeGetString(items[3]),
+                Node2: SafeGetString(items[4]),
+                NodeArm: SafeGetString(items[6]),
+                WheelDir: GetFloat(items[7])));
+        }
+
+        return pressureWheels;
+    }
+
+    private static string ToWheelKey(string name)
+    {
+        var normalized = (name ?? "").Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "FL" => "wheel_FL",
+            "FR" => "wheel_FR",
+            "RL" => "wheel_RL",
+            "RR" => "wheel_RR",
+            _ => string.Empty,
+        };
     }
 
     private static JBeamEngineDefinition? ParseEngineDefinition(JsonElement obj)

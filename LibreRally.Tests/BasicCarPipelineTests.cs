@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using LibreRally.Vehicle;
@@ -62,6 +63,9 @@ public class BasicCarPipelineTests
         JBeamPart frontBrakes = Assert.Single(
             JBeamParser.ParseFile(CombineRelativePath(GetVehicleFolder(), "TutoFormulaBee_brakes.jbeam"), config.Vars),
             part => part.Name == "TutoFormulaBee_brake_F");
+        JBeamPart frontWheelData = Assert.Single(
+            JBeamParser.ParseFile(CombineRelativePath(GetVehicleFolder(), "TutoFormulaBee_suspension_F.jbeam"), config.Vars),
+            part => part.Name == "TutoFormulaBee_wheeldata_F");
 
         Assert.Equal("TutoFormulaBee_Chassis", chassisPart.Name);
         Assert.True(chassisPart.Nodes.Count >= 1);
@@ -71,6 +75,8 @@ public class BasicCarPipelineTests
         Assert.True(frontBrakes.FlexBodies.Count >= 2);
         Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FL"));
         Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FR"));
+        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FL" && wheel.NodeArm == "fh2l");
+        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FR" && wheel.NodeArm == "fh2r");
     }
 
     [Fact]
@@ -86,6 +92,7 @@ public class BasicCarPipelineTests
         Assert.Equal("fr4", definition.RefNodes["ref"]);
         Assert.Equal(52000f, definition.Vars["spring_F_asphalt"]);
         Assert.Equal(30000f, definition.Vars["spring_F"]);
+        Assert.Equal(20000f, definition.Vars["arb_spring_F"]);
         Assert.Equal(4.125f, definition.Vars["finaldrive_R"], 3);
         Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "TutoFBee_Spaceframe");
         Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "autobello_brakedisk_track_FR");
@@ -93,6 +100,8 @@ public class BasicCarPipelineTests
         Assert.NotNull(definition.Gearbox);
         Assert.NotNull(definition.VehicleController);
         Assert.Contains(definition.PowertrainDevices, device => device.Name == "wheelaxleRL" && device.ConnectedWheel == "RL");
+        Assert.Contains(definition.PressureWheels, wheel => wheel.WheelKey == "wheel_FL");
+        Assert.Contains(definition.PressureWheels, wheel => wheel.WheelKey == "wheel_RR");
 
         AssembledNode hubNode = definition.Nodes["fh1l"];
         Assert.Contains("hub_F", hubNode.Groups);
@@ -153,11 +162,13 @@ public class BasicCarPipelineTests
         foreach (WheelSettings wheelSettings in new[] { wheelFlSettings!, wheelFrSettings!, wheelRlSettings!, wheelRrSettings! })
         {
             Assert.Equal(Vector3.Zero, wheelSettings.SuspensionLocalOffsetB);
-            Assert.Equal(Vector3.UnitY, wheelSettings.SuspensionLocalAxis);
-            Assert.Equal(0f, wheelSettings.SuspensionTargetOffset);
+            Assert.InRange(wheelSettings.SuspensionLocalAxis.Length(), 0.99f, 1.01f);
+            Assert.Equal(0f, wheelSettings.SuspensionTargetOffset, 3);
             Assert.True(wheelSettings.SuspensionMinimumOffset < 0f);
             Assert.True(wheelSettings.SuspensionMaximumOffset > 0f);
         }
+
+        Assert.True(Math.Abs(Vector3.Dot(wheelFlSettings!.SuspensionLocalAxis, Vector3.UnitY)) < 0.999f);
 
         LinearAxisLimitConstraintComponent? flLimit = result.WheelFL.Get<LinearAxisLimitConstraintComponent>();
         Assert.NotNull(flLimit);

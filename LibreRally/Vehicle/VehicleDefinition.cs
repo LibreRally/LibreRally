@@ -108,6 +108,9 @@ public class VehicleDefinition
     /// <summary>Powertrain device graph assembled from active parts.</summary>
     public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
 
+    /// <summary>Pressure wheel metadata assembled from active parts.</summary>
+    public List<JBeamPressureWheel> PressureWheels { get; init; } = new();
+
     /// <summary>Engine metadata parsed from the active JBeam parts, when present.</summary>
     public JBeamEngineDefinition? Engine { get; init; }
 
