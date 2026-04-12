@@ -873,6 +873,7 @@ public static class JBeamParser
                 Group: SafeGetString(items[2]),
                 Node1: SafeGetString(items[3]),
                 Node2: SafeGetString(items[4]),
+                // pressureWheels schema: [name, hubGroup, group, node1, node2, nodeS, nodeArm, wheelDir]
                 NodeArm: SafeGetString(items[6]),
                 WheelDir: GetFloat(items[7])));
         }
