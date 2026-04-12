@@ -33,6 +33,8 @@ namespace LibreRally.Vehicle.Physics;
 /// </summary>
 public sealed class VehicleDynamicsSystem
 {
+    private const float MinimumWakeForce = 1f;
+
     // Wheel indices — fixed order matching VehiclePhysicsBuilder output.
     public const int FL = 0;
     public const int FR = 1;
@@ -68,6 +70,12 @@ public sealed class VehicleDynamicsSystem
 
     /// <summary>Center differential configuration (AWD torque split front/rear).</summary>
     public DifferentialConfig CenterDiff { get; set; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+
+    /// <summary>Whether the front axle receives drive torque.</summary>
+    public bool DriveFrontAxle { get; set; } = true;
+
+    /// <summary>Whether the rear axle receives drive torque.</summary>
+    public bool DriveRearAxle { get; set; } = true;
 
     // ── Per-wheel state (struct arrays — no allocations) ─────────────────────
 
@@ -308,6 +316,34 @@ public sealed class VehicleDynamicsSystem
     /// </summary>
     private void ComputeDrivetrainTorque(float engineTorqueAtWheels)
     {
+        for (var i = 0; i < WheelCount; i++)
+        {
+            WheelDriveTorques[i] = 0f;
+        }
+
+        if (!DriveFrontAxle && !DriveRearAxle)
+        {
+            return;
+        }
+
+        if (DriveFrontAxle && !DriveRearAxle)
+        {
+            var frontDiffOnly = FrontDiff;
+            DifferentialSolver.SplitTorque(in frontDiffOnly, engineTorqueAtWheels,
+                WheelStates[FL].AngularVelocity, WheelStates[FR].AngularVelocity,
+                out WheelDriveTorques[FL], out WheelDriveTorques[FR]);
+            return;
+        }
+
+        if (!DriveFrontAxle && DriveRearAxle)
+        {
+            var rearDiffOnly = RearDiff;
+            DifferentialSolver.SplitTorque(in rearDiffOnly, engineTorqueAtWheels,
+                WheelStates[RL].AngularVelocity, WheelStates[RR].AngularVelocity,
+                out WheelDriveTorques[RL], out WheelDriveTorques[RR]);
+            return;
+        }
+
         // Center diff splits to front and rear axles
         var omegaFrontAxle = (WheelStates[FL].AngularVelocity + WheelStates[FR].AngularVelocity) * 0.5f;
         var omegaRearAxle = (WheelStates[RL].AngularVelocity + WheelStates[RR].AngularVelocity) * 0.5f;
@@ -427,7 +463,7 @@ public sealed class VehicleDynamicsSystem
             var fx = LongitudinalForces[i];
             var fy = LateralForces[i];
 
-            if (MathF.Abs(fx) < 0.01f && MathF.Abs(fy) < 0.01f)
+            if (MathF.Abs(fx) < MinimumWakeForce && MathF.Abs(fy) < MinimumWakeForce)
             {
 	            continue;
             }

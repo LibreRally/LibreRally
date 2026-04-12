@@ -113,6 +113,32 @@ public class RallyCarComponentControlTests
     }
 
     [Fact]
+    public void ComputeTractionControlTorqueScale_RemainsFull_WhenDriveWheelMatchesRoadSpeed()
+    {
+        float scale = RallyCarComponent.ComputeTractionControlTorqueScale(
+            maxDrivenWheelOmega: 8f,
+            roadWheelOmega: 8f,
+            effectiveRatio: 4.5f,
+            wheelspinWindowRpm: 800f,
+            minTorqueScale: 0.08f);
+
+        Assert.Equal(1f, scale, 3);
+    }
+
+    [Fact]
+    public void ComputeTractionControlTorqueScale_ReachesFloor_WhenSingleDrivenWheelRunsFarAhead()
+    {
+        float scale = RallyCarComponent.ComputeTractionControlTorqueScale(
+            maxDrivenWheelOmega: 40f,
+            roadWheelOmega: 2f,
+            effectiveRatio: 4.5f,
+            wheelspinWindowRpm: 800f,
+            minTorqueScale: 0.08f);
+
+        Assert.Equal(0.08f, scale, 3);
+    }
+
+    [Fact]
     public void ComputeGroundProbeContactScale_IsFullAtNominalContact()
     {
         float contactScale = RallyCarComponent.ComputeGroundProbeContactScale(
@@ -201,6 +227,34 @@ public class RallyCarComponentControlTests
         float filtered = RallyCarComponent.ApplySignedAxisDeadzone(-0.56f, 0.12f);
 
         Assert.Equal(-0.5f, filtered, 3);
+    }
+
+    [Fact]
+    public void ShouldKeepVehicleAwake_IsFalse_WhenStoppedAndNoInput()
+    {
+        bool keepAwake = RallyCarComponent.ShouldKeepVehicleAwake(
+            throttleInput: 0f,
+            brakeInput: 0f,
+            steerInput: 0f,
+            handbrakeRequested: false,
+            linearVelocity: Vector3.Zero,
+            angularVelocity: Vector3.Zero);
+
+        Assert.False(keepAwake);
+    }
+
+    [Fact]
+    public void ShouldKeepVehicleAwake_IsTrue_WhenDriverAppliesInput()
+    {
+        bool keepAwake = RallyCarComponent.ShouldKeepVehicleAwake(
+            throttleInput: 0.2f,
+            brakeInput: 0f,
+            steerInput: 0f,
+            handbrakeRequested: false,
+            linearVelocity: Vector3.Zero,
+            angularVelocity: Vector3.Zero);
+
+        Assert.True(keepAwake);
     }
 
     [Fact]

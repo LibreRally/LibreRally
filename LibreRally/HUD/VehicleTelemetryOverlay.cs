@@ -16,7 +16,7 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
     private const float PanelX = 18f;
     private const float PanelY = 54f;
     private const float PanelWidth = 640f;
-    private const float PanelHeight = 254f;
+    private const float PanelHeight = 272f;
     private const float BarX = PanelX + 112f;
     private const float BarWidth = 220f;
     private const float BarHeight = 10f;
@@ -42,7 +42,12 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
     {
         base.Initialize();
 
-        _game = (Game)Services.GetService<IGame>();
+        _game = (Game?)Services.GetService<IGame>();
+        if (_game == null)
+        {
+            return;
+        }
+
         _spriteBatch = new SpriteBatch(_game.GraphicsDevice);
         _pixel = CreateWhitePixel(_game.GraphicsDevice);
         _font = _game.Content.Load<SpriteFont>("StrideDefaultFont");
@@ -165,6 +170,13 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
             Color.White);
         y += line + 8;
 
+        DrawText(
+            $"Traction slip {Car.DrivenWheelSlipRatio:F2} | lamp {(Car.TractionLossDetected ? "ON" : "OFF")} | TCS {(Car.TractionControlActive ? "ON" : "OFF")} | scale {Car.TractionControlTorqueScale:F2}",
+            x,
+            y,
+            new Color(255, 214, 148, 255));
+        y += line;
+
         DrawText($"Throttle {Car.ThrottleInput:F2}", x, y, new Color(150, 242, 173, 255));
         y += 18;
         DrawText($"Brake    {Car.BrakeInput:F2}", x, y, new Color(255, 148, 132, 255));
@@ -186,19 +198,19 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
             return;
         }
 
-        DrawText("g=grounded load/Fx/Fy=kN tq=Nm om=rad/s sus=mm", x, y, new Color(214, 219, 227, 255));
+        DrawText("g=grounded sr=slip load/Fx/Fy=kN tq=Nm om=rad/s", x, y, new Color(214, 219, 227, 255));
         y += line;
 
         for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
         {
             DrawText(
                 $"{WheelNames[i]} g:{(dynamics.WheelGrounded[i] ? "Y" : "N")} " +
+                $"sr:{dynamics.WheelStates[i].SlipRatio,5:F2} " +
                 $"load:{dynamics.CurrentNormalLoads[i] / 1000f,5:F2} " +
                 $"fx:{dynamics.LongitudinalForces[i] / 1000f,6:F2} " +
                 $"fy:{dynamics.LateralForces[i] / 1000f,6:F2} " +
                 $"tq:{dynamics.WheelDriveTorques[i],6:F0} " +
-                $"om:{dynamics.WheelStates[i].AngularVelocity,6:F1} " +
-                $"sus:{dynamics.SuspensionCompression[i] * 1000f,6:F0}",
+                $"om:{dynamics.WheelStates[i].AngularVelocity,6:F1}",
                 x,
                 y,
                 Color.White);

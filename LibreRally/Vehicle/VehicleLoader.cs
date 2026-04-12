@@ -82,19 +82,8 @@ public class VehicleLoader
         float V(string name, float fallback) =>
             definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
 
-        var finalDrive  = V("finaldrive_F", 4.55f);
+        var powertrain = VehiclePowertrainResolver.Resolve(definition);
         var wheelRadius = 0.305f;
-        var maxRpm      = V("maxRPM",  7500f);
-        var idleRpm     = V("idleRPM",  900f);
-        var peakTorque  = 222f; // sunburst2 2.0T rally engine peak Nm (crank)
-
-        // Build gear ratio array: index 0 = reverse, 1-6 = forward gears
-        var gearR = V("gear_R", 3.25f);
-        float[] gears = {
-            gearR,
-            V("gear_1", 3.64f), V("gear_2", 2.38f), V("gear_3", 1.76f),
-            V("gear_4", 1.35f), V("gear_5", 1.06f), V("gear_6", 0.84f),
-        };
 
         // ── Vehicle dynamics system ──────────────────────────────────────────
         // Create the slip-based tyre model for all wheels and configure the
@@ -114,14 +103,6 @@ public class VehicleLoader
         var quarterLoad = vehicleMass * 9.81f / 4f;
         var diagnostics = new VehicleLoadDiagnostics(vehicleFolderPath, pcPath, vehicleMass);
 
-        // Configure differentials from JBeam vars if available
-        var frontDiff = DifferentialConfig.CreateLimitedSlip(
-            V("diff_front_bias", 2.0f), V("diff_front_locking", 0.25f));
-        var rearDiff = DifferentialConfig.CreateLimitedSlip(
-            V("diff_rear_bias", 3.0f), V("diff_rear_locking", 0.35f));
-        var centerDiff = DifferentialConfig.CreateLimitedSlip(
-            V("diff_center_bias", 1.8f), V("diff_center_locking", 0.3f));
-
         var dynamics = new VehicleDynamicsSystem
         {
             VehicleMass = vehicleMass,
@@ -130,13 +111,22 @@ public class VehicleLoader
             TrackWidth = trackWidth,
             FrontAntiRollStiffness = V("antiroll_front", 8000f),
             RearAntiRollStiffness = V("antiroll_rear", 5000f),
-            FrontDiff = frontDiff,
-            RearDiff = rearDiff,
-            CenterDiff = centerDiff,
+            FrontDiff = powertrain.FrontDiff,
+            RearDiff = powertrain.RearDiff,
+            CenterDiff = powertrain.CenterDiff,
+            DriveFrontAxle = powertrain.DriveFrontAxle,
+            DriveRearAxle = powertrain.DriveRearAxle,
         };
 
         // Assign tyre models and static loads to each wheel
         Entity[] wheelEntities = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR };
+        var wheelEntityMap = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["wheel_FL"] = result.WheelFL,
+            ["wheel_FR"] = result.WheelFR,
+            ["wheel_RL"] = result.WheelRL,
+            ["wheel_RR"] = result.WheelRR,
+        };
         for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
         {
             dynamics.TyreModels[i] = tyreModel;
@@ -154,22 +144,43 @@ public class VehicleLoader
         var car = new RallyCarComponent
         {
             CarBody = result.ChassisEntity,
-            Wheels       = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            SteerWheels  = { result.WheelFL, result.WheelFR },
-            DriveWheels  = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            BreakWheels  = { result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR },
-            WheelRadius  = wheelRadius,
-            GearRatios   = gears,
-            FinalDrive   = finalDrive,
-            MaxRpm       = maxRpm,
-            IdleRpm      = idleRpm,
-            Dynamics     = dynamics,
+            WheelRadius = wheelRadius,
+            GearRatios = powertrain.GearRatios,
+            FinalDrive = powertrain.FinalDrive,
+            TorqueCurveRpm = powertrain.TorqueCurveRpm,
+            TorqueCurveNm = powertrain.TorqueCurveNm,
+            MaxRpm = powertrain.MaxRpm,
+            IdleRpm = powertrain.IdleRpm,
+            EngineInertia = powertrain.EngineInertia,
+            EngineFriction = powertrain.EngineFriction,
+            EngineDynamicFriction = powertrain.EngineDynamicFriction,
+            EngineBrakeTorque = powertrain.EngineBrakeTorque,
+            AutoClutchLaunchRpm = powertrain.AutoClutchLaunchRpm,
+            ShiftUpRpm = powertrain.ShiftUpRpm,
+            ShiftDownRpm = powertrain.ShiftDownRpm,
+            Dynamics = dynamics,
         };
+        car.Wheels.AddRange(wheelEntities);
+        car.SteerWheels.AddRange(new[] { result.WheelFL, result.WheelFR });
+        car.BreakWheels.AddRange(wheelEntities);
+        foreach (var wheelKey in powertrain.DrivenWheelKeys)
+        {
+            if (wheelEntityMap.TryGetValue(wheelKey, out var wheelEntity))
+            {
+                car.DriveWheels.Add(wheelEntity);
+            }
+        }
         rootEntity.Add(car);
 
-        Log.Info($"[VehicleLoader] Gears: R={gearR:F2} " +
-                 string.Join(" ", gears.Skip(1).Select((g, i) => $"{i+1}={g:F2}")) +
-                 $" | FD={finalDrive:F2} | MaxRPM={maxRpm:F0} | PeakTorque={peakTorque:F0}Nm");
+        var reverseGear = powertrain.GearRatios[0];
+        var drivenLayout = powertrain.DriveFrontAxle && powertrain.DriveRearAxle
+            ? "AWD"
+            : powertrain.DriveFrontAxle
+                ? "FWD"
+                : "RWD";
+        Log.Info($"[VehicleLoader] Gears: R={reverseGear:F2} " +
+                 string.Join(" ", powertrain.GearRatios.Skip(1).Select((g, i) => $"{i + 1}={g:F2}")) +
+                 $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
         Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
                  $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
@@ -312,7 +323,8 @@ public class VehicleLoader
         var attached = 0;
         foreach (var flexBody in GetWheelVisualFlexBodies(definition))
         {
-            if (!TryResolveWheelKey(flexBody, out var wheelKey) ||
+            if (!TryResolveWheelKey(flexBody, out string? wheelKey) ||
+                wheelKey == null ||
                 !wheelEntities.TryGetValue(wheelKey, out var wheelEntity))
             {
                 continue;

@@ -43,6 +43,20 @@ public static class JBeamParser
         return Parse(raw);
     }
 
+    public static Dictionary<string, float> ParseVariableDefaultsFile(string path, Dictionary<string, float>? inheritedVars = null)
+    {
+        var previousVars = _vars;
+        try
+        {
+            var raw = System.IO.File.ReadAllText(path);
+            return ParseVariableDefaults(raw, inheritedVars);
+        }
+        finally
+        {
+            _vars = previousVars;
+        }
+    }
+
     public static List<JBeamPart> Parse(string jbeamText)
     {
         // Some jbeam files contain multiple top-level objects — merge them before preprocessing.
@@ -80,6 +94,43 @@ public static class JBeamParser
         }
 
         return parts;
+    }
+
+    private static Dictionary<string, float> ParseVariableDefaults(string jbeamText, Dictionary<string, float>? inheritedVars)
+    {
+        var merged = MergeRootObjects(jbeamText);
+        var preprocessed = PreprocessJBeam(merged);
+
+        using var doc = JsonDocument.Parse(preprocessed, ParseOptions);
+        var vars = inheritedVars != null
+            ? new Dictionary<string, float>(inheritedVars, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+
+        var previousVars = _vars;
+        try
+        {
+            _vars = vars;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return vars;
+            }
+
+            foreach (var partProp in doc.RootElement.EnumerateObject())
+            {
+                if (partProp.Value.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                ParseVariables(partProp.Value, vars);
+            }
+
+            return vars;
+        }
+        finally
+        {
+            _vars = previousVars;
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -229,6 +280,11 @@ public static class JBeamParser
             Nodes = ParseNodes(obj),
             Beams = ParseBeams(obj),
             FlexBodies = ParseFlexBodies(obj),
+            Variables = ParseVariables(obj),
+            PowertrainDevices = ParsePowertrain(obj),
+            Engine = ParseEngineDefinition(obj),
+            Gearbox = ParseGearboxDefinition(obj),
+            VehicleController = ParseVehicleControllerDefinition(obj),
             RefNodes = ParseRefNodes(obj),
         };
 
@@ -635,6 +691,199 @@ public static class JBeamParser
         return flexBodies;
     }
 
+    private static Dictionary<string, float> ParseVariables(JsonElement obj)
+    {
+        var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        ParseVariables(obj, variables);
+        return variables;
+    }
+
+    private static void ParseVariables(JsonElement obj, Dictionary<string, float> variables)
+    {
+        if (!obj.TryGetProperty("variables", out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        var headerSeen = false;
+        var previousVars = _vars;
+        try
+        {
+            _vars = variables;
+            foreach (var elem in arr.EnumerateArray())
+            {
+                if (elem.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                var items = elem.EnumerateArray().ToList();
+                if (!headerSeen)
+                {
+                    headerSeen = true;
+                    continue;
+                }
+
+                if (items.Count < 5)
+                {
+                    continue;
+                }
+
+                var rawName = SafeGetString(items[0]);
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                var name = rawName.TrimStart('$');
+                variables[name] = GetFloat(items[4]);
+            }
+        }
+        finally
+        {
+            _vars = previousVars;
+        }
+    }
+
+    private static List<JBeamPowertrainDevice> ParsePowertrain(JsonElement obj)
+    {
+        var devices = new List<JBeamPowertrainDevice>();
+        if (!obj.TryGetProperty("powertrain", out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return devices;
+        }
+
+        var headerSeen = false;
+        foreach (var elem in arr.EnumerateArray())
+        {
+            if (elem.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = elem.EnumerateArray().ToList();
+            if (!headerSeen)
+            {
+                headerSeen = true;
+                continue;
+            }
+
+            if (items.Count < 4)
+            {
+                continue;
+            }
+
+            var options = items.Skip(4).FirstOrDefault(item => item.ValueKind == JsonValueKind.Object);
+            var connectedWheel = "";
+            float? gearRatio = null;
+            var diffType = "";
+            float? lsdPreload = null;
+            float? lsdLockCoef = null;
+            float? lsdRevLockCoef = null;
+
+            if (options.ValueKind == JsonValueKind.Object)
+            {
+                if (options.TryGetProperty("connectedWheel", out var connectedWheelElement))
+                {
+                    connectedWheel = SafeGetString(connectedWheelElement);
+                }
+
+                if (options.TryGetProperty("gearRatio", out var gearRatioElement))
+                {
+                    gearRatio = GetFloat(gearRatioElement);
+                }
+
+                if (options.TryGetProperty("diffType", out var diffTypeElement))
+                {
+                    diffType = SafeGetString(diffTypeElement);
+                }
+
+                if (options.TryGetProperty("lsdPreload", out var lsdPreloadElement))
+                {
+                    lsdPreload = GetFloat(lsdPreloadElement);
+                }
+
+                if (options.TryGetProperty("lsdLockCoef", out var lsdLockCoefElement))
+                {
+                    lsdLockCoef = GetFloat(lsdLockCoefElement);
+                }
+
+                if (options.TryGetProperty("lsdRevLockCoef", out var lsdRevLockCoefElement))
+                {
+                    lsdRevLockCoef = GetFloat(lsdRevLockCoefElement);
+                }
+            }
+
+            devices.Add(new JBeamPowertrainDevice(
+                Type: SafeGetString(items[0]),
+                Name: SafeGetString(items[1]),
+                InputName: SafeGetString(items[2]),
+                InputIndex: (int)GetFloat(items[3]),
+                ConnectedWheel: connectedWheel,
+                GearRatio: gearRatio,
+                DiffType: diffType,
+                LsdPreload: lsdPreload,
+                LsdLockCoef: lsdLockCoef,
+                LsdRevLockCoef: lsdRevLockCoef));
+        }
+
+        return devices;
+    }
+
+    private static JBeamEngineDefinition? ParseEngineDefinition(JsonElement obj)
+    {
+        if (!TryGetNamedSection(obj, section =>
+                section.TryGetProperty("torque", out _) &&
+                section.TryGetProperty("maxRPM", out _),
+            out var engineSection))
+        {
+            return null;
+        }
+
+        return new JBeamEngineDefinition
+        {
+            TorqueCurve = ParseTorqueCurve(engineSection),
+            IdleRpm = GetOptionalFloat(engineSection, "idleRPM"),
+            MaxRpm = GetOptionalFloat(engineSection, "maxRPM"),
+            Inertia = GetOptionalFloat(engineSection, "inertia"),
+            Friction = GetOptionalFloat(engineSection, "friction"),
+            DynamicFriction = GetOptionalFloat(engineSection, "dynamicFriction"),
+            EngineBrakeTorque = GetOptionalFloat(engineSection, "engineBrakeTorque"),
+        };
+    }
+
+    private static JBeamGearboxDefinition? ParseGearboxDefinition(JsonElement obj)
+    {
+        if (!TryGetNamedSection(obj, section => section.TryGetProperty("gearRatios", out _), out var gearboxSection))
+        {
+            return null;
+        }
+
+        return new JBeamGearboxDefinition
+        {
+            GearRatios = ParseFloatList(gearboxSection, "gearRatios"),
+        };
+    }
+
+    private static JBeamVehicleControllerDefinition? ParseVehicleControllerDefinition(JsonElement obj)
+    {
+        if (!obj.TryGetProperty("vehicleController", out var controllerSection) ||
+            controllerSection.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return new JBeamVehicleControllerDefinition
+        {
+            ClutchLaunchStartRpm = TryGetOptionalFloat(controllerSection, "clutchLaunchStartRPM"),
+            ClutchLaunchTargetRpm = TryGetOptionalFloat(controllerSection, "clutchLaunchTargetRPM"),
+            HighShiftUpRpm = TryGetOptionalFloat(controllerSection, "highShiftUpRPM"),
+            HighShiftDownRpm = ParseFloatList(controllerSection, "highShiftDownRPM"),
+            LowShiftUpRpm = ParseFloatList(controllerSection, "lowShiftUpRPM"),
+            LowShiftDownRpm = ParseFloatList(controllerSection, "lowShiftDownRPM"),
+        };
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // RefNodes
     // ──────────────────────────────────────────────────────────────────────────
@@ -677,6 +926,91 @@ public static class JBeamParser
             }
         }
         return dict;
+    }
+
+    private static bool TryGetNamedSection(
+        JsonElement obj,
+        Func<JsonElement, bool> predicate,
+        out JsonElement section)
+    {
+        foreach (var property in obj.EnumerateObject())
+        {
+            if (property.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (predicate(property.Value))
+            {
+                section = property.Value;
+                return true;
+            }
+        }
+
+        section = default;
+        return false;
+    }
+
+    private static List<JBeamTorquePoint> ParseTorqueCurve(JsonElement engineSection)
+    {
+        var points = new List<JBeamTorquePoint>();
+        if (!engineSection.TryGetProperty("torque", out var torqueElement) ||
+            torqueElement.ValueKind != JsonValueKind.Array)
+        {
+            return points;
+        }
+
+        var headerSeen = false;
+        foreach (var elem in torqueElement.EnumerateArray())
+        {
+            if (elem.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = elem.EnumerateArray().ToList();
+            if (!headerSeen)
+            {
+                headerSeen = true;
+                continue;
+            }
+
+            if (items.Count < 2)
+            {
+                continue;
+            }
+
+            points.Add(new JBeamTorquePoint(GetFloat(items[0]), GetFloat(items[1])));
+        }
+
+        return points;
+    }
+
+    private static List<float> ParseFloatList(JsonElement obj, string propertyName)
+    {
+        var values = new List<float>();
+        if (!obj.TryGetProperty(propertyName, out var arrayElement) ||
+            arrayElement.ValueKind != JsonValueKind.Array)
+        {
+            return values;
+        }
+
+        foreach (var item in arrayElement.EnumerateArray())
+        {
+            values.Add(GetFloat(item));
+        }
+
+        return values;
+    }
+
+    private static float GetOptionalFloat(JsonElement obj, string propertyName, float fallback = 0f)
+    {
+        return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : fallback;
+    }
+
+    private static float? TryGetOptionalFloat(JsonElement obj, string propertyName)
+    {
+        return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : null;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

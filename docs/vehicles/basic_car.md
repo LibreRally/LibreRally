@@ -8,15 +8,17 @@ It exists to:
 - validate LibreRally's JBeam loading pipeline against BeamNG tutorial-style content
 - provide a stable fixture for future importer and parser changes
 
-The vehicle lives in `LibreRally/Resources/BeamNG Vehicles/basic_car` and keeps the same multi-file layout used by the BeamNG basic car tutorial:
+The vehicle lives in `LibreRally/Resources/BeamNG Vehicles/basic_car` and now vendors the BeamNG basic car tutorial's Formula Bee asset set directly:
 
-- `basic_car.jbeam`
-- `body.jbeam`
-- `suspension_F.jbeam`
-- `suspension_R.jbeam`
-- `wheels.jbeam`
-- `powertrain.jbeam`
+- `FormulaBeeModel.dae`
+- `TutoFormulaBee.jbeam`
+- `TutoFormulaBee_*.jbeam`
+- `main.materials.json`
 - `basic_car.pc`
+
+`basic_car.pc` is LibreRally's compatibility layer over the tutorial assets: it selects the active `TutoFormulaBee` slot tree while preserving the tuning vars LibreRally's current BEPU drivetrain and suspension code reads at runtime.
+
+The tutorial references some shared BeamNG common wheel and texture assets that are not bundled in this repository. LibreRally therefore uses the vendored `FormulaBeeModel.dae` plus its existing fallback tyre and neutral material behavior where those shared assets are absent.
 
 LibreRally loads this vehicle through the existing pipeline:
 

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Numerics;
+using LibreRally.Vehicle.JBeam;
 
 namespace LibreRally.Vehicle;
 
@@ -98,9 +99,21 @@ public class VehicleDefinition
     public Dictionary<string, string> RefNodes { get; init; } = new();
 
     /// <summary>
-    /// Physics variables from the loaded .pc config file.
+    /// Physics variables from the active JBeam variable defaults plus any loaded .pc overrides.
     /// Variable names are stripped of their leading '$' (e.g., "spring_F_asphalt" = 60000).
     /// Used by <see cref="Physics.VehiclePhysicsBuilder"/> to set spring, damping, etc.
     /// </summary>
     public Dictionary<string, float> Vars { get; } = new(System.StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Powertrain device graph assembled from active parts.</summary>
+    public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
+
+    /// <summary>Engine metadata parsed from the active JBeam parts, when present.</summary>
+    public JBeamEngineDefinition? Engine { get; init; }
+
+    /// <summary>Gearbox metadata parsed from the active JBeam parts, when present.</summary>
+    public JBeamGearboxDefinition? Gearbox { get; init; }
+
+    /// <summary>Shift and launch metadata parsed from the active JBeam vehicleController sections, when present.</summary>
+    public JBeamVehicleControllerDefinition? VehicleController { get; init; }
 }

@@ -292,6 +292,9 @@ public class VehicleSpawner : SyncScript
             _speedoGauge.ThrottleInput = _car.ThrottleInput;
             _speedoGauge.BrakeInput    = _car.BrakeInput;
             _speedoGauge.HandbrakeEngaged = _car.HandbrakeEngaged;
+            _speedoGauge.TractionLossDetected = _car.TractionLossDetected;
+            _speedoGauge.TractionControlActive = _car.TractionControlActive;
+            _speedoGauge.DrivenWheelSlipRatio = _car.DrivenWheelSlipRatio;
         }
 
         // Toggle debug info with F3
