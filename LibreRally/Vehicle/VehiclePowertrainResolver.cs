@@ -250,12 +250,9 @@ public static class VehiclePowertrainResolver
         var normalized = new List<float>();
         var reverse = gearbox.GearRatios[0];
         normalized.Add(MathF.Abs(reverse) > 1e-4f ? MathF.Abs(reverse) : 3.25f);
-        foreach (var ratio in gearbox.GearRatios.Skip(1))
+        foreach (var ratio in gearbox.GearRatios.Skip(1).Where(ratio => ratio > 1e-4f))
         {
-            if (ratio > 1e-4f)
-            {
-                normalized.Add(MathF.Abs(ratio));
-            }
+            normalized.Add(MathF.Abs(ratio));
         }
 
         return normalized.Count > 1 ? normalized.ToArray() : new[] { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };

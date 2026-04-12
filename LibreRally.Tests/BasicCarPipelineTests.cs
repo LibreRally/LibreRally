@@ -14,6 +14,16 @@ namespace LibreRally.Tests;
 
 public class BasicCarPipelineTests
 {
+    private static string CombineRelativePath(string basePath, string relativePath)
+    {
+        if (Path.IsPathRooted(relativePath))
+        {
+            throw new ArgumentException("Path must be relative.", nameof(relativePath));
+        }
+
+        return Path.Combine(basePath, relativePath);
+    }
+
     private static string GetVehicleFolder()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
@@ -32,7 +42,7 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldSelectTemplatePartTree()
     {
-        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
 
         Assert.Equal("TutoFormulaBee", config.MainPartName);
         Assert.Equal("TutoFormulaBee_Chassis", config.Parts["TutoFormulaBee_Chassis"]);
@@ -45,12 +55,12 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldParseTemplateNodesAndWheelGroups()
     {
-        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
         JBeamPart chassisPart = Assert.Single(
-            JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "TutoFormulaBee_chassis.jbeam"), config.Vars),
+            JBeamParser.ParseFile(CombineRelativePath(GetVehicleFolder(), "TutoFormulaBee_chassis.jbeam"), config.Vars),
             part => part.Name == "TutoFormulaBee_Chassis");
         JBeamPart frontBrakes = Assert.Single(
-            JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "TutoFormulaBee_brakes.jbeam"), config.Vars),
+            JBeamParser.ParseFile(CombineRelativePath(GetVehicleFolder(), "TutoFormulaBee_brakes.jbeam"), config.Vars),
             part => part.Name == "TutoFormulaBee_brake_F");
 
         Assert.Equal("TutoFormulaBee_Chassis", chassisPart.Name);
@@ -66,7 +76,7 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldAssembleVehicle()
     {
-        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
         VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
 
         Assert.Equal("TutoFormulaBee", definition.VehicleName);
@@ -91,7 +101,7 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldResolveTemplateRearDrivePowertrain()
     {
-        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
         VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
         VehiclePowertrainSetup powertrain = VehiclePowertrainResolver.Resolve(definition);
 
@@ -113,7 +123,7 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldBuildPhysics()
     {
-        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
         VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
         VehicleBuilderResult result = VehiclePhysicsBuilder.Build(definition);
 
@@ -161,7 +171,7 @@ public class BasicCarPipelineTests
     [Fact]
     public void BasicCar_ShouldIncludeFormulaBeeColladaMesh()
     {
-        string daePath = Path.Combine(GetVehicleFolder(), "FormulaBeeModel.dae");
+        string daePath = CombineRelativePath(GetVehicleFolder(), "FormulaBeeModel.dae");
 
         Assert.True(File.Exists(daePath));
         Assert.NotEmpty(ColladaLoader.Load(daePath));
