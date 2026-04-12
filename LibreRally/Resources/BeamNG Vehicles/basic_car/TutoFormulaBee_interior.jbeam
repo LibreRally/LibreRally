@@ -1,0 +1,36 @@
+{
+"TutoFormulaBee_gauges": {
+    "information":{
+        "authors":"BeamNG",
+        "name":"Gauges",
+        "value":310,
+    },
+    "slotType" : "TutoFormulaBee_gauges",
+    "flexbodies":[
+        ["mesh", "[group]:", "nonFlexMaterials"],
+        ["TutoFBee_Gauges", ["FormulaBeeSpaceframe"]], //This flexbody is just an example to help you get started. It is not required for the vehicle to work and should be removed.
+	],
+    "props": [
+        ["func",     "mesh",           "idRef:","idX:","idY:", "baseRotation",            "rotation",            "translation",         "min", "max", "offset", "multiplier"],
+        //gauges
+        ["rpm", "TutoFBee_GaugesRPM", "fr3tl","fr3tr","fr3l",      {"x": 0.0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 10000, 0, 1],
+        ["oiltemp", "TutoFBee_GaugesOilTemp", "fr3tl","fr3tr","fr3l",      {"x": 0.0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 10000, 0, 1],
+        ["fuel", "TutoFBee_GaugesFuel", "fr3tl","fr3tr","fr3l",      {"x": 0.0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 10000, 0, 1],
+    ],
+}
+"TutoFormulaBee_pedals": {
+    "information":{
+        "authors":"BeamNG",
+        "name":"Pedals",
+        "value":310,
+    },
+    "slotType" : "TutoFormulaBee_pedals",
+    "props": [
+        ["func",     "mesh",      "idRef:", "idX:", "idY:", "baseRotation",            "rotation",            "translation",         "min", "max", "offset", "multiplier"],
+        //steering wheel
+        ["throttle", "TutoFBee_gaspedal", "fr2l","fr2r","fr2tl",      		{"x": 0, "y":0, "z":180}, {"x":30, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 1, 0, 1],
+        ["brake", "TutoFBee_brakepedal", "fr2l","fr2r","fr2tl",      		{"x": 0, "y":0, "z":180}, {"x":30, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 1, 0, 1],
+        ["clutch", "TutoFBee_clutchpedal", "fr2l","fr2r","fr2tl",     		{"x": 0, "y":0, "z":180}, {"x":30, "y":0, "z":0}, {"x":0, "y":0, "z":0}, 0, 1, 0, 1],
+    ],
+}
+}

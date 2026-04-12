@@ -22,6 +22,9 @@ public class SpeedoGauge : GameSystemBase
     public float ThrottleInput { get; set; }
     public float BrakeInput { get; set; }
     public bool HandbrakeEngaged { get; set; }
+    public bool TractionLossDetected { get; set; }
+    public bool TractionControlActive { get; set; }
+    public float DrivenWheelSlipRatio { get; set; }
 
     // ── Gauge geometry (screen coordinates, updated in Draw from backbuffer size) ──
     private const float StartDeg = 225f;
@@ -48,6 +51,7 @@ public class SpeedoGauge : GameSystemBase
 
     private SpriteBatch? _sb;
     private Texture? _pixel;
+    private SpriteFont? _font;
     private Game? _game;
 
     public SpeedoGauge(IServiceRegistry services) : base(services)
@@ -69,6 +73,7 @@ public class SpeedoGauge : GameSystemBase
 
         _sb = new SpriteBatch(_game.GraphicsDevice);
         _pixel = CreateWhitePixel(_game.GraphicsDevice);
+        _font = _game.Content.Load<SpriteFont>("StrideDefaultFont");
     }
 
     protected override void Destroy()
@@ -80,7 +85,7 @@ public class SpeedoGauge : GameSystemBase
 
     public override void Draw(GameTime gameTime)
     {
-        if (_game == null || _sb == null || _pixel == null)
+        if (_game == null || _sb == null || _pixel == null || _font == null)
         {
 	        return;
         }
@@ -111,7 +116,8 @@ public class SpeedoGauge : GameSystemBase
         _sb.Begin(ctx, SpriteSortMode.Deferred, BlendStates.AlphaBlend);
 
         DrawBackdrop(panelLeft, panelTop, panelRight - panelLeft, panelBottom - panelTop);
-        DrawHandbrakeLamp(midCx, panelTop + 16f);
+        DrawHandbrakeLamp(midCx - 28f, panelTop + 16f);
+        DrawTractionLamp(midCx + 28f, panelTop + 16f);
         DrawSpeedDial(speedCx, cy);
         DrawRpmDial(rpmCx, cy);
         DrawGearIndicator(midCx, cy + 42f);
@@ -265,6 +271,34 @@ public class SpeedoGauge : GameSystemBase
         DrawFilledCircle(cx, cy + 4.6f, 1.4f, new Color(255, 244, 236, HandbrakeEngaged ? 235 : 150));
     }
 
+    private void DrawTractionLamp(float cx, float cy)
+    {
+        const float width = 50f;
+        const float height = 18f;
+        var x = cx - width * 0.5f;
+        var y = cy - height * 0.5f;
+        var lampOn = TractionLossDetected || TractionControlActive;
+        var label = TractionControlActive ? "TCS" : "SLIP";
+        var slipGlow = Math.Clamp(DrivenWheelSlipRatio / 0.75f, 0f, 1f);
+
+        if (lampOn)
+        {
+            var glowAlpha = (byte)MathF.Round(MathUtil.Lerp(22f, TractionControlActive ? 88f : 54f, slipGlow));
+            DrawRect(new RectangleF(x - 2f, y - 2f, width + 4f, height + 4f), new Color(255, 176, 74, glowAlpha));
+        }
+
+        DrawRect(new RectangleF(x + 2f, y + 2f, width, height), new Color(0, 0, 0, 42));
+        DrawRect(new RectangleF(x, y, width, height), new Color(10, 12, 15, 226));
+        DrawRect(new RectangleF(x + 1f, y + 1f, width - 2f, height - 2f), lampOn
+            ? (TractionControlActive ? new Color(136, 68, 18, 242) : new Color(82, 40, 18, 230))
+            : new Color(24, 28, 34, 236));
+        DrawRect(new RectangleF(x + 1f, y + 1f, width - 2f, 1f), new Color(255, 255, 255, lampOn ? 30 : 18));
+        DrawRect(new RectangleF(x + 1f, y + height - 2f, width - 2f, 1f), new Color(0, 0, 0, 132));
+        DrawTextCentered(label, cx, y + 3f, lampOn
+            ? new Color(255, 244, 228, TractionControlActive ? 255 : 220)
+            : new Color(118, 124, 134, 170));
+    }
+
     private void DrawGearIndicator(float cx, float cy)
     {
         var x = cx - GearIndicatorWidth * 0.5f;
@@ -396,6 +430,11 @@ public class SpeedoGauge : GameSystemBase
     private void DrawRect(RectangleF rect, Color color)
     {
         _sb!.Draw(_pixel!, new Vector2(rect.X, rect.Y), null, color, 0f, Vector2.Zero, new Vector2(rect.Width, rect.Height));
+    }
+
+    private void DrawTextCentered(string text, float x, float y, Color color)
+    {
+        _sb!.DrawString(_font!, text, new Vector2(x, y), color, TextAlignment.Center);
     }
 
     private void DrawFilledCircle(float cx, float cy, float radius, Color color)

@@ -15,6 +15,8 @@ public class RallyCarComponent : SyncScript
     private const float GroundProbeMargin = 0.05f;
     private const float GamePadTriggerDeadzone = 0.08f;
     private const float GamePadSteerDeadzone = 0.12f;
+    private const float SleepLinearSpeedThreshold = 0.10f;
+    private const float SleepAngularSpeedThreshold = 0.10f;
 
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
@@ -101,6 +103,18 @@ public class RallyCarComponent : SyncScript
     /// </summary>
     public float AutoClutchMinTorqueScale { get; set; } = 0.25f;
 
+    /// <summary>Enables engine-side traction control based on driven-wheel wheelspin.</summary>
+    public bool TractionControlEnabled { get; set; } = true;
+
+    /// <summary>Engine-RPM-equivalent driven-wheel excess spin window before TCS reaches minimum torque.</summary>
+    public float TractionControlWheelspinWindowRpm { get; set; } = 800f;
+
+    /// <summary>Minimum fraction of engine torque that TCS still allows through when fully active.</summary>
+    public float TractionControlMinTorqueScale { get; set; } = 0.08f;
+
+    /// <summary>Driven-wheel slip ratio above which the HUD traction warning lamp turns on.</summary>
+    public float TractionLossSlipThreshold { get; set; } = 0.18f;
+
     /// <summary>RPM to upshift at (auto-transmission).</summary>
     public float ShiftUpRpm { get; set; } = 6500f;
 
@@ -127,6 +141,10 @@ public class RallyCarComponent : SyncScript
     public float SteeringRack { get; private set; }
     public float DrivelineRpm { get; private set; }
     public bool HandbrakeEngaged { get; private set; }
+    public bool TractionLossDetected { get; private set; }
+    public bool TractionControlActive { get; private set; }
+    public float DrivenWheelSlipRatio { get; private set; }
+    public float TractionControlTorqueScale { get; private set; } = 1f;
     public int CurrentGear { get; private set; } = 1;
 
     public float DriveRatio => EffectiveRatio;
@@ -161,6 +179,13 @@ public class RallyCarComponent : SyncScript
         if (dt <= 0f || dt > 0.1f)
         {
 	        dt = 0.016f;
+        }
+
+        if (!Game.IsActive)
+        {
+            ClearLiveInputs();
+            SetVehicleBodiesAwake(false);
+            return;
         }
 
         // ── Input ────────────────────────────────────────────────────────────
@@ -208,8 +233,6 @@ public class RallyCarComponent : SyncScript
         {
 	        return;
         }
-
-        chassisBody.Awake = true;
 
         var chassisTransform = CarBody.Transform;
         chassisTransform.UpdateWorldMatrix();
@@ -262,11 +285,31 @@ public class RallyCarComponent : SyncScript
         DriveInput = driveInput;
         ServiceBrakeInput = serviceBrakeInput;
         HandbrakeEngaged = isHandbrake;
+        SetVehicleBodiesAwake(ShouldKeepVehicleAwake(
+            throttle,
+            brake,
+            steer,
+            handbrakeRequested,
+            chassisBody.LinearVelocity,
+            chassisBody.AngularVelocity));
 
         var safeWheelRadius = MathF.Max(WheelRadius, 0.05f);
         var roadWheelOmega = forwardSpeed / safeWheelRadius;
         var wheelToEngineRpm = effectiveRatio * (60f / (2f * MathF.PI));
         var drivenWheelOmega = MeasureDrivenWheelOmega(forwardSpeed);
+        MeasureDrivenWheelTractionState(out var maxDrivenWheelOmega, out var drivenWheelSlipRatio);
+        DrivenWheelSlipRatio = drivenWheelSlipRatio;
+        TractionLossDetected = driveInput > 0.05f && drivenWheelSlipRatio >= TractionLossSlipThreshold;
+        var tractionControlScale = driveInput > 0.05f && TractionControlEnabled && !isHandbrake
+            ? ComputeTractionControlTorqueScale(
+                maxDrivenWheelOmega,
+                roadWheelOmega,
+                effectiveRatio,
+                TractionControlWheelspinWindowRpm,
+                TractionControlMinTorqueScale)
+            : 1f;
+        TractionControlTorqueScale = tractionControlScale;
+        TractionControlActive = TractionControlEnabled && tractionControlScale < 0.98f;
         var slipClampedDrivenWheelOmega = ClampDrivenWheelOmegaForSlip(
             roadWheelOmega,
             drivenWheelOmega,
@@ -340,7 +383,7 @@ public class RallyCarComponent : SyncScript
                 slipClampedDrivenWheelOmega,
                 effectiveRatio,
                 AutoClutchWheelspinWindowRpm,
-                AutoClutchMinTorqueScale)
+                AutoClutchMinTorqueScale) * tractionControlScale
             : 1f;
         var crankTorque = InterpolateTorqueCurve(torqueRpm) * driveInput * crankTorqueScale;
         var applyEngineBraking = driveInput < 0.05f && MathF.Abs(forwardSpeed) > 0.25f;
@@ -418,12 +461,6 @@ public class RallyCarComponent : SyncScript
 
         foreach (var wheel in DriveWheels)
         {
-            var wb = wheel.Get<BodyComponent>();
-            if (wb != null)
-            {
-	            wb.Awake = true;
-            }
-
             var ws = wheel.Get<WheelSettings>();
             if (ws?.DriveMotor == null)
             {
@@ -767,6 +804,39 @@ public class RallyCarComponent : SyncScript
         return currentYawRate + Math.Clamp(shortfall, -maxDelta, maxDelta);
     }
 
+    private void ClearLiveInputs()
+    {
+        ThrottleInput = 0f;
+        BrakeInput = 0f;
+        DriveInput = 0f;
+        ServiceBrakeInput = 0f;
+        SteeringInput = 0f;
+        SteeringRack = 0f;
+        HandbrakeEngaged = false;
+        TractionLossDetected = false;
+        TractionControlActive = false;
+        DrivenWheelSlipRatio = 0f;
+        TractionControlTorqueScale = 1f;
+    }
+
+    private void SetVehicleBodiesAwake(bool awake)
+    {
+        var chassisBody = CarBody.Get<BodyComponent>();
+        if (chassisBody != null)
+        {
+            chassisBody.Awake = awake;
+        }
+
+        foreach (var wheel in Wheels)
+        {
+            var wheelBody = wheel.Get<BodyComponent>();
+            if (wheelBody != null)
+            {
+                wheelBody.Awake = awake;
+            }
+        }
+    }
+
     internal static int ResolveStandingGearSelection(
         int currentGear,
         float speedKmh,
@@ -824,6 +894,23 @@ public class RallyCarComponent : SyncScript
         return magnitude == 0f ? 0f : MathF.CopySign(magnitude, value);
     }
 
+    internal static bool ShouldKeepVehicleAwake(
+        float throttleInput,
+        float brakeInput,
+        float steerInput,
+        bool handbrakeRequested,
+        Vector3 linearVelocity,
+        Vector3 angularVelocity)
+    {
+        if (throttleInput > 0.02f || brakeInput > 0.02f || MathF.Abs(steerInput) > 0.02f || handbrakeRequested)
+        {
+            return true;
+        }
+
+        return linearVelocity.LengthSquared() > SleepLinearSpeedThreshold * SleepLinearSpeedThreshold
+            || angularVelocity.LengthSquared() > SleepAngularSpeedThreshold * SleepAngularSpeedThreshold;
+    }
+
     private float MeasureDrivenWheelOmega(float forwardSpeed)
     {
         var safeWheelRadius = MathF.Max(WheelRadius, 0.05f);
@@ -863,6 +950,29 @@ public class RallyCarComponent : SyncScript
             sampledWheelGrounded[..sampledCount]);
     }
 
+    private void MeasureDrivenWheelTractionState(out float maxDrivenWheelOmega, out float maxDrivenWheelSlipRatio)
+    {
+        maxDrivenWheelOmega = 0f;
+        maxDrivenWheelSlipRatio = 0f;
+        if (Dynamics == null || DriveWheels.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var wheel in DriveWheels)
+        {
+            var ws = wheel.Get<WheelSettings>();
+            var dynamicsIndex = ws?.DynamicsIndex ?? -1;
+            if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount || !Dynamics.WheelGrounded[dynamicsIndex])
+            {
+                continue;
+            }
+
+            maxDrivenWheelOmega = MathF.Max(maxDrivenWheelOmega, MathF.Abs(Dynamics.WheelStates[dynamicsIndex].AngularVelocity));
+            maxDrivenWheelSlipRatio = MathF.Max(maxDrivenWheelSlipRatio, MathF.Abs(Dynamics.WheelStates[dynamicsIndex].SlipRatio));
+        }
+    }
+
     internal static Vector3 ComputePointVelocity(Vector3 linearVelocity, Vector3 angularVelocity, Vector3 pointOffset)
     {
         return linearVelocity + Vector3.Cross(angularVelocity, pointOffset);
@@ -881,6 +991,22 @@ public class RallyCarComponent : SyncScript
         var omegaToRpm = safeRatio * (60f / (2f * MathF.PI));
         var excessWheelOmega = MathF.Max(0f, MathF.Abs(drivenWheelOmega) - MathF.Abs(slipClampedDrivenWheelOmega));
         var excessSlipRpm = excessWheelOmega * omegaToRpm;
+        var slipBlend = Math.Clamp(excessSlipRpm / safeWindowRpm, 0f, 1f);
+        return 1f + (clampedMinScale - 1f) * slipBlend;
+    }
+
+    internal static float ComputeTractionControlTorqueScale(
+        float maxDrivenWheelOmega,
+        float roadWheelOmega,
+        float effectiveRatio,
+        float wheelspinWindowRpm,
+        float minTorqueScale)
+    {
+        var clampedMinScale = Math.Clamp(minTorqueScale, 0f, 1f);
+        var safeRatio = MathF.Max(MathF.Abs(effectiveRatio), 1e-3f);
+        var safeWindowRpm = MathF.Max(wheelspinWindowRpm, 1f);
+        var omegaToRpm = safeRatio * (60f / (2f * MathF.PI));
+        var excessSlipRpm = MathF.Max(0f, (MathF.Abs(maxDrivenWheelOmega) - MathF.Abs(roadWheelOmega)) * omegaToRpm);
         var slipBlend = Math.Clamp(excessSlipRpm / safeWindowRpm, 0f, 1f);
         return 1f + (clampedMinScale - 1f) * slipBlend;
     }

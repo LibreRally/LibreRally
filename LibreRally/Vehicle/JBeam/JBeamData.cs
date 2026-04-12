@@ -75,6 +75,46 @@ public record JBeamSlot(
     bool CoreSlot,
     System.Numerics.Vector3? NodeOffset = null);
 
+public record JBeamPowertrainDevice(
+    string Type,
+    string Name,
+    string InputName,
+    int InputIndex,
+    string ConnectedWheel,
+    float? GearRatio,
+    string DiffType,
+    float? LsdPreload,
+    float? LsdLockCoef,
+    float? LsdRevLockCoef);
+
+public record JBeamTorquePoint(float Rpm, float Torque);
+
+public class JBeamEngineDefinition
+{
+    public List<JBeamTorquePoint> TorqueCurve { get; init; } = new();
+    public float IdleRpm { get; init; }
+    public float MaxRpm { get; init; }
+    public float Inertia { get; init; }
+    public float Friction { get; init; }
+    public float DynamicFriction { get; init; }
+    public float EngineBrakeTorque { get; init; }
+}
+
+public class JBeamGearboxDefinition
+{
+    public List<float> GearRatios { get; init; } = new();
+}
+
+public class JBeamVehicleControllerDefinition
+{
+    public float? ClutchLaunchStartRpm { get; init; }
+    public float? ClutchLaunchTargetRpm { get; init; }
+    public float? HighShiftUpRpm { get; init; }
+    public List<float> HighShiftDownRpm { get; init; } = new();
+    public List<float> LowShiftUpRpm { get; init; } = new();
+    public List<float> LowShiftDownRpm { get; init; } = new();
+}
+
 /// <summary>All raw data parsed from a single .jbeam section (one named object within a file).</summary>
 public class JBeamPart
 {
@@ -86,6 +126,11 @@ public class JBeamPart
     public List<JBeamNode> Nodes { get; init; } = new();
     public List<JBeamBeam> Beams { get; init; } = new();
     public List<JBeamFlexBody> FlexBodies { get; init; } = new();
+    public Dictionary<string, float> Variables { get; init; } = new(System.StringComparer.OrdinalIgnoreCase);
+    public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
+    public JBeamEngineDefinition? Engine { get; init; }
+    public JBeamGearboxDefinition? Gearbox { get; init; }
+    public JBeamVehicleControllerDefinition? VehicleController { get; init; }
 
     /// <summary>Ref nodes: ref, back, left, up positions used for orientation.</summary>
     public Dictionary<string, string> RefNodes { get; init; } = new();

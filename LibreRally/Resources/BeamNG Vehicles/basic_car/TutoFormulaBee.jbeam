@@ -1,0 +1,22 @@
+{
+"TutoFormulaBee": {
+    "information":{
+        "authors":"TrackpadUser",
+        "name":"Formula Bee",
+    },
+    "slotType" : "main",
+    "slots": [
+        ["type", "default", "description"]
+        ["TutoFormulaBee_Chassis","TutoFormulaBee_Chassis", "Chassis",{"coreSlot":true}],
+    ],
+    "controller": [
+        ["fileName"],
+        ["vehicleController", {}],
+    ],
+    "variables": [
+        ["name", "type", "unit", "category", "default", "min", "max", "title", "description"]
+        ["$brakestrength", "range", "", "Brakes", 1, 0.6, 1.0, "Brake Force", "Scales the overall brake torque for this car", {"minDis":60, "maxDis":100}]
+        ["$ffbstrength", "range", "", "Chassis", 1, 0.5, 1.5, "Force Feedback", "Scales the force feedback strength for this car", {"minDis":50, "maxDis":200}]
+    ],
+}
+}

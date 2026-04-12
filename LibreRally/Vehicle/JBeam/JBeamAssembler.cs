@@ -24,10 +24,22 @@ public static class JBeamAssembler
         // Collect all jbeam files in the folder (and one level down for Jbeams/ subdirectory)
         var jbeamFiles = Directory
             .EnumerateFiles(vehicleFolder, "*.jbeam", SearchOption.AllDirectories)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        // Variable table from the .pc config (strips leading $ if present)
-        var vars = pcConfig?.Vars;
+        var vars = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        foreach (var file in jbeamFiles)
+        {
+            vars = JBeamParser.ParseVariableDefaultsFile(file, vars);
+        }
+
+        if (pcConfig?.Vars != null)
+        {
+            foreach (var kv in pcConfig.Vars)
+            {
+                vars[kv.Key] = kv.Value;
+            }
+        }
 
         // Parse all files → flat dictionary: partName → JBeamPart
         var partLibrary = new Dictionary<string, JBeamPart>(StringComparer.OrdinalIgnoreCase);
@@ -142,6 +154,10 @@ public static class JBeamAssembler
         var allNodes = new Dictionary<string, AssembledNode>(StringComparer.OrdinalIgnoreCase);
         var allBeams = new List<AssembledBeam>();
         var allFlexBodies = new List<AssembledFlexBody>();
+        var allPowertrainDevices = new List<JBeamPowertrainDevice>();
+        JBeamEngineDefinition? engine = null;
+        JBeamGearboxDefinition? gearbox = null;
+        JBeamVehicleControllerDefinition? controller = null;
         var resolvedParts = parts.Select(p => p.Part).ToList();
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
@@ -193,6 +209,11 @@ public static class JBeamAssembler
                     fb.Scale,
                     part.Name,
                     part.SlotType));
+
+            allPowertrainDevices.AddRange(part.PowertrainDevices);
+            engine ??= part.Engine;
+            gearbox ??= part.Gearbox;
+            controller = MergeVehicleController(controller, part.VehicleController);
         }
 
         // Build logical parts:
@@ -214,6 +235,35 @@ public static class JBeamAssembler
             Parts = logicalParts,
             FolderPath = folderPath,
             RefNodes = refNodes,
+            PowertrainDevices = allPowertrainDevices,
+            Engine = engine,
+            Gearbox = gearbox,
+            VehicleController = controller,
+        };
+    }
+
+    private static JBeamVehicleControllerDefinition? MergeVehicleController(
+        JBeamVehicleControllerDefinition? current,
+        JBeamVehicleControllerDefinition? next)
+    {
+        if (next == null)
+        {
+            return current;
+        }
+
+        if (current == null)
+        {
+            return next;
+        }
+
+        return new JBeamVehicleControllerDefinition
+        {
+            ClutchLaunchStartRpm = current.ClutchLaunchStartRpm ?? next.ClutchLaunchStartRpm,
+            ClutchLaunchTargetRpm = current.ClutchLaunchTargetRpm ?? next.ClutchLaunchTargetRpm,
+            HighShiftUpRpm = current.HighShiftUpRpm ?? next.HighShiftUpRpm,
+            HighShiftDownRpm = current.HighShiftDownRpm.Count > 0 ? current.HighShiftDownRpm : next.HighShiftDownRpm,
+            LowShiftUpRpm = current.LowShiftUpRpm.Count > 0 ? current.LowShiftUpRpm : next.LowShiftUpRpm,
+            LowShiftDownRpm = current.LowShiftDownRpm.Count > 0 ? current.LowShiftDownRpm : next.LowShiftDownRpm,
         };
     }
 

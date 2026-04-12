@@ -1,8 +1,11 @@
 using System.IO;
+using System.Linq;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
+using LibreRally.Vehicle.Rendering;
 using Stride.BepuPhysics.Constraints;
+using Stride.BepuPhysics.Definitions;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Xunit;
@@ -27,26 +30,37 @@ public class BasicCarPipelineTests
     }
 
     [Fact]
-    public void BasicCar_ShouldParseNodes()
+    public void BasicCar_ShouldSelectTemplatePartTree()
     {
         PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
-        JBeamPart bodyPart = Assert.Single(JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "body.jbeam"), config.Vars));
 
-        Assert.Equal("basic_car_body", bodyPart.Name);
-        Assert.True(bodyPart.Nodes.Count >= 10);
-        Assert.Contains(bodyPart.Nodes, node => node.Id == "bc2");
-        Assert.Equal("bc2", bodyPart.RefNodes["ref"]);
+        Assert.Equal("TutoFormulaBee", config.MainPartName);
+        Assert.Equal("TutoFormulaBee_Chassis", config.Parts["TutoFormulaBee_Chassis"]);
+        Assert.Equal("TutoFormulaBee_transaxle_5M", config.Parts["TutoFormulaBee_transaxle"]);
+        Assert.Equal("TutoFormulaBee_swaybar_F_race", config.Parts["TutoFormulaBee_swaybar_F"]);
+        Assert.Equal(string.Empty, config.Parts["wheel_F_4"]);
+        Assert.Equal(3.12f, config.Vars["gear_1"]);
     }
 
     [Fact]
-    public void BasicCar_ShouldParseBeams()
+    public void BasicCar_ShouldParseTemplateNodesAndWheelGroups()
     {
         PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
-        JBeamPart wheelsPart = Assert.Single(JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "wheels.jbeam"), config.Vars));
+        JBeamPart chassisPart = Assert.Single(
+            JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "TutoFormulaBee_chassis.jbeam"), config.Vars),
+            part => part.Name == "TutoFormulaBee_Chassis");
+        JBeamPart frontBrakes = Assert.Single(
+            JBeamParser.ParseFile(Path.Combine(GetVehicleFolder(), "TutoFormulaBee_brakes.jbeam"), config.Vars),
+            part => part.Name == "TutoFormulaBee_brake_F");
 
-        Assert.True(wheelsPart.Beams.Count >= 8);
-        Assert.Contains(wheelsPart.Nodes, node => node.Properties.Groups.Contains("wheel_FL"));
-        Assert.Contains(wheelsPart.Nodes, node => node.Properties.Groups.Contains("wheel_RR"));
+        Assert.Equal("TutoFormulaBee_Chassis", chassisPart.Name);
+        Assert.True(chassisPart.Nodes.Count >= 1);
+        Assert.Equal("fr4", chassisPart.RefNodes["ref"]);
+        Assert.Contains(chassisPart.FlexBodies, flexBody => flexBody.Mesh == "TutoFBee_Spaceframe");
+
+        Assert.True(frontBrakes.FlexBodies.Count >= 2);
+        Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FL"));
+        Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FR"));
     }
 
     [Fact]
@@ -55,14 +69,45 @@ public class BasicCarPipelineTests
         PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
         VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
 
-        Assert.Equal("basic_car", definition.VehicleName);
+        Assert.Equal("TutoFormulaBee", definition.VehicleName);
         Assert.True(definition.Nodes.Count >= 20);
         Assert.True(definition.Beams.Count >= 40);
-        Assert.Equal("bc2", definition.RefNodes["ref"]);
+        Assert.True(definition.FlexBodies.Count >= 10);
+        Assert.Equal("fr4", definition.RefNodes["ref"]);
         Assert.Equal(52000f, definition.Vars["spring_F_asphalt"]);
+        Assert.Equal(30000f, definition.Vars["spring_F"]);
+        Assert.Equal(4.125f, definition.Vars["finaldrive_R"], 3);
+        Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "TutoFBee_Spaceframe");
+        Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "autobello_brakedisk_track_FR");
+        Assert.NotNull(definition.Engine);
+        Assert.NotNull(definition.Gearbox);
+        Assert.NotNull(definition.VehicleController);
+        Assert.Contains(definition.PowertrainDevices, device => device.Name == "wheelaxleRL" && device.ConnectedWheel == "RL");
 
-        AssembledNode wheelNode = definition.Nodes["wfl1"];
-        Assert.Contains("wheel_FL", wheelNode.Groups);
+        AssembledNode hubNode = definition.Nodes["fh1l"];
+        Assert.Contains("hub_F", hubNode.Groups);
+    }
+
+    [Fact]
+    public void BasicCar_ShouldResolveTemplateRearDrivePowertrain()
+    {
+        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
+        VehiclePowertrainSetup powertrain = VehiclePowertrainResolver.Resolve(definition);
+
+        Assert.False(powertrain.DriveFrontAxle);
+        Assert.True(powertrain.DriveRearAxle);
+        Assert.Equal(new[] { "wheel_RL", "wheel_RR" }, powertrain.DrivenWheelKeys);
+        Assert.Equal(4.125f, powertrain.FinalDrive, 3);
+        Assert.Equal(5050f, powertrain.MaxRpm, 0);
+        Assert.Equal(875f, powertrain.IdleRpm, 0);
+        Assert.Equal(2200f, powertrain.AutoClutchLaunchRpm, 0);
+        Assert.Equal(4300f, powertrain.ShiftUpRpm, 0);
+        Assert.InRange(powertrain.ShiftDownRpm, 1700f, 2200f);
+        Assert.Equal(6, powertrain.GearRatios.Length);
+        Assert.Equal(3.60f, powertrain.GearRatios[0], 2);
+        Assert.Equal(3.12f, powertrain.GearRatios[1], 2);
+        Assert.Equal(0.89f, powertrain.GearRatios[^1], 2);
     }
 
     [Fact]
@@ -77,19 +122,23 @@ public class BasicCarPipelineTests
         WheelSettings? wheelRlSettings = result.WheelRL.Get<WheelSettings>();
         WheelSettings? wheelRrSettings = result.WheelRR.Get<WheelSettings>();
         var wheelFlBody = result.WheelFL.Get<Stride.BepuPhysics.BodyComponent>();
+        var chassisBody = result.ChassisEntity.Get<Stride.BepuPhysics.BodyComponent>();
 
-        Assert.Equal("basic_car", result.RootEntity.Name);
+        Assert.Equal("TutoFormulaBee", result.RootEntity.Name);
         Assert.Equal("chassis", result.ChassisEntity.Name);
         Assert.NotNull(wheelFlSettings);
         Assert.NotNull(wheelFrSettings);
         Assert.NotNull(wheelRlSettings);
         Assert.NotNull(wheelRrSettings);
         Assert.NotNull(wheelFlBody);
+        Assert.NotNull(chassisBody);
         Assert.Equal("wheel_FL", result.WheelFL.Name);
         Assert.Equal("wheel_FR", result.WheelFR.Name);
         Assert.Equal("wheel_RL", result.WheelRL.Name);
         Assert.Equal("wheel_RR", result.WheelRR.Name);
         Assert.Equal(0.05f, wheelFlBody!.FrictionCoefficient, 3);
+        Assert.Equal(InterpolationMode.Interpolated, wheelFlBody.InterpolationMode);
+        Assert.Equal(InterpolationMode.Interpolated, chassisBody!.InterpolationMode);
 
         foreach (WheelSettings wheelSettings in new[] { wheelFlSettings!, wheelFrSettings!, wheelRlSettings!, wheelRrSettings! })
         {
@@ -107,5 +156,14 @@ public class BasicCarPipelineTests
         Assert.Equal(wheelFlSettings.SuspensionLocalAxis, flLimit.LocalAxis);
         Assert.Equal(wheelFlSettings.SuspensionMinimumOffset, flLimit.MinimumOffset);
         Assert.Equal(wheelFlSettings.SuspensionMaximumOffset, flLimit.MaximumOffset);
+    }
+
+    [Fact]
+    public void BasicCar_ShouldIncludeFormulaBeeColladaMesh()
+    {
+        string daePath = Path.Combine(GetVehicleFolder(), "FormulaBeeModel.dae");
+
+        Assert.True(File.Exists(daePath));
+        Assert.NotEmpty(ColladaLoader.Load(daePath));
     }
 }

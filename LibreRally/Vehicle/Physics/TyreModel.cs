@@ -27,6 +27,12 @@ public struct TyreState
     /// <summary>Longitudinal deflection state for the brush contact-patch model (m).</summary>
     public float LongitudinalDeflection;
 
+    /// <summary>Current longitudinal slip ratio (dimensionless).</summary>
+    public float SlipRatio;
+
+    /// <summary>Current lateral slip angle (rad).</summary>
+    public float SlipAngle;
+
     /// <summary>Creates a fresh tyre state with default ambient temperature and full tread.</summary>
     public static TyreState CreateDefault() => new()
     {
@@ -35,6 +41,8 @@ public struct TyreState
         AngularVelocity = 0f,
         LateralDeflection = 0f,
         LongitudinalDeflection = 0f,
+        SlipRatio = 0f,
+        SlipAngle = 0f,
     };
 }
 
@@ -382,6 +390,8 @@ public sealed class TyreModel
         {
             state.LateralDeflection = 0f;
             state.LongitudinalDeflection = 0f;
+            state.SlipRatio = 0f;
+            state.SlipAngle = 0f;
 
             // Integrate angular velocity from torque even without ground contact
             var airInertia = WheelInertia > 0f
@@ -420,6 +430,7 @@ public sealed class TyreModel
         var denominator = MathF.Max(absVx, MinSpeed);
         var slipRatio = (wheelLinearSpeed - longitudinalVelocity) / denominator;
         slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
+        state.SlipRatio = slipRatio;
 
         // ── Slip angle (lateral) ─────────────────────────────────────────────
         // α = atan(-Vy / |Vx|)
@@ -428,6 +439,7 @@ public sealed class TyreModel
         // Reference: Pacejka, §1.3, Eq. 1.4.
         var slipAngle = MathF.Atan2(-lateralVelocity, MathF.Max(absVx, MinSpeed));
         slipAngle = Math.Clamp(slipAngle, -MaxSlipAngle, MaxSlipAngle);
+        state.SlipAngle = slipAngle;
 
         // ── Pacejka Magic Formula forces ─────────────────────────────────────
         // F = D · sin(C · atan(B·x − E·(B·x − atan(B·x))))

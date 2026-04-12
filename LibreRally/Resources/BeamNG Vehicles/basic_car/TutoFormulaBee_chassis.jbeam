@@ -1,0 +1,87 @@
+{
+"TutoFormulaBee_Chassis": {
+    "information":{
+        "authors":"TrackpadUser",
+        "name":"SpaceFrame",
+        "value":10000,
+    },
+    "slotType":"TutoFormulaBee_Chassis",
+    "slots":[
+        ["type", "default", "description"],
+        //engine
+        ["TutoFormulaBee_engine","TutoFormulaBee_engine", "Engine"],
+        ["TutoFormulaBee_fueltank","TutoFormulaBee_fueltank", "Fuel Tank", {"nodeOffset":""}],
+        //running gear
+        ["TutoFormulaBee_suspension_F","TutoFormulaBee_suspension_F", "Front Suspension", {"nodeOffset":""}],
+        ["TutoFormulaBee_suspension_R","TutoFormulaBee_suspension_R", "Rear Suspension", {"nodeOffset":""}],
+
+        ["TutoFormulaBee_gauges", "TutoFormulaBee_gauges", "Gauges", {"coreSlot":true}],
+        ["TutoFormulaBee_pedals", "TutoFormulaBee_pedals", "Pedals", {"coreSlot":true}],
+    ],
+    "refNodes":[
+        ["ref:", "back:", "left:", "up:", "leftCorner:", "rightCorner:"],	
+		["fr4", "fr5", "fr4l", "fr4t", "fr1l", "fr1r"],
+    ],
+    "cameraExternal":{
+        "distance":4.5,
+        "distanceMin":1.5,
+        "offset":{"x":0.0, "y":0.0, "z":0.45},
+        "fov":65,
+    },
+    "cameraChase":{
+        "distance":4.5,
+        "distanceMin":1.5,
+        "defaultRotation":{"x":0, "y":-11.2, "z":0},
+        "offset":{"x":0.0, "y":0.2, "z":0.7},
+        "fov":65,
+    },    
+	"camerasInternal":[
+		["type", "x", "y", "z", "fov", "id1:", "id2:", "id3:", "id4:", "id5:", "id6:"],
+		{"nodeWeight":1.24},
+		{"selfCollision":false},
+		{"rightHandCamera":true},
+		{"collision":false},
+		{"beamSpring":46000,"beamDamp":435},
+		//hood cam
+		["hood", 0.0, -0.64, 1.20, 65, "node1","node2","node3","node4","node5","node6", {"beamDeform":5001000,"beamStrength":"FLT_MAX"}],
+		{"beamSpring":400,"beamDamp":75},
+		{"selfCollision":true},
+		{"collision":true},
+		//dash cam
+		["dash", -0.343, 0.18, 1.23, 55, "node1","node2","node3","node4","node5","node6", {"beamDeform":5001000,"beamStrength":"FLT_MAX"}],
+	],
+    "flexbodies":[
+        ["mesh", "[group]:", "nonFlexMaterials"],
+        ["TutoFBee_Spaceframe", ["FormulaBeeSpaceframe"]], //This flexbody is just an example to help you get started. It is not required for the vehicle to work and should be removed.
+	],
+    "nodes":[
+        ["id", "posX", "posY", "posZ"],
+        {"selfCollision":true},
+        {"collision":true},
+        {"nodeMaterial":"|NM_METAL"},
+        {"frictionCoef":0.6},
+        {"group":"FormulaBeeSpaceframe"},
+		
+        {"nodeWeight":2.0},
+        ["fr1l", 0.294, -1.311, 0.205], //This node is just an example to help you get started. It is not required for the vehicle to work and should be removed.
+		
+        {"group":""},
+    ],
+    "beams":[
+        ["id1:", "id2:"],
+        {"deformLimitExpansion":1.2},
+        {"beamPrecompression":1, "beamType":"|NORMAL"},
+        {"beamSpring":1501000,"beamDamp":150},
+        {"beamDeform":30000,"beamStrength":"FLT_MAX"},
+		["fr1l","fr2l"] //This beam is just an example to help you get started. It is not required for the vehicle to work and should be removed.
+
+		],
+    "triangles": [
+		["id1:","id2:","id3:"],
+		{"dragCoef":10},        
+		{"groundModel":"metal"},
+		{"triangleType":"NORMALTYPE"},
+		["fr3sr","fr3tr","fr4tr"] //This triangle is just an example to help you get started. It is not required for the vehicle to work and should be removed.  
+	],
+},
+}

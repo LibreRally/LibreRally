@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
+using Stride.BepuPhysics.Definitions;
 using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
 using Stride.Engine;
@@ -200,6 +201,7 @@ public static class VehiclePhysicsBuilder
         {
             Collider = collider,
             Gravity = true,
+            InterpolationMode = InterpolationMode.Interpolated,
         };
 
         var nodeCom = ComputeWeightedCentroid(sprungNodes);
@@ -261,6 +263,7 @@ public static class VehiclePhysicsBuilder
                 }
             },
             Gravity = true,
+            InterpolationMode = InterpolationMode.Interpolated,
         };
 
         entity.Add(body);
@@ -580,6 +583,7 @@ public static class VehiclePhysicsBuilder
                 }
             },
             Gravity = true,
+            InterpolationMode = InterpolationMode.Interpolated,
         };
         entity.Add(body);
 
