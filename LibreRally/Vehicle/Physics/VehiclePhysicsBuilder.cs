@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LibreRally.Vehicle.JBeam;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
 using Stride.BepuPhysics.Definitions;
