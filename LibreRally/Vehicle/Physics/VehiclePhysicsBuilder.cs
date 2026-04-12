@@ -34,6 +34,9 @@ public record VehicleBuilderResult(
 /// </summary>
 public static class VehiclePhysicsBuilder
 {
+    private const float VectorLengthSquaredEpsilon = 1e-6f;
+    private const float SuspensionTargetOffsetLimit = 0.08f;
+
     /// <summary>
     /// Creates a root entity containing:
     ///   - A chassis entity with a <see cref="BodyComponent"/> and compound box colliders.
@@ -497,13 +500,13 @@ public static class VehiclePhysicsBuilder
         var reboundTravelF = ComputeReboundTravel(springF);
         var bumpTravelR = ComputeBumpTravel(springR);
         var reboundTravelR = ComputeReboundTravel(springR);
-        var springHeightF = GetVar("springheight_F_asphalt", GetVar("springheight_F", 0f));
-        var springHeightR = GetVar("springheight_R_asphalt", GetVar("springheight_R", 0f));
+        var springHeightAdjustmentF = GetVar("springheight_F_asphalt", GetVar("springheight_F", 0f));
+        var springHeightAdjustmentR = GetVar("springheight_R_asphalt", GetVar("springheight_R", 0f));
 
         float ComputeTargetOffset(bool isFrontAxle)
         {
-            var springHeight = isFrontAxle ? springHeightF : springHeightR;
-            return Math.Clamp(-springHeight, -0.08f, 0.08f);
+            var springHeight = isFrontAxle ? springHeightAdjustmentF : springHeightAdjustmentR;
+            return Math.Clamp(-springHeight, -SuspensionTargetOffsetLimit, SuspensionTargetOffsetLimit);
         }
 
         Entity GetWheel(string label, bool isFront)
@@ -612,7 +615,7 @@ public static class VehiclePhysicsBuilder
 
         var localOffsetA = position - chassisWorldPos;
         var localOffsetB = Vector3.Zero;
-        suspensionAxis = suspensionAxis.LengthSquared() > 1e-6f
+        suspensionAxis = suspensionAxis.LengthSquared() > VectorLengthSquaredEpsilon
             ? Vector3.Normalize(suspensionAxis)
             : Vector3.UnitY;
         var minimumOffset = -Math.Max(reboundTravel, 0f);
@@ -768,7 +771,7 @@ public static class VehiclePhysicsBuilder
 
         var axisBeam = hubCenter - armNode.Position;
         var axisStride = BeamNGToStride(axisBeam);
-        if (axisStride.LengthSquared() < 1e-6f)
+        if (axisStride.LengthSquared() < VectorLengthSquaredEpsilon)
         {
             return Vector3.UnitY;
         }

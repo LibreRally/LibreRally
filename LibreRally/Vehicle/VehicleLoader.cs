@@ -81,7 +81,7 @@ public class VehicleLoader
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
             definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
-        float VAny(float fallback, params string[] names)
+        float GetVarWithFallbacks(float fallback, params string[] names)
         {
             foreach (var name in names)
             {
@@ -121,8 +121,8 @@ public class VehicleLoader
             CgHeight = cgHeight,
             Wheelbase = wheelbase,
             TrackWidth = trackWidth,
-            FrontAntiRollStiffness = VAny(8000f, "antiroll_front", "arb_spring_F"),
-            RearAntiRollStiffness = VAny(5000f, "antiroll_rear", "arb_spring_R"),
+            FrontAntiRollStiffness = GetVarWithFallbacks(8000f, "antiroll_front", "arb_spring_F"),
+            RearAntiRollStiffness = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R"),
             FrontDiff = powertrain.FrontDiff,
             RearDiff = powertrain.RearDiff,
             CenterDiff = powertrain.CenterDiff,
