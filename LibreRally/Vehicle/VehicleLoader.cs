@@ -163,7 +163,7 @@ public class VehicleLoader
         car.Wheels.AddRange(wheelEntities);
         car.SteerWheels.AddRange(new[] { result.WheelFL, result.WheelFR });
         car.BreakWheels.AddRange(wheelEntities);
-        foreach (var wheelKey in powertrain.DrivenWheelKeys)
+        foreach (var wheelKey in powertrain.DrivenWheelKeys.Where(wheelEntityMap.ContainsKey))
         {
             if (wheelEntityMap.TryGetValue(wheelKey, out var wheelEntity))
             {

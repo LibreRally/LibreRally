@@ -827,9 +827,8 @@ public class RallyCarComponent : SyncScript
             chassisBody.Awake = awake;
         }
 
-        foreach (var wheel in Wheels)
+        foreach (var wheelBody in Wheels.Select(wheel => wheel.Get<BodyComponent>()))
         {
-            var wheelBody = wheel.Get<BodyComponent>();
             if (wheelBody != null)
             {
                 wheelBody.Awake = awake;
@@ -959,9 +958,8 @@ public class RallyCarComponent : SyncScript
             return;
         }
 
-        foreach (var wheel in DriveWheels)
+        foreach (var ws in DriveWheels.Select(wheel => wheel.Get<WheelSettings>()))
         {
-            var ws = wheel.Get<WheelSettings>();
             var dynamicsIndex = ws?.DynamicsIndex ?? -1;
             if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount || !Dynamics.WheelGrounded[dynamicsIndex])
             {

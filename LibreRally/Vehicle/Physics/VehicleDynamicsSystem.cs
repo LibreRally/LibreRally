@@ -335,7 +335,7 @@ public sealed class VehicleDynamicsSystem
             return;
         }
 
-        if (!DriveFrontAxle && DriveRearAxle)
+        if (!DriveFrontAxle)
         {
             var rearDiffOnly = RearDiff;
             DifferentialSolver.SplitTorque(in rearDiffOnly, engineTorqueAtWheels,
