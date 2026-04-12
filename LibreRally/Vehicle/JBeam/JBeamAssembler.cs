@@ -155,6 +155,7 @@ public static class JBeamAssembler
         var allBeams = new List<AssembledBeam>();
         var allFlexBodies = new List<AssembledFlexBody>();
         var allPowertrainDevices = new List<JBeamPowertrainDevice>();
+        var allPressureWheels = new List<JBeamPressureWheel>();
         JBeamEngineDefinition? engine = null;
         JBeamGearboxDefinition? gearbox = null;
         JBeamVehicleControllerDefinition? controller = null;
@@ -211,6 +212,7 @@ public static class JBeamAssembler
                     part.SlotType));
 
             allPowertrainDevices.AddRange(part.PowertrainDevices);
+            allPressureWheels.AddRange(part.PressureWheels);
             engine ??= part.Engine;
             gearbox ??= part.Gearbox;
             controller = MergeVehicleController(controller, part.VehicleController);
@@ -236,6 +238,7 @@ public static class JBeamAssembler
             FolderPath = folderPath,
             RefNodes = refNodes,
             PowertrainDevices = allPowertrainDevices,
+            PressureWheels = allPressureWheels,
             Engine = engine,
             Gearbox = gearbox,
             VehicleController = controller,

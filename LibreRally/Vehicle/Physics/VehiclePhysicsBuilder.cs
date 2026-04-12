@@ -303,6 +303,10 @@ public static class VehiclePhysicsBuilder
         BodyComponent chassisBody,
         Vector3 chassisWorldPos)
     {
+        var pressureWheelsByKey = def.PressureWheels
+            .GroupBy(w => w.WheelKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
         // ── Step 1: Try to get wheel centres from flexbody positions ────────────
         // Brake disc flexbodies have an explicit absolute BeamNG pos (e.g. {x:-0.73, y:-1.31, z:0.285})
         // which is exactly the wheel centre.  This is far more reliable than averaging node positions
@@ -492,14 +496,28 @@ public static class VehiclePhysicsBuilder
         var reboundTravelF = ComputeReboundTravel(springF);
         var bumpTravelR = ComputeBumpTravel(springR);
         var reboundTravelR = ComputeReboundTravel(springR);
+        var springHeightF = GetVar("springheight_F_asphalt", GetVar("springheight_F", 0f));
+        var springHeightR = GetVar("springheight_R_asphalt", GetVar("springheight_R", 0f));
+
+        float ComputeTargetOffset(bool isFrontAxle)
+        {
+            var springHeight = isFrontAxle ? springHeightF : springHeightR;
+            return Math.Clamp(-springHeight, -0.08f, 0.08f);
+        }
 
         Entity GetWheel(string label, bool isFront)
         {
+            pressureWheelsByKey.TryGetValue(label, out var pressureWheel);
             Vector3 pos;
             if (wheelCentresFromFlexbodies.TryGetValue(label, out var jbeamPos))
             {
                 pos = BeamNGToStride(jbeamPos);
                 Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label} centre (flexbody)={pos:F3}");
+            }
+            else if (TryGetPressureWheelCenter(def, pressureWheel, out var pressureCenter))
+            {
+                pos = BeamNGToStride(pressureCenter);
+                Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label} centre (pressureWheels)={pos:F3}");
             }
             else if (wheelGroupNodes.TryGetValue(label, out var nodes) && nodes.Count > 0)
             {
@@ -515,7 +533,9 @@ public static class VehiclePhysicsBuilder
             var ratio = isFront ? dampRatioF   : dampRatioR;
             var bumpTravel = isFront ? bumpTravelF : bumpTravelR;
             var reboundTravel = isFront ? reboundTravelF : reboundTravelR;
-            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
+            var suspensionAxis = ResolveSuspensionAxis(def, pressureWheel);
+            var targetOffset = ComputeTargetOffset(isFront);
+            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, suspensionAxis, targetOffset, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
         }
 
         return (GetWheel("wheel_FL", true), GetWheel("wheel_FR", true),
@@ -551,6 +571,8 @@ public static class VehiclePhysicsBuilder
         BodyComponent chassisBody,
         Vector3 chassisWorldPos,
         bool isFront,
+        Vector3 suspensionAxis,
+        float targetOffset,
         float springFreq = 2.5f,
         float dampingRatio = 0.9f,
         float wheelRadius = 0.305f,
@@ -589,8 +611,9 @@ public static class VehiclePhysicsBuilder
 
         var localOffsetA = position - chassisWorldPos;
         var localOffsetB = Vector3.Zero;
-        var suspensionAxis = Vector3.UnitY;
-        const float TargetOffset = 0f;
+        suspensionAxis = suspensionAxis.LengthSquared() > 1e-6f
+            ? Vector3.Normalize(suspensionAxis)
+            : Vector3.UnitY;
         var minimumOffset = -Math.Max(reboundTravel, 0f);
         var maximumOffset = Math.Max(bumpTravel, 0f);
 
@@ -612,7 +635,7 @@ public static class VehiclePhysicsBuilder
             LocalOffsetA     = localOffsetA,
             LocalOffsetB     = localOffsetB,
             LocalPlaneNormal = suspensionAxis,
-            TargetOffset     = TargetOffset,
+            TargetOffset     = targetOffset,
             SpringFrequency    = springFreq,
             SpringDampingRatio = dampingRatio,
             ServoMaximumForce  = 80000f,
@@ -696,12 +719,60 @@ public static class VehiclePhysicsBuilder
             SuspensionLocalOffsetA = localOffsetA,
             SuspensionLocalOffsetB = localOffsetB,
             SuspensionLocalAxis = suspensionAxis,
-            SuspensionTargetOffset = TargetOffset,
+            SuspensionTargetOffset = targetOffset,
             SuspensionMinimumOffset = minimumOffset,
             SuspensionMaximumOffset = maximumOffset,
             TyreModel = new TyreModel(wheelRadius),
         });
         return entity;
+    }
+
+    private static bool TryGetPressureWheelCenter(
+        VehicleDefinition def,
+        JBeamPressureWheel? pressureWheel,
+        out System.Numerics.Vector3 center)
+    {
+        center = default;
+        if (pressureWheel == null)
+        {
+            return false;
+        }
+
+        if (!def.Nodes.TryGetValue(pressureWheel.Node1, out var node1) ||
+            !def.Nodes.TryGetValue(pressureWheel.Node2, out var node2))
+        {
+            return false;
+        }
+
+        center = (node1.Position + node2.Position) * 0.5f;
+        return true;
+    }
+
+    private static Vector3 ResolveSuspensionAxis(VehicleDefinition def, JBeamPressureWheel? pressureWheel)
+    {
+        if (pressureWheel == null)
+        {
+            return Vector3.UnitY;
+        }
+
+        if (!def.Nodes.TryGetValue(pressureWheel.NodeArm, out var armNode))
+        {
+            return Vector3.UnitY;
+        }
+
+        if (!TryGetPressureWheelCenter(def, pressureWheel, out var hubCenter))
+        {
+            return Vector3.UnitY;
+        }
+
+        var axisBeam = hubCenter - armNode.Position;
+        var axisStride = BeamNGToStride(axisBeam);
+        if (axisStride.LengthSquared() < 1e-6f)
+        {
+            return Vector3.UnitY;
+        }
+
+        return Vector3.Normalize(axisStride);
     }
 
     private static Dictionary<string, List<AssembledNode>> EstimateWheelPositions(VehicleDefinition def)

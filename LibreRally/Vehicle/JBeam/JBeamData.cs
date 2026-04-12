@@ -87,6 +87,16 @@ public record JBeamPowertrainDevice(
     float? LsdLockCoef,
     float? LsdRevLockCoef);
 
+public record JBeamPressureWheel(
+    string Name,
+    string WheelKey,
+    string HubGroup,
+    string Group,
+    string Node1,
+    string Node2,
+    string NodeArm,
+    float WheelDir);
+
 public record JBeamTorquePoint(float Rpm, float Torque);
 
 public class JBeamEngineDefinition
@@ -128,6 +138,7 @@ public class JBeamPart
     public List<JBeamFlexBody> FlexBodies { get; init; } = new();
     public Dictionary<string, float> Variables { get; init; } = new(System.StringComparer.OrdinalIgnoreCase);
     public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
+    public List<JBeamPressureWheel> PressureWheels { get; init; } = new();
     public JBeamEngineDefinition? Engine { get; init; }
     public JBeamGearboxDefinition? Gearbox { get; init; }
     public JBeamVehicleControllerDefinition? VehicleController { get; init; }
