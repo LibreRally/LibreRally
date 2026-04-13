@@ -330,6 +330,63 @@ public sealed class TyreModel
     /// </summary>
     private const float ReferencePressure = 220f;
 
+    // ── Wet grip / hydroplaning constants ─────────────────────────────────────
+    // Reference: The Contact Patch, C1603, §Effect of surface water, §Aqua-planing, Table 1.
+
+    /// <summary>
+    /// Reference water depth (m) for normalizing wet grip loss.
+    /// 4 mm = continuous sheet of water above asperity peaks.
+    /// </summary>
+    private const float WetGripReferenceDepth = 0.004f;
+
+    /// <summary>
+    /// Maximum base grip loss fraction from a water film at reference depth.
+    /// Typical dry→wet friction ratio: 0.55/1.0 = 0.45 loss at worst.
+    /// Reference: The Contact Patch, C1603, Table 1.
+    /// </summary>
+    private const float WetGripBaseLoss = 0.60f;
+
+    /// <summary>
+    /// Fraction of base wet grip loss recovered by full macrotexture drainage (0–1).
+    /// High macrotexture surfaces (positive texture, porous asphalt) drain water
+    /// from the contact patch and retain more adhesion grip.
+    /// Reference: The Contact Patch, C1603, §Macro-texture.
+    /// </summary>
+    private const float WetGripDrainageRecovery = 0.50f;
+
+    /// <summary>
+    /// Hydroplaning speed constant: V_hydro = C / √(depth_m).
+    /// Calibrated so that at 2.5 mm depth, V_hydro ≈ 22 m/s (80 km/h).
+    /// C = 22 × √(0.0025) = 22 × 0.05 ≈ 1.1.
+    /// Reference: The Contact Patch, C1603, §Aqua-planing.
+    /// </summary>
+    private const float HydroplaningSpeedConstant = 1.1f;
+
+    /// <summary>
+    /// Fraction of V_hydro at which grip reduction begins ramping.
+    /// Onset at 70% of critical speed gives a smooth transition zone.
+    /// </summary>
+    private const float HydroplaningOnsetFraction = 0.7f;
+
+    /// <summary>
+    /// Boost to effective hydroplaning speed from surface macrotexture.
+    /// Full macrotexture raises V_hydro by 30% (better drainage delays onset).
+    /// </summary>
+    private const float HydroplaningMacrotextureBoost = 0.30f;
+
+    /// <summary>
+    /// Minimum grip fraction during full hydroplaning.
+    /// Even at full aquaplaning, a small residual grip remains from hysteresis.
+    /// </summary>
+    private const float HydroplaningMinGrip = 0.05f;
+
+    /// <summary>
+    /// Maximum grip perturbation amplitude from road noise at full NoiseFactor.
+    /// ±8% variation provides realistic road-surface PSD feel without destabilizing physics.
+    /// Reference: The Contact Patch, C1603, §Statistical modelling of the road surface profile.
+    /// </summary>
+    private const float RoadNoiseGripAmplitude = 0.08f;
+
     public TyreModel(float radius)
     {
         Radius = MathF.Max(0.1f, radius);
@@ -416,8 +473,10 @@ public sealed class TyreModel
         }
 
         // ── Effective friction coefficient ───────────────────────────────────
-        // Combines surface µ, load sensitivity, temperature and wear effects.
-        var mu = ComputeEffectiveFriction(normalLoad, surface, state.Temperature, state.TreadLife);
+        // Combines surface µ, load sensitivity, temperature, wear, wet grip,
+        // hydroplaning, and road roughness noise effects.
+        var mu = ComputeEffectiveFriction(normalLoad, surface, state.Temperature,
+            state.TreadLife, absVx: MathF.Abs(longitudinalVelocity));
 
         var effectiveRollingRadius = ComputeEffectiveRollingRadius(normalLoad);
 
@@ -639,13 +698,58 @@ public sealed class TyreModel
 
     /// <summary>
     /// Computes effective friction coefficient accounting for surface, load sensitivity,
-    /// temperature window, and tread wear.
+    /// temperature window, tread wear, wet grip reduction, hydroplaning, microtexture/macrotexture,
+    /// and road roughness noise.
+    ///
+    /// <para>Wet grip model (three-zone contact patch):
+    /// Water on the road creates a leading wedge that lifts the tyre tread.
+    /// Macrotexture drains water from the contact patch; microtexture penetrates the
+    /// remaining thin film to restore adhesion. At higher speeds or deeper water, the
+    /// drainage capacity is overwhelmed and grip collapses toward hydroplaning.
+    /// Reference: The Contact Patch, C1603, §Dispersal of the water film, §Aqua-planing.</para>
+    ///
+    /// <para>Hydroplaning onset:
+    /// Grip collapses above a critical speed V_hydro ∝ 1/√(waterDepth).
+    /// At 2.5 mm film depth, V_hydro ≈ 80 km/h (22 m/s).
+    /// The transition uses a smooth squared ramp to avoid discontinuities.
+    /// Reference: The Contact Patch, C1603, §Aqua-planing; O'Flaherty, film depth ≈ 2.5 mm.</para>
+    ///
+    /// <para>Road roughness (NoiseFactor):
+    /// A deterministic per-frame micro-variation in µ derived from speed and a
+    /// low-frequency hash, modelling road-surface PSD excitation at the contact patch.
+    /// Amplitude scales with NoiseFactor; frequency increases with speed.
+    /// Reference: The Contact Patch, C1603, §Power spectral density curves.</para>
     /// </summary>
     internal float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
-        float temperature, float treadLife)
+        float temperature, float treadLife, float absVx = 0f)
     {
         // Base µ from surface type
         var mu = PeakFrictionCoefficient * surface.FrictionCoefficient;
+
+        // ── Microtexture / macrotexture grip decomposition ───────────────────
+        // When both texture fields are set (> 0), they modulate the base friction.
+        // Microtexture provides adhesion grip; macrotexture provides hysteresis grip.
+        // Combined contribution: µ *= lerp(0.6, 1.0, (micro + macro) / 2)
+        // This keeps backward compatibility — surfaces with default (0,0) get no change.
+        // Reference: The Contact Patch, C1603, §Road surface texture.
+        var microLevel = Math.Clamp(surface.Microtexture, 0f, 1f);
+        var macroLevel = Math.Clamp(surface.Macrotexture, 0f, 1f);
+        if (microLevel > 0f || macroLevel > 0f)
+        {
+            var textureGrip = 0.6f + 0.4f * (microLevel + macroLevel) * 0.5f;
+            mu *= textureGrip;
+        }
+
+        // ── Wet grip reduction ───────────────────────────────────────────────
+        // Water film reduces adhesion (microtexture) grip while hysteresis
+        // (macrotexture) grip is partially retained. Macrotexture helps evacuate
+        // water from the contact patch, preserving more grip.
+        // Reference: The Contact Patch, C1603, §Effect of surface water.
+        var waterDepth = MathF.Max(surface.WaterDepth, 0f);
+        if (waterDepth > 0f)
+        {
+            mu *= ComputeWetGripFactor(waterDepth, macroLevel, absVx);
+        }
 
         // Load sensitivity: rubber grip follows a non-linear power-law with load.
         var referenceLoad = MathF.Max(ReferenceLoad, 1f);
@@ -673,8 +777,106 @@ public sealed class TyreModel
         var wearFactor = WornGripFraction + (1f - WornGripFraction) * Math.Clamp(treadLife, 0f, 1f);
         mu *= wearFactor;
 
+        // ── Road roughness micro-variation (NoiseFactor) ─────────────────────
+        // Applies a small deterministic perturbation to µ based on speed, modelling
+        // the effect of road-surface PSD on instantaneous grip at the contact patch.
+        // Uses a fast integer hash of speed-scaled position to avoid heap allocations.
+        // Reference: The Contact Patch, C1603, §Power spectral density curves.
+        var noiseFactor = Math.Clamp(surface.NoiseFactor, 0f, 1f);
+        if (noiseFactor > 0f)
+        {
+            mu *= ComputeRoadNoiseGripFactor(noiseFactor, absVx);
+        }
+
         return MathF.Max(mu, 0.05f);
     }
+
+    /// <summary>
+    /// Computes the wet grip reduction factor from water film depth, surface macrotexture,
+    /// and vehicle speed. Includes hydroplaning onset.
+    ///
+    /// <para>The model has two components:</para>
+    /// <list type="number">
+    ///   <item>Base wet grip loss: thin film reduces adhesion grip by ~30–50%.
+    ///         Macrotexture drainage capacity mitigates this loss.
+    ///         Reference: The Contact Patch, C1603, Table 1 (wet µ ≈ 0.2–0.65 vs dry 0.8–1.0).</item>
+    ///   <item>Speed-dependent hydroplaning: above a critical speed V_hydro, the
+    ///         leading water wedge lifts the tyre and grip collapses.
+    ///         V_hydro = HydroplaningSpeedConstant / √(waterDepth).
+    ///         Reference: The Contact Patch, C1603, §Aqua-planing.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="waterDepth">Surface water film thickness (m).</param>
+    /// <param name="macrotexture">Surface macrotexture level (0–1).</param>
+    /// <param name="absSpeed">Absolute longitudinal speed at the contact patch (m/s).</param>
+    /// <returns>Grip multiplier in range [HydroplaningMinGrip, 1.0].</returns>
+    internal static float ComputeWetGripFactor(float waterDepth, float macrotexture, float absSpeed)
+    {
+        if (waterDepth <= 0f)
+        {
+            return 1f;
+        }
+
+        // ── 1. Base wet grip loss ────────────────────────────────────────────
+        // Water film depth normalized to a reference heavy-rain depth (4 mm).
+        // At reference depth with zero macrotexture, grip drops to ~40% of dry.
+        // Macrotexture drainage recovers up to 50% of the loss.
+        var normalizedDepth = Math.Clamp(waterDepth / WetGripReferenceDepth, 0f, 1f);
+        var drainageRecovery = macrotexture * WetGripDrainageRecovery;
+        var baseLoss = normalizedDepth * WetGripBaseLoss * (1f - drainageRecovery);
+        var wetFactor = 1f - baseLoss;
+
+        // ── 2. Speed-dependent hydroplaning ──────────────────────────────────
+        // Critical speed: V_hydro = C / √(depth_m)
+        // Above this speed, the water wedge extends to cover the full contact patch.
+        // Transition uses a smooth squared ramp for numerical stability.
+        var hydroSpeed = HydroplaningSpeedConstant / MathF.Sqrt(waterDepth);
+
+        // Macrotexture raises the effective hydroplaning speed (better drainage delays onset).
+        hydroSpeed *= 1f + macrotexture * HydroplaningMacrotextureBoost;
+
+        if (absSpeed > hydroSpeed * HydroplaningOnsetFraction)
+        {
+            var onset = hydroSpeed * HydroplaningOnsetFraction;
+            var t = Math.Clamp((absSpeed - onset) / MathF.Max(hydroSpeed - onset, 0.1f), 0f, 1f);
+            var hydroFactor = 1f - t * t * (1f - HydroplaningMinGrip);
+            wetFactor *= hydroFactor;
+        }
+
+        return MathF.Max(wetFactor, HydroplaningMinGrip);
+    }
+
+    /// <summary>
+    /// Computes a deterministic grip micro-variation factor from road roughness (NoiseFactor).
+    /// Models the effect of road-surface PSD on instantaneous grip at the contact patch.
+    /// Uses a fast integer hash of a speed-proportional counter to avoid per-frame allocations.
+    /// Reference: The Contact Patch, C1603, §Power spectral density curves.
+    /// </summary>
+    /// <param name="noiseFactor">Road roughness amplitude (0–1).</param>
+    /// <param name="absSpeed">Absolute longitudinal speed (m/s).</param>
+    /// <returns>Grip multiplier in range [1 − noiseFactor × 0.08, 1 + noiseFactor × 0.08].</returns>
+    internal static float ComputeRoadNoiseGripFactor(float noiseFactor, float absSpeed)
+    {
+        // Combine speed with a global phase counter to get a changing but deterministic value.
+        // The hash rate increases with speed, modelling higher-frequency PSD excitation.
+        _noisePhase += absSpeed * 0.1f;
+        if (_noisePhase > 1e6f) _noisePhase -= 1e6f;
+
+        // Simple integer hash — fast, deterministic, no allocations.
+        var hash = (uint)BitConverter.SingleToInt32Bits(_noisePhase);
+        hash ^= hash >> 16;
+        hash *= 0x45d9f3b;
+        hash ^= hash >> 16;
+
+        // Map to [-1, 1] range.
+        var normalized = (hash & 0x7FFFFFFF) / (float)0x7FFFFFFF * 2f - 1f;
+
+        // Scale perturbation: ±8% at full NoiseFactor.
+        return 1f + normalized * noiseFactor * RoadNoiseGripAmplitude;
+    }
+
+    /// <summary>Accumulated phase for road noise grip perturbation. Shared across all wheels for coherence.</summary>
+    [ThreadStatic] private static float _noisePhase;
 
     internal float ComputeEffectivePatchLength(float normalLoad)
     {
