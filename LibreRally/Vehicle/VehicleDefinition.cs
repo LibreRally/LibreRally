@@ -119,4 +119,7 @@ public class VehicleDefinition
 
     /// <summary>Shift and launch metadata parsed from the active JBeam vehicleController sections, when present.</summary>
     public JBeamVehicleControllerDefinition? VehicleController { get; init; }
+
+    /// <summary>Brake-controller metadata parsed from active parts, including ABS flags and targets.</summary>
+    public JBeamBrakeControlDefinition? BrakeControl { get; init; }
 }

@@ -171,7 +171,7 @@ public sealed class VehicleTelemetryOverlay : GameSystemBase
         y += line + 8;
 
         DrawText(
-            $"Traction slip {Car.DrivenWheelSlipRatio:F2} | lamp {(Car.TractionLossDetected ? "ON" : "OFF")} | TCS {(Car.TractionControlActive ? "ON" : "OFF")} | scale {Car.TractionControlTorqueScale:F2}",
+            $"Traction slip {Car.DrivenWheelSlipRatio:F2} | lamp {(Car.TractionLossDetected ? "ON" : "OFF")} | ABS {(Car.AbsEnabled ? (Car.AbsActive ? "ON" : "RDY") : "OFF")} | TCS {(Car.TractionControlActive ? "ON" : "OFF")} | scale {Car.TractionControlTorqueScale:F2}",
             x,
             y,
             new Color(255, 214, 148, 255));

@@ -21,16 +21,42 @@ public static class JBeamAssembler
     /// <summary>Loads a vehicle from a folder and all sub-folders (for RLA_Evo Jbeams/ layout).</summary>
     public static VehicleDefinition Assemble(string vehicleFolder, PcConfig? pcConfig = null)
     {
-        // Collect all jbeam files in the folder (and one level down for Jbeams/ subdirectory)
-        var jbeamFiles = Directory
-            .EnumerateFiles(vehicleFolder, "*.jbeam", SearchOption.AllDirectories)
+        return Assemble([vehicleFolder], vehicleFolder, pcConfig);
+    }
+
+    /// <summary>
+    /// Loads a vehicle from one or more search folders, using <paramref name="vehicleFolder"/>
+    /// as the primary folder for diagnostics and config lookup.
+    /// </summary>
+    public static VehicleDefinition Assemble(
+        IEnumerable<string> searchFolders,
+        string vehicleFolder,
+        PcConfig? pcConfig = null)
+    {
+        var allSearchFolders = searchFolders
+            .Append(vehicleFolder)
+            .Where(Directory.Exists)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Collect all jbeam files across the active search folders.
+        var jbeamFiles = allSearchFolders
+            .SelectMany(folder => Directory.EnumerateFiles(folder, "*.jbeam", SearchOption.AllDirectories))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var vars = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in jbeamFiles)
         {
-            vars = JBeamParser.ParseVariableDefaultsFile(file, vars);
+            try
+            {
+                vars = JBeamParser.ParseVariableDefaultsFile(file, vars);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[JBeamAssembler] Failed to parse variable defaults from '{file}': {ex.Message}");
+            }
         }
 
         if (pcConfig?.Vars != null)
@@ -116,11 +142,12 @@ public static class JBeamAssembler
 
         foreach (var slot in part.Slots)
         {
-            // .pc config overrides the default; empty string = no part
             var partName = slot.Default;
             if (pcParts != null && pcParts.TryGetValue(slot.Type, out var pcOverride))
             {
-	            partName = pcOverride;
+	            partName = string.IsNullOrWhiteSpace(pcOverride)
+                    ? slot.Default
+                    : pcOverride;
             }
 
             if (string.IsNullOrEmpty(partName))
@@ -159,6 +186,7 @@ public static class JBeamAssembler
         JBeamEngineDefinition? engine = null;
         JBeamGearboxDefinition? gearbox = null;
         JBeamVehicleControllerDefinition? controller = null;
+        JBeamBrakeControlDefinition? brakeControl = null;
         var resolvedParts = parts.Select(p => p.Part).ToList();
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
@@ -184,7 +212,7 @@ public static class JBeamAssembler
 
                 allNodes[node.Id] = new AssembledNode(
                     node.Id,
-                    node.Position,
+                    ApplySlotOffset(node.Position, resolved.VisualOffset, node.Properties.Groups),
                     node.Properties.Weight,
                     node.Properties.Groups,
                     node.Properties.Collision);
@@ -205,7 +233,7 @@ public static class JBeamAssembler
                 allFlexBodies.Add(new AssembledFlexBody(
                     fb.Mesh,
                     fb.Groups,
-                    CombineFlexBodyPosition(fb.Position, resolved.VisualOffset),
+                    CombineFlexBodyPosition(fb.Position, resolved.VisualOffset, fb.Groups),
                     fb.Rotation,
                     fb.Scale,
                     part.Name,
@@ -216,6 +244,7 @@ public static class JBeamAssembler
             engine ??= part.Engine;
             gearbox ??= part.Gearbox;
             controller = MergeVehicleController(controller, part.VehicleController);
+            brakeControl = MergeBrakeControl(brakeControl, part.BrakeControl);
         }
 
         // Build logical parts:
@@ -242,6 +271,7 @@ public static class JBeamAssembler
             Engine = engine,
             Gearbox = gearbox,
             VehicleController = controller,
+            BrakeControl = brakeControl,
         };
     }
 
@@ -270,14 +300,81 @@ public static class JBeamAssembler
         };
     }
 
-    private static Vector3? CombineFlexBodyPosition(Vector3? basePosition, Vector3 slotOffset)
+    private static JBeamBrakeControlDefinition? MergeBrakeControl(
+        JBeamBrakeControlDefinition? current,
+        JBeamBrakeControlDefinition? next)
+    {
+        if (next == null)
+        {
+            return current;
+        }
+
+        if (current == null)
+        {
+            return next;
+        }
+
+        return new JBeamBrakeControlDefinition
+        {
+            EnableAbs = next.EnableAbs ?? current.EnableAbs,
+            AbsSlipRatioTarget = next.AbsSlipRatioTarget ?? current.AbsSlipRatioTarget,
+            HasLegacyAbsController = current.HasLegacyAbsController || next.HasLegacyAbsController,
+        };
+    }
+
+    private static Vector3? CombineFlexBodyPosition(Vector3? basePosition, Vector3 slotOffset, IReadOnlyCollection<string> groups)
     {
         if (basePosition == null && slotOffset == Vector3.Zero)
         {
 	        return null;
         }
 
-        return (basePosition ?? Vector3.Zero) + slotOffset;
+        return ApplySlotOffset(basePosition ?? Vector3.Zero, slotOffset, groups);
+    }
+
+    private static Vector3 ApplySlotOffset(Vector3 basePosition, Vector3 slotOffset, IReadOnlyCollection<string> groups)
+    {
+        if (slotOffset == Vector3.Zero)
+        {
+            return basePosition;
+        }
+
+        var adjustedOffset = slotOffset;
+        if (slotOffset.X != 0f && TryResolveLateralSideSign(groups, basePosition.X, out var sideSign))
+        {
+            adjustedOffset.X *= sideSign;
+        }
+
+        return basePosition + adjustedOffset;
+    }
+
+    private static bool TryResolveLateralSideSign(IReadOnlyCollection<string> groups, float fallbackX, out float sideSign)
+    {
+        foreach (var group in groups)
+        {
+            if (group.EndsWith("_FR", StringComparison.OrdinalIgnoreCase) ||
+                group.EndsWith("_RR", StringComparison.OrdinalIgnoreCase))
+            {
+                sideSign = -1f;
+                return true;
+            }
+
+            if (group.EndsWith("_FL", StringComparison.OrdinalIgnoreCase) ||
+                group.EndsWith("_RL", StringComparison.OrdinalIgnoreCase))
+            {
+                sideSign = 1f;
+                return true;
+            }
+        }
+
+        if (Math.Abs(fallbackX) > 1e-4f)
+        {
+            sideSign = MathF.Sign(fallbackX);
+            return true;
+        }
+
+        sideSign = 0f;
+        return false;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

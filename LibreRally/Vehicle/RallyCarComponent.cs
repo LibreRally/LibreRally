@@ -115,6 +115,30 @@ public class RallyCarComponent : SyncScript
     /// <summary>Driven-wheel slip ratio above which the HUD traction warning lamp turns on.</summary>
     public float TractionLossSlipThreshold { get; set; } = 0.18f;
 
+    /// <summary>Whether the active vehicle definition equips ABS.</summary>
+    public bool AbsEnabled { get; set; }
+
+    /// <summary>Allows UI systems to temporarily block player input without pausing physics.</summary>
+    public bool PlayerInputEnabled { get; set; } = true;
+
+    /// <summary>Target braking slip-ratio magnitude taken from the active JBeam brake definition.</summary>
+    public float AbsSlipRatioTarget { get; set; } = 0.15f;
+
+    /// <summary>Slip-ratio window above the ABS target over which brake torque ramps down to the minimum scale.</summary>
+    public float AbsSlipRatioWindow { get; set; } = 0.10f;
+
+    /// <summary>Minimum fraction of service-brake torque ABS still allows when a wheel is close to locking.</summary>
+    public float AbsMinBrakeTorqueScale { get; set; } = 0.18f;
+
+    /// <summary>ABS stays inactive at parking speeds to avoid chatter right at a stop.</summary>
+    public float AbsMinimumSpeedKmh { get; set; } = 4f;
+
+    /// <summary>How quickly ABS removes brake torque once lock-up is detected (1/s).</summary>
+    public float AbsApplyRate { get; set; } = 24f;
+
+    /// <summary>How quickly ABS restores brake torque after wheel speed recovers (1/s).</summary>
+    public float AbsReleaseRate { get; set; } = 12f;
+
     /// <summary>RPM to upshift at (auto-transmission).</summary>
     public float ShiftUpRpm { get; set; } = 6500f;
 
@@ -143,6 +167,7 @@ public class RallyCarComponent : SyncScript
     public bool HandbrakeEngaged { get; private set; }
     public bool TractionLossDetected { get; private set; }
     public bool TractionControlActive { get; private set; }
+    public bool AbsActive { get; private set; }
     public float DrivenWheelSlipRatio { get; private set; }
     public float TractionControlTorqueScale { get; private set; } = 1f;
     public int CurrentGear { get; private set; } = 1;
@@ -164,6 +189,7 @@ public class RallyCarComponent : SyncScript
     private readonly float[] _suspensionCompressions = new float[VehicleDynamicsSystem.WheelCount];
     private readonly float[] _brakeTorques = new float[VehicleDynamicsSystem.WheelCount];
     private readonly float[] _camberAngles = new float[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _absBrakeTorqueScales = { 1f, 1f, 1f, 1f };
 
     public override void Start()
     {
@@ -189,42 +215,44 @@ public class RallyCarComponent : SyncScript
         }
 
         // ── Input ────────────────────────────────────────────────────────────
-        var pad = Input.GamePads.FirstOrDefault();
-
+        var pad = PlayerInputEnabled ? Input.GamePads.FirstOrDefault() : null;
         float throttle = 0f, brake = 0f, steer = 0f;
         var handbrakeRequested = false;
 
-        if (pad != null)
+        if (PlayerInputEnabled)
         {
-            throttle  = ApplyTriggerDeadzone(pad.State.RightTrigger, GamePadTriggerDeadzone);
-            brake     = ApplyTriggerDeadzone(pad.State.LeftTrigger, GamePadTriggerDeadzone);
-            steer     = ApplySignedAxisDeadzone(pad.State.LeftThumb.X, GamePadSteerDeadzone);
-            handbrakeRequested = pad.IsButtonDown(GamePadButton.A);
-        }
+            if (pad != null)
+            {
+                throttle  = ApplyTriggerDeadzone(pad.State.RightTrigger, GamePadTriggerDeadzone);
+                brake     = ApplyTriggerDeadzone(pad.State.LeftTrigger, GamePadTriggerDeadzone);
+                steer     = ApplySignedAxisDeadzone(pad.State.LeftThumb.X, GamePadSteerDeadzone);
+                handbrakeRequested = pad.IsButtonDown(GamePadButton.A);
+            }
 
-        if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W))
-        {
-	        throttle  = MathF.Max(throttle, 1f);
-        }
+            if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W))
+            {
+	            throttle  = MathF.Max(throttle, 1f);
+            }
 
-        if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S))
-        {
-	        brake     = MathF.Max(brake,    1f);
-        }
+            if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S))
+            {
+	            brake     = MathF.Max(brake,    1f);
+            }
 
-        if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A))
-        {
-	        steer     = MathF.Min(steer,   -1f);
-        }
+            if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A))
+            {
+	            steer     = MathF.Min(steer,   -1f);
+            }
 
-        if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D))
-        {
-	        steer     = MathF.Max(steer,    1f);
-        }
+            if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D))
+            {
+	            steer     = MathF.Max(steer,    1f);
+            }
 
-        if (Input.IsKeyDown(Keys.Space))
-        {
-	        handbrakeRequested = true;
+            if (Input.IsKeyDown(Keys.Space))
+            {
+	            handbrakeRequested = true;
+            }
         }
 
         // ── Chassis physics ──────────────────────────────────────────────────
@@ -516,7 +544,8 @@ public class RallyCarComponent : SyncScript
         // ── Vehicle dynamics system ──────────────────────────────────────────
         // Computes tyre forces (slip-based), load transfer, anti-roll bars,
         // differential torque split, and applies impulses to BEPU bodies.
-        if (Dynamics != null)
+        var dynamics = Dynamics;
+        if (dynamics != null)
         {
             // Gather per-wheel data into cached arrays (zero allocation)
             var wheelTorqueAtCrank = MathF.Max(0f, crankTorque) * effectiveRatio;
@@ -525,9 +554,37 @@ public class RallyCarComponent : SyncScript
             // Compute brake torque for dynamics system
             var serviceBrakeTorque = BrakeMotorForce * WheelRadius * serviceBrakeInput;
             var handbrakeTorque = BrakeMotorForce * WheelRadius * HandbrakeForceMultiplier;
+            var absCanIntervene = isBraking
+                                  && AbsEnabled
+                                  && !isHandbrake
+                                  && SpeedKmh >= AbsMinimumSpeedKmh;
+            AbsActive = false;
             for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
             {
-                _brakeTorques[i] = isBraking ? serviceBrakeTorque : 0f;
+                var wheelServiceBrakeTorque = isBraking ? serviceBrakeTorque : 0f;
+                if (absCanIntervene)
+                {
+                    var wheelState = dynamics.WheelStates[i];
+                    var rollingDirection = ResolveRollingDirection(forwardSpeed, wheelState.AngularVelocity);
+                    var targetBrakeScale = dynamics.WheelGrounded[i]
+                        ? ComputeAbsBrakeTorqueScale(
+                            wheelState.SlipRatio,
+                            rollingDirection,
+                            AbsSlipRatioTarget,
+                            AbsSlipRatioWindow,
+                            AbsMinBrakeTorqueScale)
+                        : 1f;
+                    var responseRate = targetBrakeScale < _absBrakeTorqueScales[i] ? AbsApplyRate : AbsReleaseRate;
+                    _absBrakeTorqueScales[i] = AdvanceControllerScale(_absBrakeTorqueScales[i], targetBrakeScale, responseRate, dt);
+                    wheelServiceBrakeTorque *= _absBrakeTorqueScales[i];
+                    AbsActive |= _absBrakeTorqueScales[i] < 0.98f;
+                }
+                else
+                {
+                    _absBrakeTorqueScales[i] = 1f;
+                }
+
+                _brakeTorques[i] = wheelServiceBrakeTorque;
                 if (isHandbrake && i >= VehicleDynamicsSystem.RL)
                 {
 	                _brakeTorques[i] += handbrakeTorque;
@@ -542,7 +599,7 @@ public class RallyCarComponent : SyncScript
                     ? -drivenDir * engBrake * effectiveRatio
                     : 0f;
 
-            Dynamics.Update(
+            dynamics.Update(
                 chassisBody,
                 in chassisWorld,
                 _wheelPositions,
@@ -815,8 +872,10 @@ public class RallyCarComponent : SyncScript
         HandbrakeEngaged = false;
         TractionLossDetected = false;
         TractionControlActive = false;
+        AbsActive = false;
         DrivenWheelSlipRatio = 0f;
         TractionControlTorqueScale = 1f;
+        Array.Fill(_absBrakeTorqueScales, 1f);
     }
 
     private void SetVehicleBodiesAwake(bool awake)
@@ -1007,6 +1066,53 @@ public class RallyCarComponent : SyncScript
         var excessSlipRpm = MathF.Max(0f, (MathF.Abs(maxDrivenWheelOmega) - MathF.Abs(roadWheelOmega)) * omegaToRpm);
         var slipBlend = Math.Clamp(excessSlipRpm / safeWindowRpm, 0f, 1f);
         return 1f + (clampedMinScale - 1f) * slipBlend;
+    }
+
+    internal static float ComputeAbsBrakeTorqueScale(
+        float slipRatio,
+        float rollingDirection,
+        float slipRatioTarget,
+        float slipRatioWindow,
+        float minBrakeScale)
+    {
+        if (MathF.Abs(rollingDirection) < 0.5f)
+        {
+            return 1f;
+        }
+
+        var target = Math.Clamp(slipRatioTarget, 0.02f, 0.5f);
+        var window = MathF.Max(slipRatioWindow, 0.02f);
+        var clampedMinScale = Math.Clamp(minBrakeScale, 0f, 1f);
+        var brakingSlip = MathF.Max(0f, -slipRatio * MathF.Sign(rollingDirection));
+        var excessSlip = MathF.Max(0f, brakingSlip - target);
+        var slipBlend = Math.Clamp(excessSlip / window, 0f, 1f);
+        return 1f + (clampedMinScale - 1f) * slipBlend;
+    }
+
+    internal static float ResolveRollingDirection(float forwardSpeed, float wheelAngularVelocity)
+    {
+        if (MathF.Abs(forwardSpeed) > 0.5f)
+        {
+            return MathF.Sign(forwardSpeed);
+        }
+
+        if (MathF.Abs(wheelAngularVelocity) > 0.5f)
+        {
+            return MathF.Sign(wheelAngularVelocity);
+        }
+
+        return 0f;
+    }
+
+    private static float AdvanceControllerScale(float currentScale, float targetScale, float responseRate, float dt)
+    {
+        if (dt <= 0f)
+        {
+            return targetScale;
+        }
+
+        var blend = Math.Clamp(responseRate * dt, 0f, 1f);
+        return currentScale + (targetScale - currentScale) * blend;
     }
 
     private static float MeasureSteerAngle(Matrix chassisWorld, Matrix wheelWorld)
