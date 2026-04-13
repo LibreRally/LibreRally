@@ -580,7 +580,7 @@ public class TyreModelTests
     // ── Microtexture / macrotexture tests ────────────────────────────────────
 
     [Fact]
-    public void EffectiveFriction_TextureModulatesGrip()
+    public void EffectiveFriction_TextureModulatesWetGrip()
     {
         var model = new TyreModel(0.305f)
         {
@@ -592,28 +592,31 @@ public class TyreModelTests
             WornGripFraction = 1.0f,
         };
 
-        var highTexture = new SurfaceProperties
+        // Microtexture/macrotexture no longer modulate dry baseline µ directly;
+        // they affect wet grip retention via macrotexture drainage recovery.
+        var highMacro = new SurfaceProperties
         {
             FrictionCoefficient = 1.0f,
             Microtexture = 0.9f,
             Macrotexture = 0.9f,
-            WaterDepth = 0f,
+            WaterDepth = 0.002f,
             NoiseFactor = 0f,
         };
 
-        var lowTexture = new SurfaceProperties
+        var lowMacro = new SurfaceProperties
         {
             FrictionCoefficient = 1.0f,
             Microtexture = 0.3f,
             Macrotexture = 0.2f,
-            WaterDepth = 0f,
+            WaterDepth = 0.002f,
             NoiseFactor = 0f,
         };
 
-        float muHigh = model.ComputeEffectiveFriction(3000f, highTexture, 30f, 1.0f);
-        float muLow = model.ComputeEffectiveFriction(3000f, lowTexture, 30f, 1.0f);
+        float muHighMacro = model.ComputeEffectiveFriction(3000f, highMacro, 30f, 1.0f, absVx: 15f);
+        float muLowMacro = model.ComputeEffectiveFriction(3000f, lowMacro, 30f, 1.0f, absVx: 15f);
 
-        Assert.True(muHigh > muLow);
+        // Higher macrotexture drains water better → higher grip on wet surface
+        Assert.True(muHighMacro > muLowMacro);
     }
 
     // ── WetTarmac surface integration tests ─────────────────────────────────
@@ -654,7 +657,7 @@ public class TyreModelTests
     public void RoadNoiseGripFactor_ReturnsNearUnity()
     {
         // With very low noise, the factor should be close to 1.0
-        float factor = TyreModel.ComputeRoadNoiseGripFactor(0.01f, 20f);
+        float factor = TyreModel.ComputeRoadNoiseGripFactor(0.01f, 20f, 0.01f);
 
         Assert.InRange(factor, 0.99f, 1.01f);
     }
@@ -665,9 +668,18 @@ public class TyreModelTests
         // At full noise, the factor must stay within ±8% of 1.0
         for (int i = 0; i < 100; i++)
         {
-            float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, (float)i * 0.5f);
+            float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, (float)i * 0.5f, 0.01f);
             Assert.InRange(factor, 0.92f - 0.001f, 1.08f + 0.001f);
         }
+    }
+
+    [Fact]
+    public void RoadNoiseGripFactor_ReturnsUnityAtZeroSpeed()
+    {
+        // At zero speed, PSD excitation is negligible — should return 1.0
+        float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, 0f, 0.01f);
+
+        Assert.Equal(1f, factor);
     }
 
     // ── Default surface calibration tests ────────────────────────────────────
