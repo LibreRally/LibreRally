@@ -116,6 +116,68 @@ public class ColladaLoaderTests
         }
     }
 
+    [Fact]
+    public void Load_FlipsRawGeometryTriangleWindingForStrideFrontFaces()
+    {
+        string path = WriteTempDae(
+            $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+              <library_geometries>
+                {{BuildTriangleGeometry("raw-winding-mesh", "raw_winding_part")}}
+              </library_geometries>
+            </COLLADA>
+            """);
+
+        try
+        {
+            ColladaMesh mesh = Assert.Single(ColladaLoader.Load(path));
+
+            Assert.Equal(new[] { 0, 2, 1 }, mesh.Indices);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Load_NegativeDeterminantSceneTransform_FlipsWindingBack()
+    {
+        string path = WriteTempDae(
+            $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+              <library_geometries>
+                {{BuildTriangleGeometry("mirrored-mesh", "mirrored_part")}}
+              </library_geometries>
+              <library_visual_scenes>
+                <visual_scene id="Scene" name="Scene">
+                  <node id="mirrored_node" name="mirrored_node" type="NODE">
+                    <matrix sid="transform">-1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1</matrix>
+                    <instance_geometry url="#mirrored-mesh" />
+                  </node>
+                </visual_scene>
+              </library_visual_scenes>
+              <scene>
+                <instance_visual_scene url="#Scene" />
+              </scene>
+            </COLLADA>
+            """);
+
+        try
+        {
+            ColladaMesh mesh = Assert.Single(ColladaLoader.Load(path));
+
+            Assert.Equal(new[] { 0, 1, 2 }, mesh.Indices);
+            Assert.Equal(new Vector3(-1f, 0f, 0f), mesh.Vertices[1].Position);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteTempDae(string content)
     {
         string path = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.dae");

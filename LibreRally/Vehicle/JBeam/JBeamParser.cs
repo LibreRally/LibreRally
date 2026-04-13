@@ -219,16 +219,18 @@ public static class JBeamParser
             if (char.IsDigit(c) || c == '-')
             {
                 MaybeComma();
+                var tokenStart = i;
                 while (i < input.Length)
                 {
                     var nc = input[i];
                     if (char.IsDigit(nc) || nc == '.' || nc == 'e' || nc == 'E' || nc == '+' || nc == '-')
-                    { sb.Append(nc); i++; }
+                    { i++; }
                     else
                     {
 	                    break;
                     }
                 }
+                sb.Append(NormalizeJsonNumberToken(input[tokenStart..i]));
                 afterValue = true;
                 continue;
             }
@@ -248,6 +250,43 @@ public static class JBeamParser
         }
 
         return sb.ToString();
+    }
+
+    private static string NormalizeJsonNumberToken(string token)
+    {
+        if (string.IsNullOrEmpty(token))
+        {
+            return token;
+        }
+
+        var sign = token[0] == '-' ? "-" : string.Empty;
+        var mantissaStart = sign.Length;
+        var mantissaAndExponent = token[mantissaStart..];
+        var exponentIndex = mantissaAndExponent.IndexOfAny('e', 'E');
+        var mantissa = exponentIndex >= 0
+            ? mantissaAndExponent[..exponentIndex]
+            : mantissaAndExponent;
+        var exponent = exponentIndex >= 0
+            ? mantissaAndExponent[exponentIndex..]
+            : string.Empty;
+        var dotIndex = mantissa.IndexOf('.');
+        var integerPart = dotIndex >= 0
+            ? mantissa[..dotIndex]
+            : mantissa;
+        var fractionalPart = dotIndex >= 0
+            ? mantissa[dotIndex..]
+            : string.Empty;
+
+        if (integerPart.Length > 1 && integerPart[0] == '0')
+        {
+            integerPart = integerPart.TrimStart('0');
+            if (integerPart.Length == 0)
+            {
+                integerPart = "0";
+            }
+        }
+
+        return sign + integerPart + fractionalPart + exponent;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -286,6 +325,7 @@ public static class JBeamParser
             Engine = ParseEngineDefinition(obj),
             Gearbox = ParseGearboxDefinition(obj),
             VehicleController = ParseVehicleControllerDefinition(obj),
+            BrakeControl = ParseBrakeControlDefinition(obj),
             RefNodes = ParseRefNodes(obj),
         };
 
@@ -451,12 +491,18 @@ public static class JBeamParser
 
         if (obj.TryGetProperty("collision", out var col))
         {
-	        collision = col.GetBoolean();
+            if (TryGetBool(col, out var parsedCollision))
+            {
+	            collision = parsedCollision;
+            }
         }
 
         if (obj.TryGetProperty("selfCollision", out var sc))
         {
-	        selfCollision = sc.GetBoolean();
+            if (TryGetBool(sc, out var parsedSelfCollision))
+            {
+	            selfCollision = parsedSelfCollision;
+            }
         }
 
         if (obj.TryGetProperty("nodeMaterial", out var nm))
@@ -881,6 +927,53 @@ public static class JBeamParser
         return pressureWheels;
     }
 
+    private static JBeamBrakeControlDefinition? ParseBrakeControlDefinition(JsonElement obj)
+    {
+        bool? enableAbs = null;
+        float? absSlipRatioTarget = null;
+        var hasLegacyAbsController = false;
+
+        if (obj.TryGetProperty("pressureWheels", out var pressureWheels) &&
+            pressureWheels.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in pressureWheels.EnumerateArray())
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                if (element.TryGetProperty("enableABS", out var enableAbsElement))
+                {
+                    enableAbs = GetBool(enableAbsElement);
+                }
+
+                if (element.TryGetProperty("absSlipRatioTarget", out var absSlipRatioTargetElement))
+                {
+                    absSlipRatioTarget = GetFloat(absSlipRatioTargetElement);
+                }
+            }
+        }
+
+        if (obj.TryGetProperty("absLegacy", out var absLegacySection) &&
+            absLegacySection.ValueKind == JsonValueKind.Object)
+        {
+            hasLegacyAbsController = true;
+        }
+
+        if (enableAbs == null && absSlipRatioTarget == null && !hasLegacyAbsController)
+        {
+            return null;
+        }
+
+        return new JBeamBrakeControlDefinition
+        {
+            EnableAbs = enableAbs,
+            AbsSlipRatioTarget = absSlipRatioTarget,
+            HasLegacyAbsController = hasLegacyAbsController,
+        };
+    }
+
     private static string ToWheelKey(string name)
     {
         var normalized = (name ?? "").Trim().ToUpperInvariant();
@@ -1111,6 +1204,62 @@ public static class JBeamParser
             return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : 0f;
         }
         return 0f;
+    }
+
+    private static bool GetBool(JsonElement e)
+    {
+        return e.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => MathF.Abs(e.GetSingle()) > float.Epsilon,
+            JsonValueKind.String => TryParseBooleanString(e.GetString(), out var value) && value,
+            _ => false,
+        };
+    }
+
+    private static bool TryGetBool(JsonElement e, out bool value)
+    {
+        switch (e.ValueKind)
+        {
+            case JsonValueKind.True:
+                value = true;
+                return true;
+            case JsonValueKind.False:
+                value = false;
+                return true;
+            case JsonValueKind.Number:
+                value = MathF.Abs(e.GetSingle()) > float.Epsilon;
+                return true;
+            case JsonValueKind.String:
+                return TryParseBooleanString(e.GetString(), out value);
+            default:
+                value = false;
+                return false;
+        }
+    }
+
+    private static bool TryParseBooleanString(string? raw, out bool value)
+    {
+        value = false;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+        if (bool.TryParse(trimmed, out value))
+        {
+            return true;
+        }
+
+        if (float.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var numericValue))
+        {
+            value = MathF.Abs(numericValue) > float.Epsilon;
+            return true;
+        }
+
+        return false;
     }
 
     private static float GetFloatOrMax(JsonElement e)
@@ -1378,15 +1527,16 @@ public static class JBeamParser
             i++;
         }
 
-        if (rootCloseCount <= 1)
-        {
-	        return input; // single root, nothing to do
-        }
-
-        // ── Fix 2 / Fix 3: multiple root close events ─────────────────────────
-        // Either there are multiple `{...} {...}` blocks or a trailing stray `}`.
+        // ── Fix 2 / Fix 3: normalize root boundaries and trailing junk ────────
+        // Even single-root files can still be malformed as `{ ... },` at EOF, so
+        // always run the boundary cleanup pass instead of returning early here.
+        // Common cases:
+        //   - multiple `{...} {...}` blocks
+        //   - a trailing stray `}`
+        //   - a dangling root-level comma after the final `}`
         // Walk the text:
         //   - When depth reaches 0 at '}' and the NEXT token is '{', merge them (insert ',')
+        //   - When nothing meaningful remains, discard trailing commas / stray braces
         //   - When depth would go negative at '}', drop it (stray brace)
         var sb = new StringBuilder(input.Length);
         depth = 0;
@@ -1441,7 +1591,9 @@ public static class JBeamParser
                 }
                 if (depth == 0)
                 {
-                    // Look ahead past whitespace/comments to see if another '{' follows
+                    // Look ahead past whitespace/comments and separator junk to see
+                    // whether another root object follows, or whether the rest of the
+                    // file is just malformed trailing root punctuation.
                     var j = i + 1;
                     while (j < input.Length)
                     {
@@ -1451,6 +1603,8 @@ public static class JBeamParser
                         { j += 2; while (j < input.Length - 1 && !(input[j] == '*' && input[j + 1] == '/')) j++; j += 2; continue; }
                         if (jc == '/' && j + 1 < input.Length && input[j + 1] == '/')
                         { while (j < input.Length && input[j] != '\n') j++; continue; }
+                        if (jc == ',') { j++; continue; }
+                        if (jc == '}') { j++; continue; }
                         break;
                     }
                     if (j < input.Length && input[j] == '{')
@@ -1461,6 +1615,15 @@ public static class JBeamParser
                         while (i < input.Length && i != j) i++;
                         i++;          // consume '{'
                         depth = 1;
+                        continue;
+                    }
+
+                    if (j >= input.Length)
+                    {
+                        // Nothing meaningful remains after this root close, so treat
+                        // any following commas / stray braces as malformed trailing junk.
+                        sb.Append(c);
+                        i = input.Length;
                         continue;
                     }
                 }

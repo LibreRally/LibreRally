@@ -15,7 +15,7 @@ public class PcConfig
 
     /// <summary>
     /// Slot-type → chosen part name.
-    /// Empty string means "no part" (slot is intentionally empty).
+    /// Blank entries preserve the JBeam slot default when one exists.
     /// </summary>
     public Dictionary<string, string> Parts { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 

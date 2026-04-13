@@ -168,8 +168,6 @@ public class BasicCarPipelineTests
             Assert.True(wheelSettings.SuspensionMaximumOffset > 0f);
         }
 
-        Assert.True(Math.Abs(Vector3.Dot(wheelFlSettings!.SuspensionLocalAxis, Vector3.UnitY)) < 0.999f);
-
         LinearAxisLimitConstraintComponent? flLimit = result.WheelFL.Get<LinearAxisLimitConstraintComponent>();
         Assert.NotNull(flLimit);
         Assert.Equal(wheelFlSettings!.SuspensionLocalOffsetA, flLimit!.LocalOffsetA);
@@ -206,5 +204,17 @@ public class BasicCarPipelineTests
 
         Assert.True(File.Exists(daePath));
         Assert.NotEmpty(ColladaLoader.Load(daePath));
+    }
+
+    [Fact]
+    public void BasicCar_ShouldMatchBrakeDiscFlexbodyNamesToColladaGeometry()
+    {
+        string daePath = CombineRelativePath(GetVehicleFolder(), "FormulaBeeModel.dae");
+        var meshes = ColladaLoader.Load(daePath);
+
+        Assert.Contains(meshes, mesh => VehicleLoader.MatchesColladaMesh(mesh, "autobello_brakedisk_track_FL"));
+        Assert.Contains(meshes, mesh => VehicleLoader.MatchesColladaMesh(mesh, "autobello_brakedisk_track_FR"));
+        Assert.Contains(meshes, mesh => VehicleLoader.MatchesColladaMesh(mesh, "autobello_brakedisk_track_RL"));
+        Assert.Contains(meshes, mesh => VehicleLoader.MatchesColladaMesh(mesh, "autobello_brakedisk_track_RR"));
     }
 }

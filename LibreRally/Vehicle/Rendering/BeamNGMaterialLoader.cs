@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace LibreRally.Vehicle.Rendering;
@@ -35,18 +36,35 @@ public static class BeamNGMaterialLoader
         string vehicleFolder,
         string vehiclesRootDir)
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return LoadMaterialTextures([vehicleFolder], [vehiclesRootDir], null);
+    }
 
-        foreach (var jsonFile in Directory.GetFiles(vehicleFolder, "*.materials.json",
-                     SearchOption.TopDirectoryOnly))
+    public static Dictionary<string, string> LoadMaterialTextures(
+        IEnumerable<string> materialSearchFolders,
+        IEnumerable<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var distinctRootDirs = vehiclesRootDirs
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var searchFolder in materialSearchFolders
+                     .Where(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            try
+            foreach (var jsonFile in Directory.GetFiles(searchFolder, "*.materials.json",
+                         SearchOption.TopDirectoryOnly))
             {
-                ParseFile(jsonFile, vehiclesRootDir, result);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[BeamNGMaterialLoader] Could not parse '{Path.GetFileName(jsonFile)}': {ex.Message}");
+                try
+                {
+                    ParseFile(jsonFile, distinctRootDirs, virtualPathResolver, result);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BeamNGMaterialLoader] Could not parse '{Path.GetFileName(jsonFile)}': {ex.Message}");
+                }
             }
         }
 
@@ -57,7 +75,8 @@ public static class BeamNGMaterialLoader
 
     private static void ParseFile(
         string jsonFile,
-        string vehiclesRootDir,
+        IReadOnlyList<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver,
         Dictionary<string, string> result)
     {
         var text = File.ReadAllText(jsonFile);
@@ -84,7 +103,7 @@ public static class BeamNGMaterialLoader
 	            continue;
             }
 
-            var resolved = ResolveVehiclePath(texPath, vehiclesRootDir);
+            var resolved = ResolveVehiclePath(texPath, vehiclesRootDirs, virtualPathResolver);
             if (!string.IsNullOrEmpty(resolved))
             {
 	            result.TryAdd(matName, resolved);
@@ -159,11 +178,14 @@ public static class BeamNGMaterialLoader
 
     /// <summary>
     /// Converts a BeamNG virtual path like "/vehicles/RLA_Evo/Textures/carpet.dds"
-    /// to an absolute file system path using <paramref name="vehiclesRootDir"/> as the
-    /// mount point for the /vehicles/ prefix.
+    /// to an absolute file system path using <paramref name="vehiclesRootDirs"/> as the
+    /// mount point(s) for the /vehicles/ prefix.
     /// Returns null if the resolved file does not exist.
     /// </summary>
-    private static string? ResolveVehiclePath(string vehiclePath, string vehiclesRootDir)
+    private static string? ResolveVehiclePath(
+        string vehiclePath,
+        IReadOnlyList<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver)
     {
         if (string.IsNullOrWhiteSpace(vehiclePath))
         {
@@ -180,21 +202,44 @@ public static class BeamNGMaterialLoader
 	        normalised = normalised[vehiclesPrefix.Length..];
         }
 
-        var fullPath = Path.Combine(vehiclesRootDir,
-            normalised.Replace('/', Path.DirectorySeparatorChar));
-
-        if (File.Exists(fullPath))
+        foreach (var vehiclesRootDir in vehiclesRootDirs)
         {
-	        return fullPath;
+            var fullPath = Path.Combine(vehiclesRootDir,
+                normalised.Replace('/', Path.DirectorySeparatorChar));
+
+            if (File.Exists(fullPath))
+            {
+	            return fullPath;
+            }
+
+            // Fallback: if the original reference was a .dds, try .png (for copyright-free placeholders)
+            if (Path.GetExtension(fullPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+            {
+                var pngPath = Path.ChangeExtension(fullPath, ".png");
+                if (File.Exists(pngPath))
+                {
+	                return pngPath;
+                }
+            }
         }
 
-        // Fallback: if the original reference was a .dds, try .png (for copyright-free placeholders)
-        if (Path.GetExtension(fullPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+        var virtualPath = "vehicles/" + normalised.Replace('\\', '/');
+        var resolved = virtualPathResolver?.Invoke(virtualPath);
+        if (!string.IsNullOrEmpty(resolved))
         {
-            var pngPath = Path.ChangeExtension(fullPath, ".png");
-            if (File.Exists(pngPath))
+            return resolved;
+        }
+
+        if (Path.GetExtension(virtualPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            var pngPath = Path.ChangeExtension(virtualPath, ".png");
+            if (!string.IsNullOrEmpty(pngPath))
             {
-	            return pngPath;
+                resolved = virtualPathResolver?.Invoke(pngPath.Replace('\\', '/'));
+                if (!string.IsNullOrEmpty(resolved))
+                {
+                    return resolved;
+                }
             }
         }
 

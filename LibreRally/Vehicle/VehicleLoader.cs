@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using LibreRally.Vehicle.Content;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
 using LibreRally.Vehicle.Rendering;
@@ -42,6 +43,38 @@ public class VehicleLoader
     /// </param>
     public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null)
     {
+        var vehiclesRoot = Path.GetDirectoryName(vehicleFolderPath) ?? vehicleFolderPath;
+        return LoadInternal(
+            vehicleFolderPath,
+            configFileName,
+            [vehicleFolderPath],
+            [vehicleFolderPath],
+            [vehiclesRoot],
+            null,
+            null);
+    }
+
+    public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null)
+    {
+        return LoadInternal(
+            vehicleSource.VehicleFolderPath,
+            configFileName,
+            vehicleSource.JBeamSearchFolders,
+            vehicleSource.JBeamSearchFolders,
+            vehicleSource.VehiclesRootDirectories,
+            vehicleSource.ResolveVehicleAssetPath,
+            vehicleSource);
+    }
+
+    private LoadedVehicle LoadInternal(
+        string vehicleFolderPath,
+        string? configFileName,
+        IReadOnlyList<string> jbeamSearchFolders,
+        IReadOnlyList<string> materialSearchFolders,
+        IReadOnlyList<string> vehiclesRootDirectories,
+        Func<string, string?>? virtualAssetResolver,
+        BeamNgResolvedVehicle? resolvedVehicle)
+    {
         if (!Directory.Exists(vehicleFolderPath))
         {
 	        throw new DirectoryNotFoundException($"Vehicle folder not found: '{vehicleFolderPath}'");
@@ -69,14 +102,22 @@ public class VehicleLoader
         }
 
         // 1. Parse + assemble jbeam (with pc config for parts selection + variable substitution)
-        var definition = JBeamAssembler.Assemble(vehicleFolderPath, pcConfig);
+        var definition = JBeamAssembler.Assemble(jbeamSearchFolders, vehicleFolderPath, pcConfig);
 
         // 2. Build physics entity hierarchy
         var result = VehiclePhysicsBuilder.Build(definition);
         var rootEntity = result.RootEntity;
 
         // 3. Attach visual meshes (best-effort — falls back to a visible box)
-        TryAttachMeshes(vehicleFolderPath, result, definition, pcConfig);
+        TryAttachMeshes(
+            vehicleFolderPath,
+            result,
+            definition,
+            pcConfig,
+            materialSearchFolders,
+            vehiclesRootDirectories,
+            virtualAssetResolver,
+            resolvedVehicle);
 
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
@@ -95,6 +136,8 @@ public class VehicleLoader
         }
 
         var powertrain = VehiclePowertrainResolver.Resolve(definition);
+        var absEnabled = IsAbsEnabled(definition.BrakeControl);
+        var absSlipRatioTarget = ResolveAbsSlipRatioTarget(definition.BrakeControl);
         var wheelRadius = 0.305f;
 
         // ── Vehicle dynamics system ──────────────────────────────────────────
@@ -170,6 +213,8 @@ public class VehicleLoader
             AutoClutchLaunchRpm = powertrain.AutoClutchLaunchRpm,
             ShiftUpRpm = powertrain.ShiftUpRpm,
             ShiftDownRpm = powertrain.ShiftDownRpm,
+            AbsEnabled = absEnabled,
+            AbsSlipRatioTarget = absSlipRatioTarget,
             Dynamics = dynamics,
         };
         car.Wheels.AddRange(wheelEntities);
@@ -192,7 +237,8 @@ public class VehicleLoader
                 : "RWD";
         Log.Info($"[VehicleLoader] Gears: R={reverseGear:F2} " +
                  string.Join(" ", powertrain.GearRatios.Skip(1).Select((g, i) => $"{i + 1}={g:F2}")) +
-                 $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}");
+                 $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}" +
+                 $" | ABS={(absEnabled ? $"Y@{absSlipRatioTarget:F2}" : "N")}");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
         Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
                  $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
@@ -204,6 +250,17 @@ public class VehicleLoader
         return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR, diagnostics);
     }
 
+    internal static bool IsAbsEnabled(JBeamBrakeControlDefinition? brakeControl)
+    {
+        return brakeControl?.EnableAbs == true || brakeControl?.HasLegacyAbsController == true;
+    }
+
+    internal static float ResolveAbsSlipRatioTarget(JBeamBrakeControlDefinition? brakeControl)
+    {
+        var target = brakeControl?.AbsSlipRatioTarget ?? 0.15f;
+        return Math.Clamp(target, 0.05f, 0.35f);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Mesh attachment
     // ──────────────────────────────────────────────────────────────────────────
@@ -212,11 +269,16 @@ public class VehicleLoader
         string folder,
         VehicleBuilderResult result,
         VehicleDefinition definition,
-        PcConfig? pcConfig)
+        PcConfig? pcConfig,
+        IReadOnlyList<string> materialSearchFolders,
+        IReadOnlyList<string> vehiclesRootDirectories,
+        Func<string, string?>? virtualAssetResolver,
+        BeamNgResolvedVehicle? resolvedVehicle)
     {
         try
         {
             var daeSources = LoadColladaSources(folder);
+            var supplementalDaeFiles = AddSupplementalColladaSources(daeSources, definition, resolvedVehicle);
             if (daeSources.Count == 0)
             {
                 AttachFallbackChassis(result.ChassisEntity, definition);
@@ -224,8 +286,10 @@ public class VehicleLoader
                 return;
             }
 
-            var vehiclesRoot = Path.GetDirectoryName(folder)!;
-            var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(folder, vehiclesRoot);
+            var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(
+                materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalDaeFiles)),
+                vehiclesRootDirectories,
+                virtualAssetResolver);
             var mainSource = daeSources[0];
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
             {
@@ -252,26 +316,23 @@ public class VehicleLoader
                 tireLikeAttachments,
                 jsonMaterials,
                 folder,
-                vehiclesRoot,
                 missingWheelMeshes);
 
             if (missingWheelMeshes.Count > 0)
             {
-                Log.Warning($"Wheel visual meshes missing from local DAEs: {string.Join(", ", missingWheelMeshes.OrderBy(x => x))}");
+                Log.Warning($"Wheel visual meshes missing from available DAEs: {string.Join(", ", missingWheelMeshes.OrderBy(x => x))}");
             }
 
             AttachFallbackTires(result, pcConfig, tireLikeAttachments);
 
             var chassisMeshes = mainSource.Meshes
-                .Where(cm => !wheelMeshNames.Contains(cm.GeometryName) &&
-                             !wheelMeshNames.Contains(cm.SceneNodeName))
+                .Where(cm => !wheelMeshNames.Any(meshName => MatchesColladaMesh(cm, meshName)))
                 .ToList();
 
             var meshEntity = BuildMeshEntity(
                 chassisMeshes,
                 definition.VehicleName,
-                folder,
-                vehiclesRoot,
+                Path.GetDirectoryName(mainSource.DaePath) ?? folder,
                 jsonMaterials,
                 mainSource.TextureMap);
 
@@ -302,8 +363,15 @@ public class VehicleLoader
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        return LoadColladaSourcesFromFiles(daeFiles);
+    }
+
+    private List<ColladaSource> LoadColladaSourcesFromFiles(IEnumerable<string> daeFiles)
+    {
         var result = new List<ColladaSource>();
-        foreach (var daeFile in daeFiles)
+        foreach (var daeFile in daeFiles
+                     .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             try
             {
@@ -321,6 +389,69 @@ public class VehicleLoader
         return result;
     }
 
+    private IReadOnlyList<string> AddSupplementalColladaSources(
+        List<ColladaSource> daeSources,
+        VehicleDefinition definition,
+        BeamNgResolvedVehicle? resolvedVehicle)
+    {
+        if (resolvedVehicle == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        var missingMeshNames = GetWheelVisualFlexBodies(definition)
+            .Select(flexBody => flexBody.MeshName)
+            .Where(meshName => !TryFindGeometry(daeSources, meshName, out _, out _))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (missingMeshNames.Length == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var supplementalFiles = resolvedVehicle.ResolveColladaFilesForMeshes(missingMeshNames);
+        if (supplementalFiles.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        Log.Info($"Supplemental wheel DAEs: {string.Join(", ", supplementalFiles.Select(Path.GetFileName))}");
+        foreach (var source in LoadColladaSourcesFromFiles(supplementalFiles))
+        {
+            daeSources.Add(source);
+        }
+
+        return supplementalFiles;
+    }
+
+    private static IEnumerable<string> GetSupplementalMaterialSearchFolders(IEnumerable<string> colladaFiles)
+    {
+        var folders = new List<string>();
+        var seenFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var colladaFile in colladaFiles)
+        {
+            var directory = Path.GetDirectoryName(colladaFile);
+            while (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+            {
+                if (seenFolders.Add(directory))
+                {
+                    folders.Add(directory);
+                }
+
+                var parent = Directory.GetParent(directory)?.FullName;
+                if (string.IsNullOrEmpty(parent) ||
+                    string.Equals(Path.GetFileName(parent), "vehicles", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                directory = parent;
+            }
+        }
+
+        return folders;
+    }
+
     private int AttachWheelFlexBodyMeshes(
         VehicleDefinition definition,
         List<ColladaSource> daeSources,
@@ -329,7 +460,6 @@ public class VehicleLoader
         Dictionary<string, int> tireLikeAttachments,
         Dictionary<string, string> jsonMaterials,
         string vehicleFolder,
-        string vehiclesRoot,
         HashSet<string> missingWheelMeshes)
     {
         var attached = 0;
@@ -351,8 +481,7 @@ public class VehicleLoader
             var meshEntity = BuildMeshEntity(
                 sourceMeshes,
                 $"{flexBody.MeshName}_{wheelKey}",
-                vehicleFolder,
-                vehiclesRoot,
+                Path.GetDirectoryName(source.DaePath) ?? vehicleFolder,
                 jsonMaterials,
                 source.TextureMap);
 
@@ -430,8 +559,7 @@ public class VehicleLoader
         foreach (var candidate in daeSources)
         {
             meshes = candidate.Meshes
-                .Where(cm => cm.GeometryName.Equals(geometryName, StringComparison.OrdinalIgnoreCase) ||
-                             cm.SceneNodeName.Equals(geometryName, StringComparison.OrdinalIgnoreCase))
+                .Where(cm => MatchesColladaMesh(cm, geometryName))
                 .ToList();
             if (meshes.Count > 0)
             {
@@ -443,6 +571,45 @@ public class VehicleLoader
         source = null!;
         meshes = null!;
         return false;
+    }
+
+    internal static bool MatchesColladaMesh(ColladaMesh mesh, string lookupName)
+    {
+        return MatchesColladaMeshName(mesh.GeometryName, lookupName) ||
+               MatchesColladaMeshName(mesh.SceneNodeName, lookupName) ||
+               MatchesColladaMeshName(mesh.Name, lookupName);
+    }
+
+    internal static bool MatchesColladaMeshName(string candidateName, string lookupName)
+    {
+        if (string.IsNullOrWhiteSpace(candidateName) || string.IsNullOrWhiteSpace(lookupName))
+        {
+            return false;
+        }
+
+        if (candidateName.Equals(lookupName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return NormalizeColladaMeshLookupName(candidateName)
+            .Equals(NormalizeColladaMeshLookupName(lookupName), StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string NormalizeColladaMeshLookupName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Trim().ToLowerInvariant();
+        normalized = Regex.Replace(normalized, @"(?:[-_.]?mesh)$", "");
+        normalized = Regex.Replace(normalized, @"(?:[-_.]\d{3})+$", "");
+        normalized = Regex.Replace(normalized, @"shape$", "");
+        normalized = Regex.Replace(normalized, @"[-.\s]+", "_");
+        normalized = Regex.Replace(normalized, @"_+", "_");
+        return normalized.Trim('_');
     }
 
     private static bool ContainsWheelVisualToken(string value)
@@ -481,8 +648,7 @@ public class VehicleLoader
         AssembledFlexBody flexBody,
         List<ColladaMesh> sourceMeshes)
     {
-        var geometryAlreadyPositioned = sourceMeshes.Any(mesh => mesh.HasBakedTransform) ||
-                                        flexBody.Position.HasValue && GeometryMatchesPosition(sourceMeshes, flexBody.Position.Value);
+        var geometryAlreadyPositioned = ShouldTreatWheelGeometryAsPrePositioned(sourceMeshes, flexBody.Position);
 
         meshEntity.Transform.Position = geometryAlreadyPositioned || !flexBody.Position.HasValue
             ? -wheelEntity.Transform.Position
@@ -497,6 +663,14 @@ public class VehicleLoader
         {
 	        meshEntity.Transform.Scale = BeamNGScaleToStride(flexBody.Scale.Value);
         }
+    }
+
+    internal static bool ShouldTreatWheelGeometryAsPrePositioned(
+        List<ColladaMesh> sourceMeshes,
+        System.Numerics.Vector3? expectedPosition)
+    {
+        return expectedPosition.HasValue &&
+               GeometryMatchesPosition(sourceMeshes, expectedPosition.Value);
     }
 
     private static bool GeometryMatchesPosition(List<ColladaMesh> sourceMeshes, System.Numerics.Vector3 expectedPosition)
@@ -767,8 +941,7 @@ public class VehicleLoader
     private Entity? BuildMeshEntity(
         List<ColladaMesh> colladaMeshes,
         string vehicleName,
-        string vehicleFolder,
-        string vehiclesRoot,
+        string textureSearchFolder,
         Dictionary<string, string> jsonMaterials,
         Dictionary<string, string> colladaTextureMap)
     {
@@ -841,7 +1014,7 @@ public class VehicleLoader
             // 2. Collada library_images chain (filename only, look in Textures/)
             if (texture == null && colladaTextureMap.TryGetValue(symbol, out var colladaFile))
             {
-	            texture = TryLoadTexture(vehicleFolder, colladaFile);
+	            texture = TryLoadTexture(textureSearchFolder, colladaFile);
             }
 
             // 3. Grey placeholder — covers sunburst base-car materials and anything else missing

@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using LibreRally.Camera;
 using LibreRally.HUD;
 using LibreRally.Vehicle;
+using LibreRally.Vehicle.Content;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
@@ -33,11 +35,19 @@ public class VehicleSpawner : SyncScript
     private string _status = "Loading...";
     private bool _showDebug = true;
     private VehicleTelemetryOverlay? _telemetryOverlay;
+    private VehicleSelectionOverlay? _vehicleSelectionOverlay;
+    private BeamNgVehicleCatalog? _vehicleCatalog;
+    private List<BeamNgVehicleDescriptor> _availableVehicles = [];
+    private int _selectedVehicleIndex;
+    private bool _showVehicleMenu;
+    private LoadedVehicle? _loadedVehicle;
 
     public override void Start()
     {
         AddGroundPhysics();
         EnsureTelemetryOverlay();
+        InitializeVehicleCatalog();
+        EnsureVehicleSelectionOverlay();
 
         try
         {
@@ -54,16 +64,35 @@ public class VehicleSpawner : SyncScript
         }
     }
 
-    private void LoadVehicle()
+    private void LoadVehicle(BeamNgVehicleDescriptor? selectedVehicle = null)
     {
         var requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
-        var basePath = Path.IsPathRooted(VehicleFolderPath)
-            ? VehicleFolderPath
-            : Path.Combine(AppContext.BaseDirectory, VehicleFolderPath);
-        Log.Info($"[VehicleSpawner] Load request: folder='{VehicleFolderPath}' resolved='{basePath}' config='{requestedConfig}'");
+        var requestedSource = selectedVehicle?.SourcePath ?? VehicleFolderPath;
+        BeamNgResolvedVehicle? resolvedVehicle = null;
+        if (_vehicleCatalog != null)
+        {
+            resolvedVehicle = _vehicleCatalog.ResolveVehicle(requestedSource);
+        }
+
+        var basePath = resolvedVehicle?.VehicleFolderPath ?? (Path.IsPathRooted(requestedSource)
+            ? requestedSource
+            : Path.Combine(AppContext.BaseDirectory, requestedSource));
+        Log.Info($"[VehicleSpawner] Load request: source='{requestedSource}' resolved='{basePath}' config='{requestedConfig}'");
 
         var loader = new VehicleLoader((Game)Game);
-        var vehicle = loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
+        var vehicle = resolvedVehicle != null
+            ? loader.Load(resolvedVehicle, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName)
+            : loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
+
+        if (selectedVehicle != null)
+        {
+            VehicleFolderPath = selectedVehicle.SourcePath;
+            _selectedVehicleIndex = _availableVehicles.FindIndex(vehicleDescriptor =>
+                vehicleDescriptor.SourcePath.Equals(selectedVehicle.SourcePath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        UnloadVehicle();
+        _loadedVehicle = vehicle;
 
         // CRITICAL: apply SpawnPosition to each physics entity directly.
         // They must be at scene root level (no offset parent) so BEPU writes correct world positions back.
@@ -77,13 +106,24 @@ public class VehicleSpawner : SyncScript
         var activeConfig = vehicle.Diagnostics.ConfigPath != null
             ? Path.GetFileName(vehicle.Diagnostics.ConfigPath)
             : "<jbeam defaults>";
-        _status = $"Loaded: {vehicle.Definition.VehicleName} cfg={activeConfig} mass={vehicle.Diagnostics.EstimatedMassKg:F0}kg";
+        _status = $"Loaded: {vehicle.Definition.VehicleName} src={(resolvedVehicle?.SourceDescription ?? "folder")} cfg={activeConfig} mass={vehicle.Diagnostics.EstimatedMassKg:F0}kg";
         Log.Info($"[VehicleSpawner] {_status} folder='{vehicle.Diagnostics.VehicleFolderPath}'");
 
         AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
         AttachHud(vehicle.CarComponent);
         AttachSpeedoGauge(vehicle.CarComponent);
         AttachTelemetryOverlay(vehicle.CarComponent);
+    }
+
+    private void UnloadVehicle()
+    {
+        if (_loadedVehicle?.RootEntity != null)
+        {
+            SceneSystem.SceneInstance.RootScene.Entities.Remove(_loadedVehicle.RootEntity);
+        }
+
+        _loadedVehicle = null;
+        _car = null;
     }
 
     private SpeedoGauge? _speedoGauge;
@@ -134,6 +174,113 @@ public class VehicleSpawner : SyncScript
         };
 
         ((Game)Game).GameSystems.Add(_telemetryOverlay);
+    }
+
+    private void EnsureVehicleSelectionOverlay()
+    {
+        if (_vehicleSelectionOverlay != null)
+        {
+            return;
+        }
+
+        _vehicleSelectionOverlay = new VehicleSelectionOverlay(Services)
+        {
+            Vehicles = _availableVehicles,
+            SelectedIndex = _selectedVehicleIndex,
+            OverlayVisible = _showVehicleMenu,
+            StatusText = _status,
+        };
+
+        ((Game)Game).GameSystems.Add(_vehicleSelectionOverlay);
+    }
+
+    private void InitializeVehicleCatalog()
+    {
+        var bundledVehiclesRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "BeamNG Vehicles");
+        var beamNgContentVehiclesRoot = BeamNgVehicleCatalog.DetectBeamNgContentVehiclesRoot();
+        _vehicleCatalog = new BeamNgVehicleCatalog(bundledVehiclesRoot, beamNgContentVehiclesRoot);
+        _availableVehicles = _vehicleCatalog.DiscoverBundledVehicles().ToList();
+        _selectedVehicleIndex = ResolveVehicleSelectionIndex();
+    }
+
+    private int ResolveVehicleSelectionIndex()
+    {
+        if (_availableVehicles.Count == 0)
+        {
+            return -1;
+        }
+
+        var absoluteVehiclePath = Path.IsPathRooted(VehicleFolderPath)
+            ? VehicleFolderPath
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, VehicleFolderPath));
+
+        var exactPathIndex = _availableVehicles.FindIndex(vehicle =>
+            vehicle.SourcePath.Equals(absoluteVehiclePath, StringComparison.OrdinalIgnoreCase));
+        if (exactPathIndex >= 0)
+        {
+            return exactPathIndex;
+        }
+
+        var idIndex = _availableVehicles.FindIndex(vehicle =>
+            vehicle.VehicleId.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
+            absoluteVehiclePath.EndsWith(Path.DirectorySeparatorChar + vehicle.VehicleId, StringComparison.OrdinalIgnoreCase));
+        return idIndex >= 0 ? idIndex : 0;
+    }
+
+    private void HandleVehicleSelectionInput()
+    {
+        if (Input.IsKeyPressed(Keys.F2))
+        {
+            _showVehicleMenu = !_showVehicleMenu;
+        }
+
+        if (_car != null)
+        {
+            _car.PlayerInputEnabled = !_showVehicleMenu;
+        }
+
+        if (!_showVehicleMenu)
+        {
+            return;
+        }
+
+        if (_availableVehicles.Count == 0)
+        {
+            if (Input.IsKeyPressed(Keys.Escape))
+            {
+                _showVehicleMenu = false;
+            }
+
+            return;
+        }
+
+        if (_selectedVehicleIndex < 0)
+        {
+            _selectedVehicleIndex = 0;
+        }
+
+        if (Input.IsKeyPressed(Keys.Up))
+        {
+            _selectedVehicleIndex = (_selectedVehicleIndex - 1 + _availableVehicles.Count) % _availableVehicles.Count;
+        }
+
+        if (Input.IsKeyPressed(Keys.Down))
+        {
+            _selectedVehicleIndex = (_selectedVehicleIndex + 1) % _availableVehicles.Count;
+        }
+
+        if (Input.IsKeyPressed(Keys.Enter))
+        {
+            var selectedVehicle = _availableVehicles[_selectedVehicleIndex];
+            _showVehicleMenu = false;
+            LoadVehicle(selectedVehicle);
+            return;
+        }
+
+        if (Input.IsKeyPressed(Keys.Escape))
+        {
+            _showVehicleMenu = false;
+        }
     }
 
     private void AttachHud(RallyCarComponent car)
@@ -282,6 +429,8 @@ public class VehicleSpawner : SyncScript
 
     public override void Update()
     {
+        HandleVehicleSelectionInput();
+
         // Push telemetry to gauge each frame
         if (_speedoGauge != null && _car != null)
         {
@@ -308,6 +457,14 @@ public class VehicleSpawner : SyncScript
             _telemetryOverlay.Car = _car;
             _telemetryOverlay.StatusText = _status;
             _telemetryOverlay.OverlayVisible = _showDebug;
+        }
+
+        if (_vehicleSelectionOverlay != null)
+        {
+            _vehicleSelectionOverlay.Vehicles = _availableVehicles;
+            _vehicleSelectionOverlay.SelectedIndex = _selectedVehicleIndex;
+            _vehicleSelectionOverlay.OverlayVisible = _showVehicleMenu;
+            _vehicleSelectionOverlay.StatusText = _status;
         }
 
         if (_car == null)

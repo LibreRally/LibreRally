@@ -44,13 +44,18 @@ public static class ColladaLoader
         }
 
         var sceneMeshes = LoadSceneMeshes(root, geometryLibrary);
-        return sceneMeshes.Count > 0
-            ? sceneMeshes
-            : geometryLibrary.Values.SelectMany(geometry => geometry.Meshes).ToList();
+        var filteredSceneMeshes = FilterByExtent(sceneMeshes);
+        if (filteredSceneMeshes.Count > 0)
+        {
+	        return filteredSceneMeshes;
+        }
+
+        return FilterByExtent(geometryLibrary.Values.SelectMany(geometry => geometry.Meshes));
     }
 
-    // BeamNG flex-body deformation meshes (steering rack morph targets etc.) have vertices
-    // spanning tens of metres.  Any axis extent above this threshold flags them for exclusion.
+    // BeamNG morph-target/helper geometry can still span many metres after scene transforms.
+    // Filter it after baking node transforms so authored wheel/brake meshes with large raw
+    // coordinates are not discarded before their scene scale/offset is applied.
     private const float MaxGeomExtentMetres = 7f;
 
     private static Dictionary<string, ColladaGeometry> LoadGeometryLibrary(XElement root)
@@ -287,6 +292,57 @@ public static class ColladaLoader
                MathF.Abs(matrix.M44 - 1f) < Epsilon;
     }
 
+    private static List<ColladaMesh> FilterByExtent(IEnumerable<ColladaMesh> meshes)
+        => meshes.Where(IsWithinExtentLimit).ToList();
+
+    private static bool IsWithinExtentLimit(ColladaMesh mesh)
+    {
+        if (mesh.Vertices.Count == 0)
+        {
+            return false;
+        }
+
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
+        float minZ = float.MaxValue, maxZ = float.MinValue;
+        foreach (var vertex in mesh.Vertices)
+        {
+            if (vertex.Position.X < minX)
+            {
+                minX = vertex.Position.X;
+            }
+
+            if (vertex.Position.X > maxX)
+            {
+                maxX = vertex.Position.X;
+            }
+
+            if (vertex.Position.Y < minY)
+            {
+                minY = vertex.Position.Y;
+            }
+
+            if (vertex.Position.Y > maxY)
+            {
+                maxY = vertex.Position.Y;
+            }
+
+            if (vertex.Position.Z < minZ)
+            {
+                minZ = vertex.Position.Z;
+            }
+
+            if (vertex.Position.Z > maxZ)
+            {
+                maxZ = vertex.Position.Z;
+            }
+        }
+
+        return (maxX - minX) <= MaxGeomExtentMetres &&
+               (maxY - minY) <= MaxGeomExtentMetres &&
+               (maxZ - minZ) <= MaxGeomExtentMetres;
+    }
+
     private static IEnumerable<ColladaMesh> ParseMesh(string geometryName, XElement mesh)
     {
         // Build source arrays keyed by #id
@@ -316,53 +372,6 @@ public static class ColladaLoader
             }
         }
         sources[verticesId + "_POSITION"] = sources.GetValueOrDefault(positionSourceId, Array.Empty<float>());
-
-        // Skip BeamNG flex-body / morph-target geometry whose vertices span huge distances.
-        // (e.g. steer_01a…steer_05a span ±19 m — they are deformation targets, not real meshes.)
-        if (sources.TryGetValue(positionSourceId, out var rawPos) && rawPos.Length >= 3)
-        {
-            float minX = float.MaxValue, maxX = float.MinValue;
-            float minY = float.MaxValue, maxY = float.MinValue;
-            float minZ = float.MaxValue, maxZ = float.MinValue;
-            for (var i = 0; i + 2 < rawPos.Length; i += 3)
-            {
-                if (rawPos[i    ] < minX)
-                {
-	                minX = rawPos[i    ];
-                }
-
-                if (rawPos[i    ] > maxX)
-                {
-	                maxX = rawPos[i    ];
-                }
-
-                if (rawPos[i + 1] < minY)
-                {
-	                minY = rawPos[i + 1];
-                }
-
-                if (rawPos[i + 1] > maxY)
-                {
-	                maxY = rawPos[i + 1];
-                }
-
-                if (rawPos[i + 2] < minZ)
-                {
-	                minZ = rawPos[i + 2];
-                }
-
-                if (rawPos[i + 2] > maxZ)
-                {
-	                maxZ = rawPos[i + 2];
-                }
-            }
-            if ((maxX - minX) > MaxGeomExtentMetres ||
-                (maxY - minY) > MaxGeomExtentMetres ||
-                (maxZ - minZ) > MaxGeomExtentMetres)
-            {
-	            yield break;
-            }
-        }
 
         // Process <triangles> and <polylist> primitives
         foreach (var prim in mesh.Elements(Ns + "triangles").Concat(mesh.Elements(Ns + "polylist")))
@@ -519,7 +528,10 @@ public static class ColladaLoader
             GeometryName = geometryName,
             MaterialName = material,
             Vertices = vertices,
-            Indices = indices,
+            // BeamNG's Collada exports use the opposite front-face winding to Stride's default
+            // rasterizer, so flip imported primitives once here. If a baked scene transform
+            // reflects the mesh, BakeSceneTransform flips again to preserve the visible outside.
+            Indices = FlipTriangleWinding(indices),
         };
     }
 
