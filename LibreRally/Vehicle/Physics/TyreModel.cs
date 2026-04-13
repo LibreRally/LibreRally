@@ -476,7 +476,7 @@ public sealed class TyreModel
         // Combines surface µ, load sensitivity, temperature, wear, wet grip,
         // hydroplaning, and road roughness noise effects.
         var mu = ComputeEffectiveFriction(normalLoad, surface, state.Temperature,
-            state.TreadLife, absVx: MathF.Abs(longitudinalVelocity));
+            state.TreadLife, absVx: MathF.Abs(longitudinalVelocity), dt: dt);
 
         var effectiveRollingRadius = ComputeEffectiveRollingRadius(normalLoad);
 
@@ -721,24 +721,18 @@ public sealed class TyreModel
     /// Reference: The Contact Patch, C1603, §Power spectral density curves.</para>
     /// </summary>
     internal float ComputeEffectiveFriction(float normalLoad, in SurfaceProperties surface,
-        float temperature, float treadLife, float absVx = 0f)
+        float temperature, float treadLife, float absVx = 0f, float dt = 0.01f)
     {
-        // Base µ from surface type
+        // Base µ from surface type. SurfaceProperties.FrictionCoefficient is the
+        // calibrated overall peak-µ multiplier for the surface, so do not apply an
+        // additional dry-texture multiplier here.
         var mu = PeakFrictionCoefficient * surface.FrictionCoefficient;
 
-        // ── Microtexture / macrotexture grip decomposition ───────────────────
-        // When both texture fields are set (> 0), they modulate the base friction.
-        // Microtexture provides adhesion grip; macrotexture provides hysteresis grip.
-        // Combined contribution: µ *= lerp(0.6, 1.0, (micro + macro) / 2)
-        // This keeps backward compatibility — surfaces with default (0,0) get no change.
+        // Clamp texture descriptors for downstream effects such as wet-grip
+        // retention. They are not applied again to dry baseline µ here.
         // Reference: The Contact Patch, C1603, §Road surface texture.
         var microLevel = Math.Clamp(surface.Microtexture, 0f, 1f);
         var macroLevel = Math.Clamp(surface.Macrotexture, 0f, 1f);
-        if (microLevel > 0f || macroLevel > 0f)
-        {
-            var textureGrip = 0.6f + 0.4f * (microLevel + macroLevel) * 0.5f;
-            mu *= textureGrip;
-        }
 
         // ── Wet grip reduction ───────────────────────────────────────────────
         // Water film reduces adhesion (microtexture) grip while hysteresis
@@ -785,7 +779,7 @@ public sealed class TyreModel
         var noiseFactor = Math.Clamp(surface.NoiseFactor, 0f, 1f);
         if (noiseFactor > 0f)
         {
-            mu *= ComputeRoadNoiseGripFactor(noiseFactor, absVx);
+            mu *= ComputeRoadNoiseGripFactor(noiseFactor, absVx, dt);
         }
 
         return MathF.Max(mu, 0.05f);
@@ -816,6 +810,10 @@ public sealed class TyreModel
         {
             return 1f;
         }
+
+        // Clamp inputs to documented ranges.
+        macrotexture = Math.Clamp(macrotexture, 0f, 1f);
+        absSpeed = MathF.Max(absSpeed, 0f);
 
         // ── 1. Base wet grip loss ────────────────────────────────────────────
         // Water film depth normalized to a reference heavy-rain depth (4 mm).
@@ -849,20 +847,29 @@ public sealed class TyreModel
     /// <summary>
     /// Computes a deterministic grip micro-variation factor from road roughness (NoiseFactor).
     /// Models the effect of road-surface PSD on instantaneous grip at the contact patch.
-    /// Uses a fast integer hash (Murmur-style finalizer) of a speed-proportional phase counter.
+    /// Uses a fast integer hash (Murmur-style finalizer) of a distance-proportional phase counter.
     /// Reference: The Contact Patch, C1603, §Power spectral density curves.
     /// </summary>
     /// <param name="noiseFactor">Road roughness amplitude (0–1).</param>
     /// <param name="absSpeed">Absolute longitudinal speed (m/s).</param>
+    /// <param name="dt">Physics timestep for this update (s).</param>
     /// <returns>Grip multiplier in range [1 − noiseFactor × 0.08, 1 + noiseFactor × 0.08].</returns>
-    internal static float ComputeRoadNoiseGripFactor(float noiseFactor, float absSpeed)
+    internal static float ComputeRoadNoiseGripFactor(float noiseFactor, float absSpeed, float dt)
     {
-        // Advance a per-thread phase counter proportional to speed.
+        // At very low speed there is negligible PSD excitation — return unity
+        // to avoid a constant bias from a stalled hash value.
+        const float noiseSpeedEpsilon = 0.5f;
+        if (absSpeed < noiseSpeedEpsilon)
+        {
+            return 1f;
+        }
+
+        // Advance a per-thread phase counter proportional to distance travelled this step.
         // The hash rate increases with speed, modelling higher-frequency PSD excitation.
         // ThreadStatic ensures each physics thread gets its own independent phase —
         // this is intentionally non-reproducible across threads since the noise
         // represents stochastic road-surface variation.
-        _noisePhase += absSpeed * 0.1f;
+        _noisePhase += absSpeed * dt * 0.1f;
         if (_noisePhase > 1e6f) _noisePhase -= 1e6f;
 
         // Murmur3-style integer finalizer for good hash distribution.

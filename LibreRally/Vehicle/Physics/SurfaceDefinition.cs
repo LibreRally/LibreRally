@@ -86,7 +86,7 @@ public readonly struct SurfaceProperties
     /// Returns the default <see cref="SurfaceProperties"/> for the given <paramref name="surfaceType"/>.
     /// Values are tuned for rally driving conditions.
     /// Friction coefficients calibrated from The Contact Patch, C1603, Table 1:
-    /// dry tarmac 0.8–1.0, wet 0.2–0.65, icy 0.05–0.10.
+    /// dry tarmac 0.8–1.0, wet 0.2–0.65, icy 0.15.
     /// Microtexture/macrotexture values represent typical UK road aggregate.
     /// </summary>
     public static SurfaceProperties ForType(SurfaceType surfaceType) => surfaceType switch
