@@ -849,7 +849,7 @@ public sealed class TyreModel
     /// <summary>
     /// Computes a deterministic grip micro-variation factor from road roughness (NoiseFactor).
     /// Models the effect of road-surface PSD on instantaneous grip at the contact patch.
-    /// Uses a fast integer hash of a speed-proportional counter to avoid per-frame allocations.
+    /// Uses a fast integer hash (Murmur-style finalizer) of a speed-proportional phase counter.
     /// Reference: The Contact Patch, C1603, §Power spectral density curves.
     /// </summary>
     /// <param name="noiseFactor">Road roughness amplitude (0–1).</param>
@@ -857,25 +857,36 @@ public sealed class TyreModel
     /// <returns>Grip multiplier in range [1 − noiseFactor × 0.08, 1 + noiseFactor × 0.08].</returns>
     internal static float ComputeRoadNoiseGripFactor(float noiseFactor, float absSpeed)
     {
-        // Combine speed with a global phase counter to get a changing but deterministic value.
+        // Advance a per-thread phase counter proportional to speed.
         // The hash rate increases with speed, modelling higher-frequency PSD excitation.
+        // ThreadStatic ensures each physics thread gets its own independent phase —
+        // this is intentionally non-reproducible across threads since the noise
+        // represents stochastic road-surface variation.
         _noisePhase += absSpeed * 0.1f;
         if (_noisePhase > 1e6f) _noisePhase -= 1e6f;
 
-        // Simple integer hash — fast, deterministic, no allocations.
-        var hash = (uint)BitConverter.SingleToInt32Bits(_noisePhase);
-        hash ^= hash >> 16;
-        hash *= 0x45d9f3b;
-        hash ^= hash >> 16;
+        // Murmur3-style integer finalizer for good hash distribution.
+        // Input: phase scaled to integer range for bit mixing.
+        var input = (uint)(int)(_noisePhase * 1000f);
+        input ^= input >> 16;
+        input *= 0x85ebca6b;
+        input ^= input >> 13;
+        input *= 0xc2b2ae35;
+        input ^= input >> 16;
 
         // Map to [-1, 1] range.
-        var normalized = (hash & 0x7FFFFFFF) / (float)0x7FFFFFFF * 2f - 1f;
+        var normalized = (input & 0x7FFFFFFF) / (float)0x7FFFFFFF * 2f - 1f;
 
         // Scale perturbation: ±8% at full NoiseFactor.
         return 1f + normalized * noiseFactor * RoadNoiseGripAmplitude;
     }
 
-    /// <summary>Accumulated phase for road noise grip perturbation. Shared across all wheels for coherence.</summary>
+    /// <summary>
+    /// Accumulated phase for road noise grip perturbation.
+    /// ThreadStatic so each physics thread maintains independent state without contention.
+    /// Intentionally non-deterministic across threads — the noise represents stochastic
+    /// road-surface PSD variation rather than a reproducible simulation input.
+    /// </summary>
     [ThreadStatic] private static float _noisePhase;
 
     internal float ComputeEffectivePatchLength(float normalLoad)
