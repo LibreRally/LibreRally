@@ -75,8 +75,8 @@ public class BasicCarPipelineTests
         Assert.True(frontBrakes.FlexBodies.Count >= 2);
         Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FL"));
         Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FR"));
-        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FL" && wheel.NodeArm == "fh2l");
-        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FR" && wheel.NodeArm == "fh2r");
+        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FL" && wheel.NodeArm == "fh5l");
+        Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FR" && wheel.NodeArm == "fh5r");
     }
 
     [Fact]
@@ -177,6 +177,26 @@ public class BasicCarPipelineTests
         Assert.Equal(wheelFlSettings.SuspensionLocalAxis, flLimit.LocalAxis);
         Assert.Equal(wheelFlSettings.SuspensionMinimumOffset, flLimit.MinimumOffset);
         Assert.Equal(wheelFlSettings.SuspensionMaximumOffset, flLimit.MaximumOffset);
+    }
+
+    [Fact]
+    public void BasicCar_ShouldApplySignedSpringHeightToSuspensionTargetOffset()
+    {
+        PcConfig config = PcConfigLoader.Load(CombineRelativePath(GetVehicleFolder(), "basic_car.pc"));
+        VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
+        definition.Vars["springheight_F"] = -0.03f;
+        definition.Vars["springheight_R"] = -0.02f;
+        VehicleBuilderResult result = VehiclePhysicsBuilder.Build(definition);
+
+        var fl = Assert.IsType<WheelSettings>(result.WheelFL.Get<WheelSettings>());
+        var fr = Assert.IsType<WheelSettings>(result.WheelFR.Get<WheelSettings>());
+        var rl = Assert.IsType<WheelSettings>(result.WheelRL.Get<WheelSettings>());
+        var rr = Assert.IsType<WheelSettings>(result.WheelRR.Get<WheelSettings>());
+
+        Assert.Equal(0.03f, fl.SuspensionTargetOffset, 3);
+        Assert.Equal(0.03f, fr.SuspensionTargetOffset, 3);
+        Assert.Equal(0.02f, rl.SuspensionTargetOffset, 3);
+        Assert.Equal(0.02f, rr.SuspensionTargetOffset, 3);
     }
 
     [Fact]
