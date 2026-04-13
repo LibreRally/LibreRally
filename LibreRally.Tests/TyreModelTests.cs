@@ -580,7 +580,7 @@ public class TyreModelTests
     // ── Microtexture / macrotexture tests ────────────────────────────────────
 
     [Fact]
-    public void EffectiveFriction_TextureModulatesWetGrip()
+    public void EffectiveFriction_MacrotextureImprovesWetGripViaDrainage()
     {
         var model = new TyreModel(0.305f)
         {
