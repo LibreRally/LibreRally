@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LibreRally.Vehicle.JBeam;
+using NumericsVector3 = System.Numerics.Vector3;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Constraints;
 using Stride.BepuPhysics.Definitions;
@@ -460,6 +461,9 @@ public static class VehiclePhysicsBuilder
 
         float GetVar(string name, float fallback) =>
             def.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
+        // springheight vars are signed adjustments (negative lowers the car), so accept any finite value.
+        float GetSignedVar(string name, float fallback) =>
+            def.Vars.TryGetValue(name, out var v) && float.IsFinite(v) ? v : fallback;
 
         var springF   = GetVar("spring_F_asphalt",   GetVar("spring_F",  60000f));
         var springR   = GetVar("spring_R_asphalt",   GetVar("spring_R",  50000f));
@@ -500,8 +504,8 @@ public static class VehiclePhysicsBuilder
         var reboundTravelF = ComputeReboundTravel(springF);
         var bumpTravelR = ComputeBumpTravel(springR);
         var reboundTravelR = ComputeReboundTravel(springR);
-        var springHeightAdjustmentF = GetVar("springheight_F_asphalt", GetVar("springheight_F", 0f));
-        var springHeightAdjustmentR = GetVar("springheight_R_asphalt", GetVar("springheight_R", 0f));
+        var springHeightAdjustmentF = GetSignedVar("springheight_F_asphalt", GetSignedVar("springheight_F", 0f));
+        var springHeightAdjustmentR = GetSignedVar("springheight_R_asphalt", GetSignedVar("springheight_R", 0f));
 
         float ComputeTargetOffset(bool isFrontAxle)
         {
@@ -537,7 +541,7 @@ public static class VehiclePhysicsBuilder
             var ratio = isFront ? dampRatioF   : dampRatioR;
             var bumpTravel = isFront ? bumpTravelF : bumpTravelR;
             var reboundTravel = isFront ? reboundTravelF : reboundTravelR;
-            var suspensionAxis = ResolveSuspensionAxis(def, pressureWheel);
+            var suspensionAxis = ResolveSuspensionAxis(def, pressureWheel, pos);
             var targetOffset = ComputeTargetOffset(isFront);
             return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, suspensionAxis, targetOffset, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
         }
@@ -734,7 +738,7 @@ public static class VehiclePhysicsBuilder
     private static bool TryGetPressureWheelCenter(
         VehicleDefinition def,
         JBeamPressureWheel? pressureWheel,
-        out System.Numerics.Vector3 center)
+        out NumericsVector3 center)
     {
         center = default;
         if (pressureWheel == null)
@@ -742,17 +746,77 @@ public static class VehiclePhysicsBuilder
             return false;
         }
 
-        if (!def.Nodes.TryGetValue(pressureWheel.Node1, out var node1) ||
-            !def.Nodes.TryGetValue(pressureWheel.Node2, out var node2))
+        if (def.Nodes.TryGetValue(pressureWheel.Node1, out var node1) &&
+            def.Nodes.TryGetValue(pressureWheel.Node2, out var node2))
+        {
+            center = (node1.Position + node2.Position) * 0.5f;
+            return true;
+        }
+
+        var candidatePositions = new List<NumericsVector3>();
+        TryAddPressureWheelNodePosition(def, pressureWheel.Node1, candidatePositions);
+        TryAddPressureWheelNodePosition(def, pressureWheel.Node2, candidatePositions);
+        TryAddPressureWheelNodePosition(def, pressureWheel.NodeArm, candidatePositions);
+
+        foreach (var groupName in EnumeratePressureWheelGroups(pressureWheel))
+        {
+            foreach (var node in def.Nodes.Values)
+            {
+                if (node.Groups.Any(g => g.Equals(groupName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    candidatePositions.Add(node.Position);
+                }
+            }
+        }
+
+        if (candidatePositions.Count == 0)
         {
             return false;
         }
 
-        center = (node1.Position + node2.Position) * 0.5f;
+        var sum = NumericsVector3.Zero;
+        foreach (var candidate in candidatePositions)
+        {
+            sum += candidate;
+        }
+
+        center = sum / candidatePositions.Count;
         return true;
     }
 
-    private static Vector3 ResolveSuspensionAxis(VehicleDefinition def, JBeamPressureWheel? pressureWheel)
+    private static void TryAddPressureWheelNodePosition(
+        VehicleDefinition def,
+        string? nodeId,
+        List<NumericsVector3> candidatePositions)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+        {
+            return;
+        }
+
+        if (def.Nodes.TryGetValue(nodeId, out var node))
+        {
+            candidatePositions.Add(node.Position);
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePressureWheelGroups(JBeamPressureWheel pressureWheel)
+    {
+        foreach (var raw in new[] { pressureWheel.HubGroup, pressureWheel.Group })
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            foreach (var group in raw.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                yield return group;
+            }
+        }
+    }
+
+    private static Vector3 ResolveSuspensionAxis(VehicleDefinition def, JBeamPressureWheel? pressureWheel, Vector3 wheelCenterStride)
     {
         if (pressureWheel == null)
         {
@@ -764,13 +828,8 @@ public static class VehiclePhysicsBuilder
             return Vector3.UnitY;
         }
 
-        if (!TryGetPressureWheelCenter(def, pressureWheel, out var hubCenter))
-        {
-            return Vector3.UnitY;
-        }
-
-        var axisBeam = hubCenter - armNode.Position;
-        var axisStride = BeamNGToStride(axisBeam);
+        var armPositionStride = BeamNGToStride(armNode.Position);
+        var axisStride = wheelCenterStride - armPositionStride;
         if (axisStride.LengthSquared() < VectorLengthSquaredEpsilon)
         {
             return Vector3.UnitY;
