@@ -22,7 +22,7 @@ namespace LibreRally.Vehicle;
 public class VehicleLoader
 {
     private static readonly Logger Log = GlobalLogger.GetLogger("VehicleLoader");
-    private sealed record ColladaSource(string SourcePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
+    private sealed record ModelSource(string SourcePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
     private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
 
@@ -295,17 +295,15 @@ public class VehicleLoader
         AttachFallbackTires(result, pcConfig, null);
     }
 
-    private List<ColladaSource> LoadModelSources(string folder)
+    private List<ModelSource> LoadModelSources(string folder)
     {
-        var modelFiles = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories)
-            .Where(path =>
-                path.EndsWith(".dae", StringComparison.OrdinalIgnoreCase) ||
-                path.EndsWith(".dts", StringComparison.OrdinalIgnoreCase))
+        var modelFiles = Directory.EnumerateFiles(folder, "*.dae", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(folder, "*.dts", SearchOption.AllDirectories))
             .OrderBy(path => Path.GetDirectoryName(path)?.Equals(folder, StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var result = new List<ColladaSource>();
+        var result = new List<ModelSource>();
         foreach (var modelFile in modelFiles)
         {
             try
@@ -325,7 +323,7 @@ public class VehicleLoader
                     Log.Info($"DTS: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes");
                 }
 
-                result.Add(new ColladaSource(modelFile, meshes, textureMap));
+                result.Add(new ModelSource(modelFile, meshes, textureMap));
             }
             catch (Exception ex)
             {
@@ -338,7 +336,7 @@ public class VehicleLoader
 
     private int AttachWheelFlexBodyMeshes(
         VehicleDefinition definition,
-        List<ColladaSource> daeSources,
+        List<ModelSource> modelSources,
         Dictionary<string, Entity> wheelEntities,
         HashSet<string> wheelMeshNames,
         Dictionary<string, int> tireLikeAttachments,
@@ -357,7 +355,7 @@ public class VehicleLoader
                 continue;
             }
 
-            if (!TryFindGeometry(daeSources, flexBody.MeshName, out var source, out var sourceMeshes))
+            if (!TryFindGeometry(modelSources, flexBody.MeshName, out var source, out var sourceMeshes))
             {
                 missingWheelMeshes.Add(flexBody.MeshName);
                 continue;
@@ -437,12 +435,12 @@ public class VehicleLoader
     }
 
     private static bool TryFindGeometry(
-        IEnumerable<ColladaSource> daeSources,
+        IEnumerable<ModelSource> modelSources,
         string geometryName,
-        out ColladaSource source,
+        out ModelSource source,
         out List<ColladaMesh> meshes)
     {
-        foreach (var candidate in daeSources)
+        foreach (var candidate in modelSources)
         {
             meshes = candidate.Meshes
                 .Where(cm => cm.GeometryName.Equals(geometryName, StringComparison.OrdinalIgnoreCase) ||
