@@ -5,6 +5,7 @@ namespace LibreRally.Tests;
 public class TyreModelTests
 {
     private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
+    private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
 
     [Fact]
     public void ContactPatchLength_GrowsWithLoad_AndShrinksWithPressure()
@@ -517,5 +518,197 @@ public class TyreModelTests
         float shear = model.ComputeCarcassShearForce(0.01f, 0.09f, 300000f, 0.18f);
 
         Assert.Equal(0f, shear);
+    }
+
+    // ── Wet grip / hydroplaning tests ────────────────────────────────────────
+
+    [Fact]
+    public void WetGripFactor_DryReturnsOne()
+    {
+        float factor = TyreModel.ComputeWetGripFactor(0f, 0.6f, 20f);
+
+        Assert.Equal(1f, factor);
+    }
+
+    [Fact]
+    public void WetGripFactor_DecreasesWithWaterDepth()
+    {
+        float shallow = TyreModel.ComputeWetGripFactor(0.0005f, 0.6f, 10f);
+        float deep = TyreModel.ComputeWetGripFactor(0.003f, 0.6f, 10f);
+
+        Assert.True(shallow < 1f);
+        Assert.True(deep < shallow);
+    }
+
+    [Fact]
+    public void WetGripFactor_MacrotextureImprovesDrainage()
+    {
+        float lowMacro = TyreModel.ComputeWetGripFactor(0.002f, 0.2f, 10f);
+        float highMacro = TyreModel.ComputeWetGripFactor(0.002f, 0.9f, 10f);
+
+        Assert.True(highMacro > lowMacro);
+    }
+
+    [Fact]
+    public void WetGripFactor_DecreasesWithSpeed()
+    {
+        float lowSpeed = TyreModel.ComputeWetGripFactor(0.003f, 0.5f, 10f);
+        float highSpeed = TyreModel.ComputeWetGripFactor(0.003f, 0.5f, 30f);
+
+        Assert.True(highSpeed < lowSpeed);
+    }
+
+    [Fact]
+    public void WetGripFactor_HydroplaningCollapsesGrip()
+    {
+        // Deep water at high speed should approach minimum grip
+        float factor = TyreModel.ComputeWetGripFactor(0.004f, 0.3f, 40f);
+
+        Assert.True(factor < 0.2f);
+        Assert.True(factor >= 0.05f); // never below minimum
+    }
+
+    [Fact]
+    public void WetGripFactor_NeverBelowMinimum()
+    {
+        // Extreme conditions: deepest water, highest speed, no drainage
+        float factor = TyreModel.ComputeWetGripFactor(0.01f, 0f, 100f);
+
+        Assert.True(factor >= 0.05f);
+    }
+
+    // ── Microtexture / macrotexture tests ────────────────────────────────────
+
+    [Fact]
+    public void EffectiveFriction_TextureModulatesGrip()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+        };
+
+        var highTexture = new SurfaceProperties
+        {
+            FrictionCoefficient = 1.0f,
+            Microtexture = 0.9f,
+            Macrotexture = 0.9f,
+            WaterDepth = 0f,
+            NoiseFactor = 0f,
+        };
+
+        var lowTexture = new SurfaceProperties
+        {
+            FrictionCoefficient = 1.0f,
+            Microtexture = 0.3f,
+            Macrotexture = 0.2f,
+            WaterDepth = 0f,
+            NoiseFactor = 0f,
+        };
+
+        float muHigh = model.ComputeEffectiveFriction(3000f, highTexture, 30f, 1.0f);
+        float muLow = model.ComputeEffectiveFriction(3000f, lowTexture, 30f, 1.0f);
+
+        Assert.True(muHigh > muLow);
+    }
+
+    // ── WetTarmac surface integration tests ─────────────────────────────────
+
+    [Fact]
+    public void WetTarmac_ProducesLessGripThanDryTarmac()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+        };
+
+        var dryState = TyreState.CreateDefault();
+        var wetState = TyreState.CreateDefault();
+        float longitudinalVelocity = 20f;
+        float lateralVelocity = 3f;
+        dryState.AngularVelocity = longitudinalVelocity / model.Radius;
+        wetState.AngularVelocity = longitudinalVelocity / model.Radius;
+
+        model.Update(ref dryState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
+            Tarmac, 0.01f, out _, out float dryFy, out _);
+        model.Update(ref wetState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
+            WetTarmac, 0.01f, out _, out float wetFy, out _);
+
+        Assert.True(MathF.Abs(dryFy) > MathF.Abs(wetFy));
+    }
+
+    // ── Road noise grip perturbation tests ──────────────────────────────────
+
+    [Fact]
+    public void RoadNoiseGripFactor_ReturnsNearUnity()
+    {
+        // With very low noise, the factor should be close to 1.0
+        float factor = TyreModel.ComputeRoadNoiseGripFactor(0.01f, 20f);
+
+        Assert.InRange(factor, 0.99f, 1.01f);
+    }
+
+    [Fact]
+    public void RoadNoiseGripFactor_BoundedByAmplitude()
+    {
+        // At full noise, the factor must stay within ±8% of 1.0
+        for (int i = 0; i < 100; i++)
+        {
+            float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, (float)i * 0.5f);
+            Assert.InRange(factor, 0.92f - 0.001f, 1.08f + 0.001f);
+        }
+    }
+
+    // ── Default surface calibration tests ────────────────────────────────────
+
+    [Fact]
+    public void SurfaceDefaults_WetTarmacHasWaterAndLowerFriction()
+    {
+        var wet = SurfaceProperties.ForType(SurfaceType.WetTarmac);
+        var dry = SurfaceProperties.ForType(SurfaceType.Tarmac);
+
+        Assert.True(wet.WaterDepth > 0f);
+        Assert.Equal(0f, dry.WaterDepth);
+        Assert.True(wet.FrictionCoefficient < dry.FrictionCoefficient);
+    }
+
+    [Fact]
+    public void SurfaceDefaults_AllSurfacesHaveTexture()
+    {
+        foreach (SurfaceType type in Enum.GetValues<SurfaceType>())
+        {
+            var props = SurfaceProperties.ForType(type);
+            // All surfaces should have non-negative texture values
+            Assert.True(props.Microtexture >= 0f);
+            Assert.True(props.Macrotexture >= 0f);
+        }
+    }
+
+    [Fact]
+    public void SurfaceDefaults_IceHasVeryLowTexture()
+    {
+        var ice = SurfaceProperties.ForType(SurfaceType.Ice);
+
+        Assert.True(ice.Microtexture <= 0.1f);
+        Assert.True(ice.Macrotexture <= 0.1f);
+    }
+
+    [Fact]
+    public void SurfaceDefaults_GravelHasHighMacrotexture()
+    {
+        var gravel = SurfaceProperties.ForType(SurfaceType.Gravel);
+
+        Assert.True(gravel.Macrotexture >= 0.8f);
     }
 }
