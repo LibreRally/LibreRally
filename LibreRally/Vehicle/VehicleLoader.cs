@@ -290,7 +290,6 @@ public class VehicleLoader
                 materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalDaeFiles)),
                 vehiclesRootDirectories,
                 virtualAssetResolver);
-            var mainSource = modelSources[0];
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
             {
                 ["wheel_FL"] = result.WheelFL,
@@ -325,6 +324,14 @@ public class VehicleLoader
 
             AttachFallbackTires(result, pcConfig, tireLikeAttachments);
 
+            var mainSource = SelectMainSourceForChassis(modelSources, wheelMeshNames);
+            if (mainSource == null)
+            {
+                Log.Warning("No chassis-like meshes found in model sources.");
+                AttachFallbackChassis(result.ChassisEntity, definition);
+                return;
+            }
+
             var chassisMeshes = mainSource.Meshes
                 .Where(cm => !wheelMeshNames.Any(meshName => MatchesColladaMesh(cm, meshName)))
                 .ToList();
@@ -354,6 +361,22 @@ public class VehicleLoader
 
         AttachFallbackChassis(result.ChassisEntity, definition);
         AttachFallbackTires(result, pcConfig, null);
+    }
+
+    private static ModelSource? SelectMainSourceForChassis(IEnumerable<ModelSource> modelSources, HashSet<string> wheelMeshNames)
+    {
+        return modelSources
+            .Select(source => new
+            {
+                Source = source,
+                ChassisMeshCount = source.Meshes.Count(mesh =>
+                    !wheelMeshNames.Any(wheelMeshName => MatchesColladaMesh(mesh, wheelMeshName))),
+            })
+            .Where(entry => entry.ChassisMeshCount > 0)
+            .OrderByDescending(entry => entry.ChassisMeshCount)
+            .ThenBy(entry => entry.Source.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.Source)
+            .FirstOrDefault();
     }
 
     private List<ModelSource> LoadModelSources(string folder)

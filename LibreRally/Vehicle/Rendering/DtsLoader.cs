@@ -13,6 +13,7 @@ public static class DtsLoader
 {
     private const uint PrimitiveMaterialMask = 0x0FFFFFFF;
     private const uint PrimitiveStripFlag = 0x40000000;
+    private const long MaxInterleavedBufferBytes = 128L * 1024L * 1024L;
 
     public static List<ColladaMesh> Load(string dtsFilePath)
     {
@@ -21,13 +22,29 @@ public static class DtsLoader
 
         short version = reader.ReadInt16();
         _ = reader.ReadInt16(); // exporter version
+        if (version is < 24 or > 26)
+        {
+            throw new InvalidDataException($"Unsupported DTS version {version}. Supported versions are 24 through 26.");
+        }
 
         int sizeAll = reader.ReadInt32();
         int start16 = reader.ReadInt32();
         int start8 = reader.ReadInt32();
-        if (sizeAll <= 0 || start16 < 0 || start8 < start16)
+        if (sizeAll <= 0 || start16 < 0 || start8 < start16 || start16 > sizeAll || start8 > sizeAll)
         {
             throw new InvalidDataException("Invalid DTS buffer header.");
+        }
+
+        long interleavedBufferBytes = checked((long)sizeAll * sizeof(uint));
+        long remainingBytes = stream.Length - stream.Position;
+        if (interleavedBufferBytes > remainingBytes)
+        {
+            throw new InvalidDataException("Invalid DTS buffer header: interleaved buffer exceeds file length.");
+        }
+
+        if (interleavedBufferBytes > MaxInterleavedBufferBytes)
+        {
+            throw new InvalidDataException($"DTS interleaved buffer exceeds safety limit ({MaxInterleavedBufferBytes} bytes).");
         }
 
         int data32Words = start16;
@@ -452,6 +469,7 @@ public static class DtsLoader
         List<ColladaVertex> outVerts,
         List<int> outIndices)
     {
+        var vertexIndexMap = new Dictionary<int, int>();
         if (strip)
         {
             for (int i = 0; i + 2 < count; i++)
@@ -464,7 +482,7 @@ public static class DtsLoader
                     (b, c) = (c, b);
                 }
 
-                EmitTriangle(mesh, a, b, c, outVerts, outIndices);
+                EmitTriangle(mesh, a, b, c, outVerts, outIndices, vertexIndexMap);
             }
 
             return;
@@ -475,7 +493,7 @@ public static class DtsLoader
             int a = mesh.Indices[start + i];
             int b = mesh.Indices[start + i + 1];
             int c = mesh.Indices[start + i + 2];
-            EmitTriangle(mesh, a, b, c, outVerts, outIndices);
+            EmitTriangle(mesh, a, b, c, outVerts, outIndices, vertexIndexMap);
         }
     }
 
@@ -485,15 +503,29 @@ public static class DtsLoader
         int b,
         int c,
         List<ColladaVertex> outVerts,
-        List<int> outIndices)
+        List<int> outIndices,
+        Dictionary<int, int> vertexIndexMap)
     {
-        int baseIndex = outVerts.Count;
-        outVerts.Add(ReadVertex(mesh, a));
-        outVerts.Add(ReadVertex(mesh, b));
-        outVerts.Add(ReadVertex(mesh, c));
-        outIndices.Add(baseIndex);
-        outIndices.Add(baseIndex + 1);
-        outIndices.Add(baseIndex + 2);
+        outIndices.Add(GetOrAddVertexIndex(mesh, a, outVerts, vertexIndexMap));
+        outIndices.Add(GetOrAddVertexIndex(mesh, b, outVerts, vertexIndexMap));
+        outIndices.Add(GetOrAddVertexIndex(mesh, c, outVerts, vertexIndexMap));
+    }
+
+    private static int GetOrAddVertexIndex(
+        ParsedMesh mesh,
+        int sourceIndex,
+        List<ColladaVertex> outVerts,
+        Dictionary<int, int> vertexIndexMap)
+    {
+        if (vertexIndexMap.TryGetValue(sourceIndex, out int existingIndex))
+        {
+            return existingIndex;
+        }
+
+        int nextIndex = outVerts.Count;
+        outVerts.Add(ReadVertex(mesh, sourceIndex));
+        vertexIndexMap[sourceIndex] = nextIndex;
+        return nextIndex;
     }
 
     private static ColladaVertex ReadVertex(ParsedMesh mesh, int index)
