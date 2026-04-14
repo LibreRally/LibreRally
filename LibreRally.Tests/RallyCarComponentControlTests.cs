@@ -139,6 +139,45 @@ public class RallyCarComponentControlTests
     }
 
     [Fact]
+    public void ComputeAbsBrakeTorqueScale_RemainsFull_WhenWheelSlipIsBelowTarget()
+    {
+        float scale = RallyCarComponent.ComputeAbsBrakeTorqueScale(
+            slipRatio: -0.10f,
+            rollingDirection: 1f,
+            slipRatioTarget: 0.15f,
+            slipRatioWindow: 0.10f,
+            minBrakeScale: 0.18f);
+
+        Assert.Equal(1f, scale, 3);
+    }
+
+    [Fact]
+    public void ComputeAbsBrakeTorqueScale_ReachesFloor_WhenForwardWheelApproachesLockup()
+    {
+        float scale = RallyCarComponent.ComputeAbsBrakeTorqueScale(
+            slipRatio: -0.30f,
+            rollingDirection: 1f,
+            slipRatioTarget: 0.15f,
+            slipRatioWindow: 0.10f,
+            minBrakeScale: 0.18f);
+
+        Assert.Equal(0.18f, scale, 3);
+    }
+
+    [Fact]
+    public void ComputeAbsBrakeTorqueScale_UsesTravelDirectionForReverseBraking()
+    {
+        float scale = RallyCarComponent.ComputeAbsBrakeTorqueScale(
+            slipRatio: 0.30f,
+            rollingDirection: -1f,
+            slipRatioTarget: 0.15f,
+            slipRatioWindow: 0.10f,
+            minBrakeScale: 0.18f);
+
+        Assert.Equal(0.18f, scale, 3);
+    }
+
+    [Fact]
     public void ComputeGroundProbeContactScale_IsFullAtNominalContact()
     {
         float contactScale = RallyCarComponent.ComputeGroundProbeContactScale(

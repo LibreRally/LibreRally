@@ -125,6 +125,13 @@ public class JBeamVehicleControllerDefinition
     public List<float> LowShiftDownRpm { get; init; } = new();
 }
 
+public class JBeamBrakeControlDefinition
+{
+    public bool? EnableAbs { get; init; }
+    public float? AbsSlipRatioTarget { get; init; }
+    public bool HasLegacyAbsController { get; init; }
+}
+
 /// <summary>All raw data parsed from a single .jbeam section (one named object within a file).</summary>
 public class JBeamPart
 {
@@ -142,6 +149,7 @@ public class JBeamPart
     public JBeamEngineDefinition? Engine { get; init; }
     public JBeamGearboxDefinition? Gearbox { get; init; }
     public JBeamVehicleControllerDefinition? VehicleController { get; init; }
+    public JBeamBrakeControlDefinition? BrakeControl { get; init; }
 
     /// <summary>Ref nodes: ref, back, left, up positions used for orientation.</summary>
     public Dictionary<string, string> RefNodes { get; init; } = new();
