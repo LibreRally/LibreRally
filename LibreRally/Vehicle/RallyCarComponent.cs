@@ -721,7 +721,9 @@ public class RallyCarComponent : SyncScript
             var isFrontAxle = !IsRearWheel(wheel, wheelSettings);
             var staticCamber = isFrontAxle ? FrontStaticCamberRadians : RearStaticCamberRadians;
             var camberGain = isFrontAxle ? FrontCamberGainPerMeter : RearCamberGainPerMeter;
-            _camberAngles[i] = ComputeAlignmentCamberAngle(staticCamber, camberGain, _suspensionCompressions[i]);
+            var alignmentCamber = ComputeAlignmentCamberAngle(staticCamber, camberGain, _suspensionCompressions[i]);
+            var camberSideSign = ComputeCamberSideSign(Vector3.Dot(wheelPointOffset, fallbackRight));
+            _camberAngles[i] = alignmentCamber * camberSideSign;
         }
     }
 
@@ -1080,6 +1082,16 @@ public class RallyCarComponent : SyncScript
             staticCamberRadians + camberGainPerMeter * suspensionCompressionMeters,
             -MaxDynamicAlignmentCamberRadians,
             MaxDynamicAlignmentCamberRadians);
+    }
+
+    internal static float ComputeCamberSideSign(float wheelSideDot)
+    {
+        if (!float.IsFinite(wheelSideDot))
+        {
+            return 1f;
+        }
+
+        return wheelSideDot < 0f ? -1f : 1f;
     }
 
     internal static float ComputeAutoClutchTorqueScale(
