@@ -392,7 +392,7 @@ public static class VehiclePowertrainResolver
             "lsd" or "limitedslip" => DifferentialConfig.CreateLimitedSlip(
                 biasRatio: fallback.BiasRatio > 1f && float.IsFinite(fallback.BiasRatio) ? fallback.BiasRatio : 2.5f,
                 lockingCoeff: Math.Clamp(device.LsdLockCoef ?? fallback.LockingCoefficient, 0f, 1f),
-                coastLockingCoeff: Math.Clamp(device.LsdRevLockCoef ?? device.LsdLockCoef ?? fallback.CoastLockingCoefficient, 0f, 1f),
+                coastLockingCoeff: Math.Clamp(device.LsdRevLockCoef ?? (device.LsdLockCoef ?? fallback.LockingCoefficient), 0f, 1f),
                 preloadTorque: MathF.Max(0f, device.LsdPreload ?? fallback.PreloadTorque)),
             "locked" or "spool" or "welded" => DifferentialConfig.CreateLocking(),
             _ => fallback,

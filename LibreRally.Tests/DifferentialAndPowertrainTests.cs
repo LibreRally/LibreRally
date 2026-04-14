@@ -48,4 +48,39 @@ public sealed class DifferentialAndPowertrainTests
         Assert.True(driveTransfer > 40f);
         Assert.True(coastTransfer > driveTransfer);
     }
+
+    [Fact]
+    public void SplitTorque_WithCoastLockSetToZero_DoesNotFallbackToDriveLock()
+    {
+        var config = DifferentialConfig.CreateLimitedSlip(
+            biasRatio: 10f,
+            lockingCoeff: 0.9f,
+            coastLockingCoeff: 0f,
+            preloadTorque: 0f);
+
+        DifferentialSolver.SplitTorque(in config, -300f, omegaLeft: 20f, omegaRight: 5f, out var coastLeft, out var coastRight);
+
+        var coastTransfer = (coastRight - coastLeft) * 0.5f;
+        Assert.Equal(0f, coastTransfer, 4);
+    }
+
+    [Fact]
+    public void SplitTorque_WithPreload_RampsContinuouslyAtSmallDeltaOmega()
+    {
+        var config = DifferentialConfig.CreateLimitedSlip(
+            biasRatio: 10f,
+            lockingCoeff: 0f,
+            coastLockingCoeff: 0f,
+            preloadTorque: 120f);
+
+        DifferentialSolver.SplitTorque(in config, 0f, omegaLeft: 1.001f, omegaRight: 1f, out var nearZeroLeft, out var nearZeroRight);
+        DifferentialSolver.SplitTorque(in config, 0f, omegaLeft: 1.02f, omegaRight: 1f, out var largerDeltaLeft, out var largerDeltaRight);
+
+        var nearZeroTransfer = (nearZeroRight - nearZeroLeft) * 0.5f;
+        var largerDeltaTransfer = (largerDeltaRight - largerDeltaLeft) * 0.5f;
+
+        Assert.True(nearZeroTransfer > 0f);
+        Assert.True(largerDeltaTransfer > nearZeroTransfer);
+        Assert.True(largerDeltaTransfer < 120f);
+    }
 }
