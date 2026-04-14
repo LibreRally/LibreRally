@@ -134,7 +134,7 @@ public class VehicleLoader
 
             return fallback;
         }
-        float GetNumericVarWithFallbacks(float fallback, params string[] names)
+        float GetNumericVarOrFallback(float fallback, params string[] names)
         {
             foreach (var name in names)
             {
@@ -148,7 +148,7 @@ public class VehicleLoader
         }
         float ResolveCamberRadians(string axleSuffix)
         {
-            var camberPrecompression = GetNumericVarWithFallbacks(1f, $"camber_{axleSuffix}_asphalt", $"camber_{axleSuffix}");
+            var camberPrecompression = GetNumericVarOrFallback(1f, $"camber_{axleSuffix}_asphalt", $"camber_{axleSuffix}");
             return RallyCarComponent.ConvertCamberPrecompressionToRadians(camberPrecompression);
         }
 

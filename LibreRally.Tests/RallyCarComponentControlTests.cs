@@ -100,7 +100,7 @@ public class RallyCarComponentControlTests
         float camberRadians = RallyCarComponent.ComputeAlignmentCamberAngle(
             staticCamberRadians: -0.03f,
             camberGainPerMeter: -0.35f,
-            suspensionCompression: 0.10f);
+            suspensionCompressionMeters: 0.10f);
 
         Assert.Equal(-0.065f, camberRadians, 3);
     }

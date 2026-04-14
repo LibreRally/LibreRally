@@ -17,8 +17,10 @@ public class RallyCarComponent : SyncScript
     private const float GamePadSteerDeadzone = 0.12f;
     private const float SleepLinearSpeedThreshold = 0.10f;
     private const float SleepAngularSpeedThreshold = 0.10f;
-    // BeamNG alignment variables represent a precompression ratio around 1.0, so convert
-    // delta-from-unity into a practical camber-angle range used by the tyre model.
+    // BeamNG alignment variables represent a beam precompression ratio around 1.0.
+    // The camber vars in shipped JBeam data typically span about ±0.06 around unity, so
+    // mapping that range with a 0.9 rad/unit scale yields a practical static-camber window
+    // of roughly ±3 degrees before additional runtime clamping.
     private const float CamberRadiansPerPrecompressionUnit = 0.9f;
     private const float MaxStaticCamberFromAlignmentRadians = 0.2f;
     private const float MaxDynamicAlignmentCamberRadians = 0.35f;
@@ -1067,15 +1069,15 @@ public class RallyCarComponent : SyncScript
             MaxStaticCamberFromAlignmentRadians);
     }
 
-    internal static float ComputeAlignmentCamberAngle(float staticCamberRadians, float camberGainPerMeter, float suspensionCompression)
+    internal static float ComputeAlignmentCamberAngle(float staticCamberRadians, float camberGainPerMeter, float suspensionCompressionMeters)
     {
-        if (!float.IsFinite(staticCamberRadians) || !float.IsFinite(camberGainPerMeter) || !float.IsFinite(suspensionCompression))
+        if (!float.IsFinite(staticCamberRadians) || !float.IsFinite(camberGainPerMeter) || !float.IsFinite(suspensionCompressionMeters))
         {
             return 0f;
         }
 
         return Math.Clamp(
-            staticCamberRadians + camberGainPerMeter * suspensionCompression,
+            staticCamberRadians + camberGainPerMeter * suspensionCompressionMeters,
             -MaxDynamicAlignmentCamberRadians,
             MaxDynamicAlignmentCamberRadians);
     }
