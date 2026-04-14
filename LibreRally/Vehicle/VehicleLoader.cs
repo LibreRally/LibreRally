@@ -134,6 +134,23 @@ public class VehicleLoader
 
             return fallback;
         }
+        float GetFiniteVarWithFallbacks(float fallback, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (definition.Vars.TryGetValue(name, out var v) && float.IsFinite(v))
+                {
+                    return v;
+                }
+            }
+
+            return fallback;
+        }
+        float ResolveCamberRadians(string axleSuffix)
+        {
+            var camberPrecompression = GetFiniteVarWithFallbacks(1f, $"camber_{axleSuffix}_asphalt", $"camber_{axleSuffix}");
+            return RallyCarComponent.ConvertCamberPrecompressionToRadians(camberPrecompression);
+        }
 
         var powertrain = VehiclePowertrainResolver.Resolve(definition);
         var absEnabled = IsAbsEnabled(definition.BrakeControl);
@@ -215,6 +232,8 @@ public class VehicleLoader
             ShiftDownRpm = powertrain.ShiftDownRpm,
             AbsEnabled = absEnabled,
             AbsSlipRatioTarget = absSlipRatioTarget,
+            FrontStaticCamberRadians = ResolveCamberRadians("F"),
+            RearStaticCamberRadians = ResolveCamberRadians("R"),
             Dynamics = dynamics,
         };
         car.Wheels.AddRange(wheelEntities);

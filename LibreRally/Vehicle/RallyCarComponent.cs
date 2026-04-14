@@ -17,6 +17,7 @@ public class RallyCarComponent : SyncScript
     private const float GamePadSteerDeadzone = 0.12f;
     private const float SleepLinearSpeedThreshold = 0.10f;
     private const float SleepAngularSpeedThreshold = 0.10f;
+    private const float CamberRadiansPerPrecompressionUnit = 0.9f;
 
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
@@ -50,6 +51,18 @@ public class RallyCarComponent : SyncScript
     /// and suspension load transfer take over.
     /// </summary>
     public float ChassisYawAssist { get; set; } = 1.0f;
+
+    /// <summary>Static front-axle camber angle (rad), sourced from JBeam alignment settings.</summary>
+    public float FrontStaticCamberRadians { get; set; }
+
+    /// <summary>Static rear-axle camber angle (rad), sourced from JBeam alignment settings.</summary>
+    public float RearStaticCamberRadians { get; set; }
+
+    /// <summary>Front camber gain in bump/rebound (rad/m). Negative values add negative camber in bump.</summary>
+    public float FrontCamberGainPerMeter { get; set; } = -0.35f;
+
+    /// <summary>Rear camber gain in bump/rebound (rad/m). Negative values add negative camber in bump.</summary>
+    public float RearCamberGainPerMeter { get; set; } = -0.25f;
 
     /// <summary>Legacy grip tuning value, now used as the soft-body tyre model's low-speed damping gain.</summary>
     public float LateralGrip { get; set; } = 6f;
@@ -699,8 +712,10 @@ public class RallyCarComponent : SyncScript
             _wheelContactScales[i] = contactScale;
             _wheelGrounded[i] = contactScale > 0.05f;
 
-            // Camber is currently zero (vertical wheels) — could be extended from constraint geometry
-            _camberAngles[i] = 0f;
+            var isFrontAxle = !IsRearWheel(wheel, wheelSettings);
+            var staticCamber = isFrontAxle ? FrontStaticCamberRadians : RearStaticCamberRadians;
+            var camberGain = isFrontAxle ? FrontCamberGainPerMeter : RearCamberGainPerMeter;
+            _camberAngles[i] = ComputeAlignmentCamberAngle(staticCamber, camberGain, _suspensionCompressions[i]);
         }
     }
 
@@ -1033,6 +1048,26 @@ public class RallyCarComponent : SyncScript
     internal static Vector3 ComputePointVelocity(Vector3 linearVelocity, Vector3 angularVelocity, Vector3 pointOffset)
     {
         return linearVelocity + Vector3.Cross(angularVelocity, pointOffset);
+    }
+
+    internal static float ConvertCamberPrecompressionToRadians(float precompression)
+    {
+        if (!float.IsFinite(precompression))
+        {
+            return 0f;
+        }
+
+        return Math.Clamp((precompression - 1f) * CamberRadiansPerPrecompressionUnit, -0.2f, 0.2f);
+    }
+
+    internal static float ComputeAlignmentCamberAngle(float staticCamberRadians, float camberGainPerMeter, float suspensionCompression)
+    {
+        if (!float.IsFinite(staticCamberRadians) || !float.IsFinite(camberGainPerMeter) || !float.IsFinite(suspensionCompression))
+        {
+            return 0f;
+        }
+
+        return Math.Clamp(staticCamberRadians + camberGainPerMeter * suspensionCompression, -0.35f, 0.35f);
     }
 
     internal static float ComputeAutoClutchTorqueScale(
