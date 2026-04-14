@@ -87,6 +87,39 @@ public class RallyCarComponentControlTests
     }
 
     [Fact]
+    public void ConvertCamberPrecompressionToRadians_MapsBeamPrecompressionAroundUnity()
+    {
+        float camberRadians = RallyCarComponent.ConvertCamberPrecompressionToRadians(0.96f);
+
+        Assert.Equal(-0.036f, camberRadians, 3);
+    }
+
+    [Fact]
+    public void ComputeAlignmentCamberAngle_AddsCompressionGainToStaticCamber()
+    {
+        float camberRadians = RallyCarComponent.ComputeAlignmentCamberAngle(
+            staticCamberRadians: -0.03f,
+            camberGainPerMeter: -0.35f,
+            suspensionCompressionMeters: 0.10f);
+
+        Assert.Equal(-0.065f, camberRadians, 3);
+    }
+
+    [Fact]
+    public void ComputeAlignmentCamberAngle_UsesOppositeSignsAcrossWheelSides()
+    {
+        float alignmentCamber = RallyCarComponent.ComputeAlignmentCamberAngle(
+            staticCamberRadians: -0.03f,
+            camberGainPerMeter: -0.35f,
+            suspensionCompressionMeters: 0.10f);
+
+        float leftCamberRadians = alignmentCamber * RallyCarComponent.ComputeCamberSideSign(wheelSideDot: -0.6f);
+        float rightCamberRadians = alignmentCamber * RallyCarComponent.ComputeCamberSideSign(wheelSideDot: 0.6f);
+
+        Assert.Equal(-leftCamberRadians, rightCamberRadians, 3);
+    }
+
+    [Fact]
     public void ComputeAutoClutchTorqueScale_RemainsFull_WhenWheelspinMatchesSlipLimit()
     {
         float scale = RallyCarComponent.ComputeAutoClutchTorqueScale(
