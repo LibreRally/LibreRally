@@ -765,14 +765,12 @@ public sealed class BeamNgVehicleCatalog
         {
             using var archive = ZipFile.OpenRead(zipPath);
             vehicleId = archive.Entries
-                .Select(entry => TryNormalizeArchiveEntryPath(entry.FullName, out var normalizedPath)
-                    ? normalizedPath
-                    : null)
-                .Where(path => !string.IsNullOrEmpty(path))
-                .Select(path => path!)
-                .Where(path => path.StartsWith("vehicles/", StringComparison.OrdinalIgnoreCase))
-                .Select(path => path.Split('/', StringSplitOptions.RemoveEmptyEntries))
-                .Where(parts => parts.Length >= 2)
+                .Select(entry => entry.FullName.Replace('\\', '/'))
+                .Select(path => path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                .Where(parts =>
+                    parts.Length >= 2 &&
+                    parts[0].Equals("vehicles", StringComparison.OrdinalIgnoreCase) &&
+                    !parts.Any(segment => segment is "." or ".."))
                 .Select(parts => parts[1])
                 .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? string.Empty;
             return !string.IsNullOrWhiteSpace(vehicleId);
@@ -852,11 +850,12 @@ public sealed class BeamNgVehicleCatalog
             fullCacheRoot += Path.DirectorySeparatorChar;
         }
 
-        var destination = Path.Combine(cacheRoot, normalizedEntryPath.Replace('/', Path.DirectorySeparatorChar));
-        var fullDestination = Path.GetFullPath(destination);
+        var fullDestination = Path.GetFullPath(
+            Path.Combine(cacheRoot, normalizedEntryPath.Replace('/', Path.DirectorySeparatorChar)));
         if (!fullDestination.StartsWith(fullCacheRoot, StringComparison.OrdinalIgnoreCase))
         {
-            throw new InvalidDataException($"Archive entry '{entry.FullName}' resolves outside cache root.");
+            throw new InvalidDataException(
+                $"Archive entry '{entry.FullName}' attempts path traversal outside cache root (possible Zip Slip attack).");
         }
 
         var destinationDirectory = Path.GetDirectoryName(fullDestination);
