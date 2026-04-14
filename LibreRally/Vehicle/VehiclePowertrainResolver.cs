@@ -389,10 +389,28 @@ public static class VehiclePowertrainResolver
         return diffType switch
         {
             "open" => DifferentialConfig.CreateOpen(),
-            "lsd" or "limitedslip" => DifferentialConfig.CreateLimitedSlip(2.5f, Math.Clamp(device.LsdLockCoef ?? 0.3f, 0f, 1f)),
+            "lsd" or "limitedslip" => CreateLimitedSlipConfig(device, fallback),
             "locked" or "spool" or "welded" => DifferentialConfig.CreateLocking(),
             _ => fallback,
         };
+    }
+
+    private static DifferentialConfig CreateLimitedSlipConfig(JBeamPowertrainDevice device, DifferentialConfig fallback)
+    {
+        var biasRatio = fallback.BiasRatio > 1f && float.IsFinite(fallback.BiasRatio)
+            ? fallback.BiasRatio
+            : 2.5f;
+
+        var driveLock = Math.Clamp(device.LsdLockCoef ?? fallback.LockingCoefficient, 0f, 1f);
+        var coastLock = device.LsdRevLockCoef.HasValue
+            ? Math.Clamp(device.LsdRevLockCoef.Value, 0f, 1f)
+            : driveLock;
+
+        return DifferentialConfig.CreateLimitedSlip(
+            biasRatio: biasRatio,
+            lockingCoeff: driveLock,
+            coastLockingCoeff: coastLock,
+            preloadTorque: MathF.Max(0f, device.LsdPreload ?? fallback.PreloadTorque));
     }
 
     private static string ToWheelKey(string wheelCode) => $"wheel_{wheelCode.ToUpperInvariant()}";

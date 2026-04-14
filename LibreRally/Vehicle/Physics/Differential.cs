@@ -53,20 +53,36 @@ public struct DifferentialConfig
     /// </summary>
     public float LockingCoefficient;
 
+    /// <summary>
+    /// Locking coefficient used while coasting/engine braking (input torque &lt; 0).
+    /// If zero, <see cref="LockingCoefficient"/> is used for both directions.
+    /// </summary>
+    public float CoastLockingCoefficient;
+
+    /// <summary>
+    /// Base clutch preload torque for limited-slip differentials (N·m).
+    /// Applied as baseline locking before torque-proportional lock is added.
+    /// </summary>
+    public float PreloadTorque;
+
     /// <summary>Creates a default open differential.</summary>
     public static DifferentialConfig CreateOpen() => new()
     {
         Type = DifferentialType.Open,
         BiasRatio = 1.0f,
         LockingCoefficient = 0f,
+        CoastLockingCoefficient = 0f,
+        PreloadTorque = 0f,
     };
 
     /// <summary>Creates a default limited-slip differential with typical rally bias.</summary>
-    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f) => new()
+    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f, float coastLockingCoeff = 0f, float preloadTorque = 0f) => new()
     {
         Type = DifferentialType.LimitedSlip,
         BiasRatio = biasRatio,
         LockingCoefficient = lockingCoeff,
+        CoastLockingCoefficient = coastLockingCoeff,
+        PreloadTorque = preloadTorque,
     };
 
     /// <summary>Creates a locking differential.</summary>
@@ -75,6 +91,8 @@ public struct DifferentialConfig
         Type = DifferentialType.Locking,
         BiasRatio = float.MaxValue,
         LockingCoefficient = 1.0f,
+        CoastLockingCoefficient = 1.0f,
+        PreloadTorque = 0f,
     };
 }
 
@@ -146,9 +164,10 @@ public static class DifferentialSolver
     /// Limited-slip differential: transfers additional torque to the slower wheel
     /// based on speed difference and bias ratio.
     ///
-    /// <para>Model: clutch-type LSD. The friction clutch pack generates a locking torque
-    /// proportional to the input torque and the speed difference:
-    ///   T_lock = lockingCoeff × |T_input| × tanh(Δω / ω_ref)
+    /// <para>Model: clutch-type LSD with preload. Locking torque uses a smooth speed-delta
+    /// ramp via tanh and combines preload plus torque-proportional locking:
+    ///   T_lock = (T_preload + lockCoeff(mode) × |T_input|) × tanh(|Δω| / ω_ref)
+    /// where mode uses drive lock for positive or zero input torque and coast lock for negative input torque.
     /// The locked torque is transferred from the faster to the slower wheel,
     /// clamped so the torque ratio does not exceed the bias ratio.</para>
     ///
@@ -169,16 +188,17 @@ public static class DifferentialSolver
 
         // Compute speed difference
         var deltaOmega = omegaLeft - omegaRight;
-        if (MathF.Abs(deltaOmega) < 0.01f)
-        {
-	        return; // wheels at same speed — no locking torque needed
-        }
+        var preloadTorque = MathF.Max(0f, config.PreloadTorque);
+        var lockCoeff = inputTorque < 0f
+            ? config.CoastLockingCoefficient
+            : config.LockingCoefficient;
 
         // Locking torque: proportional to input torque magnitude and speed difference.
         // tanh provides smooth onset and saturation.
         const float ReferenceOmega = 5f; // rad/s normalisation for tanh
-        var lockingTorque = config.LockingCoefficient * MathF.Abs(inputTorque)
-                                                      * MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+        var lockScale = MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+        var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * MathF.Abs(inputTorque);
+        var lockingTorque = (preloadTorque + dynamicLockingTorque) * lockScale;
 
         // Transfer torque from the faster-spinning wheel to the slower one.
         // Clamp by bias ratio: T_slow / T_fast ≤ biasRatio.
