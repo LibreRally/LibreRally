@@ -53,20 +53,36 @@ public struct DifferentialConfig
     /// </summary>
     public float LockingCoefficient;
 
+    /// <summary>
+    /// Locking coefficient used while coasting/engine braking (input torque &lt; 0).
+    /// If zero, <see cref="LockingCoefficient"/> is used for both directions.
+    /// </summary>
+    public float CoastLockingCoefficient;
+
+    /// <summary>
+    /// Base clutch preload torque for limited-slip differentials (N·m).
+    /// Applied as baseline locking before torque-proportional lock is added.
+    /// </summary>
+    public float PreloadTorque;
+
     /// <summary>Creates a default open differential.</summary>
     public static DifferentialConfig CreateOpen() => new()
     {
         Type = DifferentialType.Open,
         BiasRatio = 1.0f,
         LockingCoefficient = 0f,
+        CoastLockingCoefficient = 0f,
+        PreloadTorque = 0f,
     };
 
     /// <summary>Creates a default limited-slip differential with typical rally bias.</summary>
-    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f) => new()
+    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f, float coastLockingCoeff = 0.3f, float preloadTorque = 0f) => new()
     {
         Type = DifferentialType.LimitedSlip,
         BiasRatio = biasRatio,
         LockingCoefficient = lockingCoeff,
+        CoastLockingCoefficient = coastLockingCoeff,
+        PreloadTorque = preloadTorque,
     };
 
     /// <summary>Creates a locking differential.</summary>
@@ -75,6 +91,8 @@ public struct DifferentialConfig
         Type = DifferentialType.Locking,
         BiasRatio = float.MaxValue,
         LockingCoefficient = 1.0f,
+        CoastLockingCoefficient = 1.0f,
+        PreloadTorque = 0f,
     };
 }
 
@@ -174,15 +192,21 @@ public static class DifferentialSolver
 	        return; // wheels at same speed — no locking torque needed
         }
 
+        var preloadTorque = MathF.Max(0f, config.PreloadTorque);
+        var lockCoeff = inputTorque < 0f && config.CoastLockingCoefficient > 0f
+            ? config.CoastLockingCoefficient
+            : config.LockingCoefficient;
+
         // Locking torque: proportional to input torque magnitude and speed difference.
         // tanh provides smooth onset and saturation.
         const float ReferenceOmega = 5f; // rad/s normalisation for tanh
-        var lockingTorque = config.LockingCoefficient * MathF.Abs(inputTorque)
-                                                      * MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+        var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * MathF.Abs(inputTorque)
+                                                              * MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+        var lockingTorque = preloadTorque + dynamicLockingTorque;
 
         // Transfer torque from the faster-spinning wheel to the slower one.
         // Clamp by bias ratio: T_slow / T_fast ≤ biasRatio.
-        var maxTransfer = MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f);
+        var maxTransfer = preloadTorque + (MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f));
         lockingTorque = MathF.Min(lockingTorque, maxTransfer);
 
         if (deltaOmega > 0f)
