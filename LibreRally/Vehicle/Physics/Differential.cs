@@ -76,7 +76,7 @@ public struct DifferentialConfig
     };
 
     /// <summary>Creates a default limited-slip differential with typical rally bias.</summary>
-    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f, float coastLockingCoeff = 0.3f, float preloadTorque = 0f) => new()
+    public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f, float coastLockingCoeff = 0f, float preloadTorque = 0f) => new()
     {
         Type = DifferentialType.LimitedSlip,
         BiasRatio = biasRatio,
