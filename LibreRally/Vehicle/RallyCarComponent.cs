@@ -17,7 +17,11 @@ public class RallyCarComponent : SyncScript
     private const float GamePadSteerDeadzone = 0.12f;
     private const float SleepLinearSpeedThreshold = 0.10f;
     private const float SleepAngularSpeedThreshold = 0.10f;
+    // BeamNG alignment variables represent a precompression ratio around 1.0, so convert
+    // delta-from-unity into a practical camber-angle range used by the tyre model.
     private const float CamberRadiansPerPrecompressionUnit = 0.9f;
+    private const float MaxStaticCamberFromAlignmentRadians = 0.2f;
+    private const float MaxDynamicAlignmentCamberRadians = 0.35f;
 
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
@@ -1057,7 +1061,10 @@ public class RallyCarComponent : SyncScript
             return 0f;
         }
 
-        return Math.Clamp((precompression - 1f) * CamberRadiansPerPrecompressionUnit, -0.2f, 0.2f);
+        return Math.Clamp(
+            (precompression - 1f) * CamberRadiansPerPrecompressionUnit,
+            -MaxStaticCamberFromAlignmentRadians,
+            MaxStaticCamberFromAlignmentRadians);
     }
 
     internal static float ComputeAlignmentCamberAngle(float staticCamberRadians, float camberGainPerMeter, float suspensionCompression)
@@ -1067,7 +1074,10 @@ public class RallyCarComponent : SyncScript
             return 0f;
         }
 
-        return Math.Clamp(staticCamberRadians + camberGainPerMeter * suspensionCompression, -0.35f, 0.35f);
+        return Math.Clamp(
+            staticCamberRadians + camberGainPerMeter * suspensionCompression,
+            -MaxDynamicAlignmentCamberRadians,
+            MaxDynamicAlignmentCamberRadians);
     }
 
     internal static float ComputeAutoClutchTorqueScale(
