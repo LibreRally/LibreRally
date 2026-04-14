@@ -663,7 +663,7 @@ public class RallyCarComponent : SyncScript
     /// </summary>
     private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld)
     {
-        var fallbackRight = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        var chassisRightAxis = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
         var fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
         var fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
 
@@ -686,7 +686,7 @@ public class RallyCarComponent : SyncScript
             var wheelWorld = wheel.Transform.WorldMatrix;
 
             // Wheel coordinate frame (excluding spin rotation)
-            var wheelRight = SafeNormalize(wheelWorld.Right, fallbackRight);
+            var wheelRight = SafeNormalize(wheelWorld.Right, chassisRightAxis);
             var nonSpinUp = ProjectOnPlane(fallbackUp, wheelRight);
             var wheelUp = SafeNormalize(nonSpinUp, fallbackUp);
             var wheelFwd = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
@@ -722,7 +722,7 @@ public class RallyCarComponent : SyncScript
             var staticCamber = isFrontAxle ? FrontStaticCamberRadians : RearStaticCamberRadians;
             var camberGain = isFrontAxle ? FrontCamberGainPerMeter : RearCamberGainPerMeter;
             var alignmentCamber = ComputeAlignmentCamberAngle(staticCamber, camberGain, _suspensionCompressions[i]);
-            var camberSideSign = ComputeCamberSideSign(Vector3.Dot(wheelPointOffset, fallbackRight));
+            var camberSideSign = ComputeCamberSideSign(Vector3.Dot(wheelPointOffset, chassisRightAxis));
             _camberAngles[i] = alignmentCamber * camberSideSign;
         }
     }
