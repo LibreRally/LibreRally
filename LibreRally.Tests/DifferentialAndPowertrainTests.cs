@@ -73,10 +73,10 @@ public sealed class DifferentialAndPowertrainTests
             coastLockingCoeff: 0f,
             preloadTorque: 120f);
 
-        DifferentialSolver.SplitTorque(in config, 0f, omegaLeft: 1.001f, omegaRight: 1f, out var nearZeroLeft, out var nearZeroRight);
+        DifferentialSolver.SplitTorque(in config, 0f, omegaLeft: 1.001f, omegaRight: 1f, out var smallDeltaLeft, out var smallDeltaRight);
         DifferentialSolver.SplitTorque(in config, 0f, omegaLeft: 1.02f, omegaRight: 1f, out var largerDeltaLeft, out var largerDeltaRight);
 
-        var nearZeroTransfer = (nearZeroRight - nearZeroLeft) * 0.5f;
+        var nearZeroTransfer = (smallDeltaRight - smallDeltaLeft) * 0.5f;
         var largerDeltaTransfer = (largerDeltaRight - largerDeltaLeft) * 0.5f;
 
         Assert.True(nearZeroTransfer > 0f);

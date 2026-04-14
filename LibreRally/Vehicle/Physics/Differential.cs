@@ -167,7 +167,7 @@ public static class DifferentialSolver
     /// <para>Model: clutch-type LSD with preload. Locking torque uses a smooth speed-delta
     /// ramp via tanh and combines preload plus torque-proportional locking:
     ///   T_lock = (T_preload + lockCoeff(mode) × |T_input|) × tanh(|Δω| / ω_ref)
-    /// where mode uses drive lock for positive input torque and coast lock for negative input torque.
+    /// where mode uses drive lock for positive or zero input torque and coast lock for negative input torque.
     /// The locked torque is transferred from the faster to the slower wheel,
     /// clamped so the torque ratio does not exceed the bias ratio.</para>
     ///
