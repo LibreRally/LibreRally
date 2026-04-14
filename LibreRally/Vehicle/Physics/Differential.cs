@@ -206,7 +206,7 @@ public static class DifferentialSolver
 
         // Transfer torque from the faster-spinning wheel to the slower one.
         // Clamp by bias ratio: T_slow / T_fast ≤ biasRatio.
-        var maxTransfer = preloadTorque + (MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f));
+        var maxTransfer = MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f);
         lockingTorque = MathF.Min(lockingTorque, maxTransfer);
 
         if (deltaOmega > 0f)
