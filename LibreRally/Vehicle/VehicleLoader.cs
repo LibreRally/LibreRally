@@ -23,7 +23,7 @@ namespace LibreRally.Vehicle;
 public class VehicleLoader
 {
     private static readonly Logger Log = GlobalLogger.GetLogger("VehicleLoader");
-    private sealed record ColladaSource(string DaePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
+    private sealed record ModelSource(string SourcePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
     private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
 
@@ -277,9 +277,9 @@ public class VehicleLoader
     {
         try
         {
-            var daeSources = LoadColladaSources(folder);
-            var supplementalDaeFiles = AddSupplementalColladaSources(daeSources, definition, resolvedVehicle);
-            if (daeSources.Count == 0)
+            var modelSources = LoadModelSources(folder);
+            var supplementalDaeFiles = AddSupplementalColladaSources(modelSources, definition, resolvedVehicle);
+            if (modelSources.Count == 0)
             {
                 AttachFallbackChassis(result.ChassisEntity, definition);
                 AttachFallbackTires(result, pcConfig, null);
@@ -290,7 +290,6 @@ public class VehicleLoader
                 materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalDaeFiles)),
                 vehiclesRootDirectories,
                 virtualAssetResolver);
-            var mainSource = daeSources[0];
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
             {
                 ["wheel_FL"] = result.WheelFL,
@@ -310,7 +309,7 @@ public class VehicleLoader
             var missingWheelMeshes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var wheelVisualCount = AttachWheelFlexBodyMeshes(
                 definition,
-                daeSources,
+                modelSources,
                 wheelEntities,
                 wheelMeshNames,
                 tireLikeAttachments,
@@ -320,10 +319,18 @@ public class VehicleLoader
 
             if (missingWheelMeshes.Count > 0)
             {
-                Log.Warning($"Wheel visual meshes missing from available DAEs: {string.Join(", ", missingWheelMeshes.OrderBy(x => x))}");
+                Log.Warning($"Wheel visual meshes missing from local model files: {string.Join(", ", missingWheelMeshes.OrderBy(x => x))}");
             }
 
             AttachFallbackTires(result, pcConfig, tireLikeAttachments);
+
+            var mainSource = SelectMainSourceForChassis(modelSources, wheelMeshNames);
+            if (mainSource == null)
+            {
+                Log.Warning("No chassis-like meshes found in model sources.");
+                AttachFallbackChassis(result.ChassisEntity, definition);
+                return;
+            }
 
             var chassisMeshes = mainSource.Meshes
                 .Where(cm => !wheelMeshNames.Any(meshName => MatchesColladaMesh(cm, meshName)))
@@ -332,7 +339,7 @@ public class VehicleLoader
             var meshEntity = BuildMeshEntity(
                 chassisMeshes,
                 definition.VehicleName,
-                Path.GetDirectoryName(mainSource.DaePath) ?? folder,
+                Path.GetDirectoryName(mainSource.SourcePath) ?? folder,
                 jsonMaterials,
                 mainSource.TextureMap);
 
@@ -356,33 +363,62 @@ public class VehicleLoader
         AttachFallbackTires(result, pcConfig, null);
     }
 
-    private List<ColladaSource> LoadColladaSources(string folder)
+    private static ModelSource? SelectMainSourceForChassis(IEnumerable<ModelSource> modelSources, HashSet<string> wheelMeshNames)
     {
-        var daeFiles = Directory.GetFiles(folder, "*.dae", SearchOption.AllDirectories)
+        return modelSources
+            .Select(source => new
+            {
+                Source = source,
+                ChassisMeshCount = source.Meshes.Count(mesh =>
+                    !wheelMeshNames.Any(wheelMeshName => MatchesColladaMesh(mesh, wheelMeshName))),
+            })
+            .Where(entry => entry.ChassisMeshCount > 0)
+            .OrderByDescending(entry => entry.ChassisMeshCount)
+            .ThenBy(entry => entry.Source.SourcePath, StringComparer.OrdinalIgnoreCase)
+            .Select(entry => entry.Source)
+            .FirstOrDefault();
+    }
+
+    private List<ModelSource> LoadModelSources(string folder)
+    {
+        var modelFiles = Directory.EnumerateFiles(folder, "*.dae", SearchOption.AllDirectories)
+            .Concat(Directory.EnumerateFiles(folder, "*.dts", SearchOption.AllDirectories))
             .OrderBy(path => Path.GetDirectoryName(path)?.Equals(folder, StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
             .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return LoadColladaSourcesFromFiles(daeFiles);
+        return LoadModelSourcesFromFiles(modelFiles);
     }
 
-    private List<ColladaSource> LoadColladaSourcesFromFiles(IEnumerable<string> daeFiles)
+    private List<ModelSource> LoadModelSourcesFromFiles(IEnumerable<string> modelFiles)
     {
-        var result = new List<ColladaSource>();
-        foreach (var daeFile in daeFiles
+        var result = new List<ModelSource>();
+        foreach (var modelFile in modelFiles
                      .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
                      .Distinct(StringComparer.OrdinalIgnoreCase))
         {
             try
             {
-                var textureMap = ColladaLoader.LoadTextureMap(daeFile);
-                var colladaMeshes = ColladaLoader.Load(daeFile);
-                result.Add(new ColladaSource(daeFile, colladaMeshes, textureMap));
-                Log.Info($"DAE: {Path.GetFileName(daeFile)} | {colladaMeshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
+                Dictionary<string, string> textureMap;
+                List<ColladaMesh> meshes;
+                if (modelFile.EndsWith(".dae", StringComparison.OrdinalIgnoreCase))
+                {
+                    textureMap = ColladaLoader.LoadTextureMap(modelFile);
+                    meshes = ColladaLoader.Load(modelFile);
+                    Log.Info($"DAE: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
+                }
+                else
+                {
+                    textureMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    meshes = DtsLoader.Load(modelFile);
+                    Log.Info($"DTS: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes");
+                }
+
+                result.Add(new ModelSource(modelFile, meshes, textureMap));
             }
             catch (Exception ex)
             {
-                Log.Warning($"Could not load DAE '{Path.GetFileName(daeFile)}': {ex.Message}");
+                Log.Warning($"Could not load model '{Path.GetFileName(modelFile)}': {ex.Message}");
             }
         }
 
@@ -390,7 +426,7 @@ public class VehicleLoader
     }
 
     private IReadOnlyList<string> AddSupplementalColladaSources(
-        List<ColladaSource> daeSources,
+        List<ModelSource> modelSources,
         VehicleDefinition definition,
         BeamNgResolvedVehicle? resolvedVehicle)
     {
@@ -401,7 +437,7 @@ public class VehicleLoader
 
         var missingMeshNames = GetWheelVisualFlexBodies(definition)
             .Select(flexBody => flexBody.MeshName)
-            .Where(meshName => !TryFindGeometry(daeSources, meshName, out _, out _))
+            .Where(meshName => !TryFindGeometry(modelSources, meshName, out _, out _))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (missingMeshNames.Length == 0)
@@ -416,9 +452,9 @@ public class VehicleLoader
         }
 
         Log.Info($"Supplemental wheel DAEs: {string.Join(", ", supplementalFiles.Select(Path.GetFileName))}");
-        foreach (var source in LoadColladaSourcesFromFiles(supplementalFiles))
+        foreach (var source in LoadModelSourcesFromFiles(supplementalFiles))
         {
-            daeSources.Add(source);
+            modelSources.Add(source);
         }
 
         return supplementalFiles;
@@ -454,7 +490,7 @@ public class VehicleLoader
 
     private int AttachWheelFlexBodyMeshes(
         VehicleDefinition definition,
-        List<ColladaSource> daeSources,
+        List<ModelSource> modelSources,
         Dictionary<string, Entity> wheelEntities,
         HashSet<string> wheelMeshNames,
         Dictionary<string, int> tireLikeAttachments,
@@ -472,7 +508,7 @@ public class VehicleLoader
                 continue;
             }
 
-            if (!TryFindGeometry(daeSources, flexBody.MeshName, out var source, out var sourceMeshes))
+            if (!TryFindGeometry(modelSources, flexBody.MeshName, out var source, out var sourceMeshes))
             {
                 missingWheelMeshes.Add(flexBody.MeshName);
                 continue;
@@ -481,7 +517,7 @@ public class VehicleLoader
             var meshEntity = BuildMeshEntity(
                 sourceMeshes,
                 $"{flexBody.MeshName}_{wheelKey}",
-                Path.GetDirectoryName(source.DaePath) ?? vehicleFolder,
+                Path.GetDirectoryName(source.SourcePath) ?? vehicleFolder,
                 jsonMaterials,
                 source.TextureMap);
 
@@ -551,12 +587,12 @@ public class VehicleLoader
     }
 
     private static bool TryFindGeometry(
-        IEnumerable<ColladaSource> daeSources,
+        IEnumerable<ModelSource> modelSources,
         string geometryName,
-        out ColladaSource source,
+        out ModelSource source,
         out List<ColladaMesh> meshes)
     {
-        foreach (var candidate in daeSources)
+        foreach (var candidate in modelSources)
         {
             meshes = candidate.Meshes
                 .Where(cm => MatchesColladaMesh(cm, geometryName))
