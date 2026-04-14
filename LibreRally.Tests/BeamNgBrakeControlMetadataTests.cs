@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
+using Xunit;
 
 namespace LibreRally.Tests;
 

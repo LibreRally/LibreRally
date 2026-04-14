@@ -5,6 +5,7 @@ using System.Linq;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
 using LibreRally.Vehicle.JBeam;
+using Xunit;
 
 namespace LibreRally.Tests;
 
@@ -64,6 +65,28 @@ public sealed class BeamNgVehicleCatalogTests
         string commonSearchFolder = Assert.Single(resolved.JBeamSearchFolders.Where(path =>
             path.EndsWith(Path.Combine("vehicles", "common"), StringComparison.OrdinalIgnoreCase)));
         Assert.True(File.Exists(Path.Combine(commonSearchFolder, "shared", "common_part.jbeam")));
+    }
+
+    [Fact]
+    public void ResolveVehicle_DoesNotExtractUnsafeZipPathsOutsideCache()
+    {
+        using var workspace = new TempWorkspace();
+        string bundledRoot = Path.Combine(workspace.RootPath, "bundled");
+        string cacheRoot = Path.Combine(workspace.RootPath, "cache");
+        Directory.CreateDirectory(bundledRoot);
+
+        string zipPath = Path.Combine(bundledRoot, "modpack.zip");
+        CreateZip(zipPath,
+            ("vehicles/zip_car/base.pc", "{ \"parts\": {}, \"vars\": {} }"),
+            ("vehicles/zip_car/zip_car.jbeam", "{}"),
+            ("../outside.txt", "should-not-write"));
+
+        BeamNgVehicleCatalog catalog = new(bundledRoot, cacheRoot: cacheRoot);
+
+        BeamNgResolvedVehicle resolved = catalog.ResolveVehicle("zip_car");
+
+        Assert.True(File.Exists(Path.Combine(resolved.VehicleFolderPath, "base.pc")));
+        Assert.False(File.Exists(Path.Combine(workspace.RootPath, "outside.txt")));
     }
 
     [Fact]

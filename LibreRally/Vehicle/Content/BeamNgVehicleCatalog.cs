@@ -765,7 +765,11 @@ public sealed class BeamNgVehicleCatalog
         {
             using var archive = ZipFile.OpenRead(zipPath);
             vehicleId = archive.Entries
-                .Select(entry => entry.FullName.Replace('\\', '/'))
+                .Select(entry => TryNormalizeArchiveEntryPath(entry.FullName, out var normalizedPath)
+                    ? normalizedPath
+                    : null)
+                .Where(path => !string.IsNullOrEmpty(path))
+                .Select(path => path!)
                 .Where(path => path.StartsWith("vehicles/", StringComparison.OrdinalIgnoreCase))
                 .Select(path => path.Split('/', StringSplitOptions.RemoveEmptyEntries))
                 .Where(parts => parts.Length >= 2)
@@ -837,8 +841,25 @@ public sealed class BeamNgVehicleCatalog
 
     private static void ExtractEntry(ZipArchiveEntry entry, string cacheRoot)
     {
-        var destination = Path.Combine(cacheRoot, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
-        var destinationDirectory = Path.GetDirectoryName(destination);
+        if (!TryNormalizeArchiveEntryPath(entry.FullName, out var normalizedEntryPath))
+        {
+            return;
+        }
+
+        var fullCacheRoot = Path.GetFullPath(cacheRoot);
+        if (!fullCacheRoot.EndsWith(Path.DirectorySeparatorChar))
+        {
+            fullCacheRoot += Path.DirectorySeparatorChar;
+        }
+
+        var destination = Path.Combine(cacheRoot, normalizedEntryPath.Replace('/', Path.DirectorySeparatorChar));
+        var fullDestination = Path.GetFullPath(destination);
+        if (!fullDestination.StartsWith(fullCacheRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Archive entry '{entry.FullName}' resolves outside cache root.");
+        }
+
+        var destinationDirectory = Path.GetDirectoryName(fullDestination);
         if (destinationDirectory != null)
         {
             Directory.CreateDirectory(destinationDirectory);
@@ -846,11 +867,41 @@ public sealed class BeamNgVehicleCatalog
 
         if (string.IsNullOrEmpty(entry.Name))
         {
-            Directory.CreateDirectory(destination);
+            Directory.CreateDirectory(fullDestination);
             return;
         }
 
-        entry.ExtractToFile(destination, overwrite: true);
+        entry.ExtractToFile(fullDestination, overwrite: true);
+    }
+
+    private static bool TryNormalizeArchiveEntryPath(string entryPath, out string normalizedPath)
+    {
+        normalizedPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(entryPath))
+        {
+            return false;
+        }
+
+        var normalizedSeparators = entryPath.Replace('\\', '/');
+        if (Path.IsPathRooted(normalizedSeparators))
+        {
+            return false;
+        }
+
+        var segments = normalizedSeparators
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return false;
+        }
+
+        if (segments.Any(segment => segment is "." or ".."))
+        {
+            return false;
+        }
+
+        normalizedPath = string.Join('/', segments);
+        return true;
     }
 
     private static string ComputeSourceKey(string sourcePath)
