@@ -35,7 +35,7 @@ public static class DtsLoader
             throw new InvalidDataException("Invalid DTS buffer header.");
         }
 
-        long interleavedBufferBytes = checked((long)sizeAll * sizeof(uint));
+        long interleavedBufferBytes = (long)sizeAll * sizeof(uint);
         long remainingBytes = stream.Length - stream.Position;
         if (interleavedBufferBytes > remainingBytes)
         {

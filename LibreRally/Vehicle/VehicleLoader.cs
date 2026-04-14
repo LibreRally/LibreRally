@@ -329,6 +329,7 @@ public class VehicleLoader
             {
                 Log.Warning("No chassis-like meshes found in model sources.");
                 AttachFallbackChassis(result.ChassisEntity, definition);
+                AttachFallbackTires(result, pcConfig, null);
                 return;
             }
 
