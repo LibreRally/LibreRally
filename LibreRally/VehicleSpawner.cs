@@ -517,7 +517,8 @@ public class VehicleSpawner : SyncScript
 
         try
         {
-            var snapshot = OutGaugeProtocol.FromCar(_car, unchecked((uint)Environment.TickCount64));
+            var sessionMilliseconds = Math.Max(0d, Game.UpdateTime.Total.TotalMilliseconds);
+            var snapshot = OutGaugeProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds));
             var payload = OutGaugeProtocol.Encode(snapshot, OutGaugeId);
             _outGaugeClient.Send(payload, payload.Length, _outGaugeTargetHost, _outGaugeTargetPort);
         }
