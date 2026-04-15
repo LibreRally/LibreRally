@@ -322,10 +322,13 @@ public static class JBeamParser
             Variables = ParseVariables(obj),
             PowertrainDevices = ParsePowertrain(obj),
             PressureWheels = ParsePressureWheels(obj),
+            PressureWheelOptions = ParsePressureWheelOptionsDefinition(obj),
+            GearRatio = TryGetOptionalFloat(obj, "gearRatio"),
             Engine = ParseEngineDefinition(obj),
             Gearbox = ParseGearboxDefinition(obj),
             VehicleController = ParseVehicleControllerDefinition(obj),
             BrakeControl = ParseBrakeControlDefinition(obj),
+            TractionControl = ParseTractionControlDefinition(obj),
             RefNodes = ParseRefNodes(obj),
         };
 
@@ -927,6 +930,143 @@ public static class JBeamParser
         return pressureWheels;
     }
 
+    private static JBeamPressureWheelOptions? ParsePressureWheelOptionsDefinition(JsonElement obj)
+    {
+        if (!obj.TryGetProperty("pressureWheels", out var arr) || arr.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        bool? hasTire = null;
+        float? radius = null;
+        float? tireWidth = null;
+        float? pressurePsi = null;
+        float? frictionCoef = null;
+        float? slidingFrictionCoef = null;
+        float? treadCoef = null;
+        float? noLoadCoef = null;
+        float? loadSensitivitySlope = null;
+        float? fullLoadCoef = null;
+        float? softnessCoef = null;
+        float? hubRadius = null;
+        float? hubWidth = null;
+        float? wheelOffset = null;
+
+        foreach (var element in arr.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            if (element.TryGetProperty("hasTire", out var hasTireElement))
+            {
+                hasTire = GetBool(hasTireElement);
+            }
+
+            if (element.TryGetProperty("radius", out var radiusElement))
+            {
+                radius = GetFloat(radiusElement);
+            }
+
+            if (element.TryGetProperty("tireWidth", out var tireWidthElement))
+            {
+                tireWidth = GetFloat(tireWidthElement);
+            }
+
+            if (element.TryGetProperty("pressurePSI", out var pressurePsiElement))
+            {
+                pressurePsi = GetFloat(pressurePsiElement);
+            }
+
+            if (element.TryGetProperty("frictionCoef", out var frictionCoefElement))
+            {
+                frictionCoef = GetFloat(frictionCoefElement);
+            }
+
+            if (element.TryGetProperty("slidingFrictionCoef", out var slidingFrictionCoefElement))
+            {
+                slidingFrictionCoef = GetFloat(slidingFrictionCoefElement);
+            }
+
+            if (element.TryGetProperty("treadCoef", out var treadCoefElement))
+            {
+                treadCoef = GetFloat(treadCoefElement);
+            }
+
+            if (element.TryGetProperty("noLoadCoef", out var noLoadCoefElement))
+            {
+                noLoadCoef = GetFloat(noLoadCoefElement);
+            }
+
+            if (element.TryGetProperty("loadSensitivitySlope", out var loadSensitivitySlopeElement))
+            {
+                loadSensitivitySlope = GetFloat(loadSensitivitySlopeElement);
+            }
+
+            if (element.TryGetProperty("fullLoadCoef", out var fullLoadCoefElement))
+            {
+                fullLoadCoef = GetFloat(fullLoadCoefElement);
+            }
+
+            if (element.TryGetProperty("softnessCoef", out var softnessCoefElement))
+            {
+                softnessCoef = GetFloat(softnessCoefElement);
+            }
+
+            if (element.TryGetProperty("hubRadius", out var hubRadiusElement))
+            {
+                hubRadius = GetFloat(hubRadiusElement);
+            }
+
+            if (element.TryGetProperty("hubWidth", out var hubWidthElement))
+            {
+                hubWidth = GetFloat(hubWidthElement);
+            }
+
+            if (element.TryGetProperty("wheelOffset", out var wheelOffsetElement))
+            {
+                wheelOffset = GetFloat(wheelOffsetElement);
+            }
+        }
+
+        if (hasTire == null &&
+            radius == null &&
+            tireWidth == null &&
+            pressurePsi == null &&
+            frictionCoef == null &&
+            slidingFrictionCoef == null &&
+            treadCoef == null &&
+            noLoadCoef == null &&
+            loadSensitivitySlope == null &&
+            fullLoadCoef == null &&
+            softnessCoef == null &&
+            hubRadius == null &&
+            hubWidth == null &&
+            wheelOffset == null)
+        {
+            return null;
+        }
+
+        return new JBeamPressureWheelOptions
+        {
+            HasTire = hasTire,
+            Radius = radius,
+            TireWidth = tireWidth,
+            PressurePsi = pressurePsi,
+            FrictionCoef = frictionCoef,
+            SlidingFrictionCoef = slidingFrictionCoef,
+            TreadCoef = treadCoef,
+            NoLoadCoef = noLoadCoef,
+            LoadSensitivitySlope = loadSensitivitySlope,
+            FullLoadCoef = fullLoadCoef,
+            SoftnessCoef = softnessCoef,
+            HubRadius = hubRadius,
+            HubWidth = hubWidth,
+            WheelOffset = wheelOffset,
+        };
+    }
+
     private static JBeamBrakeControlDefinition? ParseBrakeControlDefinition(JsonElement obj)
     {
         bool? enableAbs = null;
@@ -971,6 +1111,51 @@ public static class JBeamParser
             EnableAbs = enableAbs,
             AbsSlipRatioTarget = absSlipRatioTarget,
             HasLegacyAbsController = hasLegacyAbsController,
+        };
+    }
+
+    private static JBeamTractionControlDefinition? ParseTractionControlDefinition(JsonElement obj)
+    {
+        bool? enableTractionControl = null;
+        float? slipThreshold = null;
+        float? slipRangeThreshold = null;
+        float? maxVelocity = null;
+
+        if (obj.TryGetProperty("tractionControl", out var tractionControlSection) &&
+            tractionControlSection.ValueKind == JsonValueKind.Object)
+        {
+            enableTractionControl = true;
+        }
+
+        ParseTractionControlController(
+            obj,
+            "motorTorqueControl",
+            ref enableTractionControl,
+            ref slipThreshold,
+            ref slipRangeThreshold,
+            ref maxVelocity);
+        ParseTractionControlController(
+            obj,
+            "brakeControl",
+            ref enableTractionControl,
+            ref slipThreshold,
+            ref slipRangeThreshold,
+            ref maxVelocity);
+
+        if (enableTractionControl == null &&
+            slipThreshold == null &&
+            slipRangeThreshold == null &&
+            maxVelocity == null)
+        {
+            return null;
+        }
+
+        return new JBeamTractionControlDefinition
+        {
+            EnableTractionControl = enableTractionControl,
+            SlipThreshold = slipThreshold,
+            SlipRangeThreshold = slipRangeThreshold,
+            MaxVelocity = maxVelocity,
         };
     }
 
@@ -1039,6 +1224,87 @@ public static class JBeamParser
             LowShiftUpRpm = ParseFloatList(controllerSection, "lowShiftUpRPM"),
             LowShiftDownRpm = ParseFloatList(controllerSection, "lowShiftDownRPM"),
         };
+    }
+
+    private static void ParseTractionControlController(
+        JsonElement obj,
+        string propertyName,
+        ref bool? enableTractionControl,
+        ref float? slipThreshold,
+        ref float? slipRangeThreshold,
+        ref float? maxVelocity)
+    {
+        if (!obj.TryGetProperty(propertyName, out var controllerSection) ||
+            controllerSection.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (controllerSection.TryGetProperty("useForTractionControl", out var useForTractionControlElement) &&
+            GetBool(useForTractionControlElement))
+        {
+            enableTractionControl = true;
+        }
+
+        if (!controllerSection.TryGetProperty("tractionControl", out var tractionControlSection) ||
+            tractionControlSection.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        enableTractionControl ??= true;
+        ParseTractionControlWheelGroupSettings(
+            tractionControlSection,
+            ref slipThreshold,
+            ref slipRangeThreshold,
+            ref maxVelocity);
+    }
+
+    private static void ParseTractionControlWheelGroupSettings(
+        JsonElement tractionControlSection,
+        ref float? slipThreshold,
+        ref float? slipRangeThreshold,
+        ref float? maxVelocity)
+    {
+        if (!tractionControlSection.TryGetProperty("wheelGroupSettings", out var wheelGroupSettings) ||
+            wheelGroupSettings.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        List<string>? headers = null;
+        foreach (var row in wheelGroupSettings.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = row.EnumerateArray().ToList();
+            if (headers == null)
+            {
+                headers = items.Select(SafeGetString).ToList();
+                continue;
+            }
+
+            for (var i = 0; i < headers.Count && i < items.Count; i++)
+            {
+                switch (NormalizeSectionKey(headers[i]))
+                {
+                    case "slipthreshold":
+                        slipThreshold ??= GetFloat(items[i]);
+                        break;
+                    case "sliprangethreshold":
+                        slipRangeThreshold ??= GetFloat(items[i]);
+                        break;
+                    case "maxvelocity":
+                        maxVelocity ??= GetFloat(items[i]);
+                        break;
+                }
+            }
+
+            return;
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1168,6 +1434,14 @@ public static class JBeamParser
     private static float? TryGetOptionalFloat(JsonElement obj, string propertyName)
     {
         return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : null;
+    }
+
+    private static string NormalizeSectionKey(string raw)
+    {
+        return new string(raw
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
     }
 
     // ──────────────────────────────────────────────────────────────────────────

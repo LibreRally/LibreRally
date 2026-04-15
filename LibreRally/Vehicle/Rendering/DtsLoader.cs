@@ -14,6 +14,7 @@ public static class DtsLoader
     private const uint PrimitiveMaterialMask = 0x0FFFFFFF;
     private const uint PrimitiveStripFlag = 0x40000000;
     private const long MaxInterleavedBufferBytes = 128L * 1024L * 1024L;
+    private const float Quat16MaxValue = 32767f;
 
     public static List<ColladaMesh> Load(string dtsFilePath)
     {
@@ -81,27 +82,7 @@ public static class DtsLoader
             SkipSequence(reader);
         }
 
-        _ = reader.ReadSByte(); // matStreamType
-        int numMaterials = reader.ReadInt32();
-        var materialNames = new List<string>(Math.Max(numMaterials, 0));
-        for (int i = 0; i < numMaterials; i++)
-        {
-            int length = reader.ReadInt32();
-            if (length < 0)
-            {
-                throw new InvalidDataException("Invalid DTS material name length.");
-            }
-
-            byte[] nameBytes = reader.ReadBytes(length);
-            if (nameBytes.Length != length)
-            {
-                throw new EndOfStreamException("Unexpected end of DTS file while reading material name.");
-            }
-
-            materialNames.Add(System.Text.Encoding.UTF8.GetString(nameBytes));
-        }
-
-        SkipMaterialArrays(reader, version, numMaterials);
+        List<string> materialNames = ReadMaterialList(reader, version);
 
         return ParseMeshes(buffer, version, materialNames);
     }
@@ -136,10 +117,12 @@ public static class DtsLoader
         _ = buffer.ReadPoint3();
         buffer.CheckGuard();
 
+        var nodes = new List<DtsNode>(Math.Max(numNodes, 0));
         for (int i = 0; i < numNodes; i++)
         {
-            _ = buffer.ReadS32();
-            _ = buffer.ReadS32();
+            nodes.Add(new DtsNode(
+                NameIndex: buffer.ReadS32(),
+                ParentIndex: buffer.ReadS32()));
             _ = buffer.ReadS32();
             _ = buffer.ReadS32();
             _ = buffer.ReadS32();
@@ -152,8 +135,8 @@ public static class DtsLoader
             objects.Add(new DtsObject(
                 NameIndex: buffer.ReadS32(),
                 NumMeshes: buffer.ReadS32(),
-                StartMeshIndex: buffer.ReadS32()));
-            _ = buffer.ReadS32();
+                StartMeshIndex: buffer.ReadS32(),
+                NodeIndex: buffer.ReadS32()));
             _ = buffer.ReadS32();
             _ = buffer.ReadS32();
         }
@@ -179,14 +162,18 @@ public static class DtsLoader
         }
         buffer.CheckGuard();
 
-        for (int i = 0; i < numSubShapes; i++) _ = buffer.ReadS32();
-        for (int i = 0; i < numSubShapes; i++) _ = buffer.ReadS32();
-        for (int i = 0; i < numSubShapes; i++) _ = buffer.ReadS32();
-        for (int i = 0; i < numSubShapes; i++) _ = buffer.ReadS32();
+        _ = ReadS32Array(buffer, numSubShapes);
+        int[] subShapeFirstObjects = ReadS32Array(buffer, numSubShapes);
+        _ = ReadS32Array(buffer, numSubShapes);
         buffer.CheckGuard();
 
-        for (int i = 0; i < numNodes * 4; i++) _ = buffer.ReadS16();
-        for (int i = 0; i < numNodes; i++) _ = buffer.ReadPoint3();
+        _ = ReadS32Array(buffer, numSubShapes);
+        int[] subShapeNumObjects = ReadS32Array(buffer, numSubShapes);
+        _ = ReadS32Array(buffer, numSubShapes);
+        buffer.CheckGuard();
+
+        Quaternion[] defaultRotations = ReadQuat16Array(buffer, numNodes);
+        Vector3[] defaultTranslations = ReadPoint3Array(buffer, numNodes);
         for (int i = 0; i < numNodeRotations * 4; i++) _ = buffer.ReadS16();
         for (int i = 0; i < numNodeTranslations; i++) _ = buffer.ReadPoint3();
         buffer.CheckGuard();
@@ -219,23 +206,25 @@ public static class DtsLoader
         }
         buffer.CheckGuard();
 
+        var details = new List<DtsDetail>(Math.Max(numDetails, 0));
         for (int i = 0; i < numDetails; i++)
         {
-            _ = buffer.ReadS32();
-            _ = buffer.ReadS32();
-            _ = buffer.ReadS32();
-            _ = buffer.ReadF32();
-            _ = buffer.ReadF32();
-            _ = buffer.ReadF32();
-            _ = buffer.ReadS32();
+            int nameIndex = buffer.ReadS32();
+            int subShapeNum = buffer.ReadS32();
+            int objectDetailNum = buffer.ReadS32();
+            float size = buffer.ReadF32();
+            float averageError = buffer.ReadF32();
+            float maxError = buffer.ReadF32();
+            int polyCount = buffer.ReadS32();
+            details.Add(new DtsDetail(nameIndex, subShapeNum, objectDetailNum, size, averageError, maxError, polyCount));
             if (version >= 26)
             {
                 _ = buffer.ReadS32();
                 _ = buffer.ReadS32();
-                _ = buffer.ReadS32();
-                _ = buffer.ReadS32();
+                _ = buffer.ReadU32();
+                _ = buffer.ReadU32();
                 _ = buffer.ReadF32();
-                _ = buffer.ReadU8();
+                _ = buffer.ReadU32();
             }
         }
         buffer.CheckGuard();
@@ -243,7 +232,7 @@ public static class DtsLoader
         var parsedMeshes = new List<ParsedMesh>(Math.Max(numMeshes, 0));
         for (int i = 0; i < numMeshes; i++)
         {
-            parsedMeshes.Add(ParseSingleMesh(buffer, version));
+            parsedMeshes.Add(ParseSingleMesh(buffer, version, parsedMeshes));
         }
         buffer.CheckGuard();
 
@@ -254,20 +243,27 @@ public static class DtsLoader
         }
         buffer.CheckGuard();
 
-        for (int i = 0; i < numDetails; i++) _ = buffer.ReadF32();
-        for (int i = 0; i < numDetails; i++) _ = buffer.ReadF32();
-
-        return BuildOutputMeshes(objects, parsedMeshes, names, materialNames);
+        return BuildOutputMeshes(
+            objects,
+            parsedMeshes,
+            names,
+            materialNames,
+            nodes,
+            defaultRotations,
+            defaultTranslations,
+            details,
+            subShapeFirstObjects,
+            subShapeNumObjects);
     }
 
-    private static ParsedMesh ParseSingleMesh(DtsDataBuffer buffer, short version)
+    private static ParsedMesh ParseSingleMesh(DtsDataBuffer buffer, short version, IReadOnlyList<ParsedMesh> parsedMeshes)
     {
         uint meshType = buffer.ReadU32();
         buffer.CheckGuard();
 
         _ = buffer.ReadS32();
         _ = buffer.ReadS32();
-        _ = buffer.ReadS32();
+        int parentMesh = buffer.ReadS32();
 
         _ = buffer.ReadPoint3();
         _ = buffer.ReadPoint3();
@@ -275,31 +271,43 @@ public static class DtsLoader
         _ = buffer.ReadF32();
 
         int numVerts = buffer.ReadS32();
-        Vector3[] verts = ReadPoint3Array(buffer, numVerts);
+        Vector3[] verts = parentMesh >= 0
+            ? GetSharedArray(parsedMeshes, parentMesh, numVerts, static mesh => mesh.Vertices, "vertex")
+            : ReadPoint3Array(buffer, numVerts);
 
         int numTVerts = buffer.ReadS32();
-        Vector2[] tverts = ReadPoint2Array(buffer, numTVerts);
+        Vector2[] tverts = parentMesh >= 0
+            ? GetSharedArray(parsedMeshes, parentMesh, numTVerts, static mesh => mesh.TVerts, "texture coordinate")
+            : ReadPoint2Array(buffer, numTVerts);
 
         if (version >= 26)
         {
             int numTVerts2 = buffer.ReadS32();
-            for (int i = 0; i < numTVerts2; i++)
+            if (parentMesh < 0)
             {
-                _ = buffer.ReadPoint2();
+                for (int i = 0; i < numTVerts2; i++)
+                {
+                    _ = buffer.ReadPoint2();
+                }
             }
 
             int numVColors = buffer.ReadS32();
-            for (int i = 0; i < numVColors; i++)
+            if (parentMesh < 0)
             {
-                _ = buffer.ReadU8();
-                _ = buffer.ReadU8();
-                _ = buffer.ReadU8();
-                _ = buffer.ReadU8();
+                for (int i = 0; i < numVColors; i++)
+                {
+                    _ = buffer.ReadU32();
+                }
             }
         }
 
-        Vector3[] norms = ReadPoint3Array(buffer, numVerts);
-        for (int i = 0; i < numVerts; i++) _ = buffer.ReadU8();
+        Vector3[] norms = parentMesh >= 0
+            ? GetSharedArray(parsedMeshes, parentMesh, numVerts, static mesh => mesh.Normals, "normal")
+            : ReadPoint3Array(buffer, numVerts);
+        if (parentMesh < 0)
+        {
+            for (int i = 0; i < numVerts; i++) _ = buffer.ReadU8();
+        }
 
         int numPrimitives = buffer.ReadS32();
         var primitiveStarts = new int[Math.Max(numPrimitives, 0)];
@@ -338,6 +346,7 @@ public static class DtsLoader
 
         int numMergeIndices = buffer.ReadS32();
         for (int i = 0; i < numMergeIndices; i++) _ = buffer.ReadS16();
+        buffer.Align16To32();
         _ = buffer.ReadS32();
         _ = buffer.ReadU32();
         buffer.CheckGuard();
@@ -353,6 +362,40 @@ public static class DtsLoader
         }
 
         return new ParsedMesh(verts, norms, tverts, primitiveStarts, primitiveCounts, primitiveMaterials, indices);
+    }
+
+    private static T[] GetSharedArray<T>(
+        IReadOnlyList<ParsedMesh> parsedMeshes,
+        int parentMeshIndex,
+        int count,
+        Func<ParsedMesh, T[]> selector,
+        string arrayName)
+    {
+        if (count <= 0)
+        {
+            return Array.Empty<T>();
+        }
+
+        if ((uint)parentMeshIndex >= (uint)parsedMeshes.Count)
+        {
+            throw new InvalidDataException($"DTS mesh references invalid parent mesh {parentMeshIndex} for shared {arrayName} data.");
+        }
+
+        T[] parentData = selector(parsedMeshes[parentMeshIndex]);
+        if (parentData.Length < count)
+        {
+            throw new InvalidDataException(
+                $"DTS mesh references parent mesh {parentMeshIndex} with insufficient shared {arrayName} data ({parentData.Length} < {count}).");
+        }
+
+        if (parentData.Length == count)
+        {
+            return parentData;
+        }
+
+        var result = new T[count];
+        Array.Copy(parentData, result, count);
+        return result;
     }
 
     private static void SkipSkinMeshPayload(DtsDataBuffer buffer)
@@ -405,60 +448,194 @@ public static class DtsLoader
         List<DtsObject> objects,
         List<ParsedMesh> parsedMeshes,
         List<string> names,
-        List<string> materialNames)
+        List<string> materialNames,
+        IReadOnlyList<DtsNode> nodes,
+        IReadOnlyList<Quaternion> defaultRotations,
+        IReadOnlyList<Vector3> defaultTranslations,
+        IReadOnlyList<DtsDetail> details,
+        IReadOnlyList<int> subShapeFirstObjects,
+        IReadOnlyList<int> subShapeNumObjects)
     {
         var result = new List<ColladaMesh>();
+        Matrix4x4[] nodeWorldTransforms = BuildNodeWorldTransforms(nodes, defaultRotations, defaultTranslations);
+        int[] objectSubShapes = BuildObjectSubShapeIndices(objects.Count, subShapeFirstObjects, subShapeNumObjects);
+        Dictionary<int, int> preferredDetails = SelectPreferredDetails(details);
 
-        foreach (DtsObject obj in objects)
+        for (int objectIndex = 0; objectIndex < objects.Count; objectIndex++)
         {
+            DtsObject obj = objects[objectIndex];
             string objectName = GetSafeName(names, obj.NameIndex, "dts_object");
-            int start = Math.Max(obj.StartMeshIndex, 0);
-            int endExclusive = Math.Min(start + Math.Max(obj.NumMeshes, 0), parsedMeshes.Count);
-            for (int meshIndex = start; meshIndex < endExclusive; meshIndex++)
+            Matrix4x4 objectTransform = GetObjectTransform(nodeWorldTransforms, obj.NodeIndex);
+            bool hasObjectTransform = !IsApproximatelyIdentity(objectTransform);
+            int? meshIndex = SelectPreferredMeshIndex(objectIndex, obj, objectSubShapes, preferredDetails, parsedMeshes);
+            if (!meshIndex.HasValue)
             {
-                ParsedMesh mesh = parsedMeshes[meshIndex];
-                for (int primIndex = 0; primIndex < mesh.PrimitiveStarts.Length; primIndex++)
+                continue;
+            }
+
+            ParsedMesh mesh = parsedMeshes[meshIndex.Value];
+            for (int primIndex = 0; primIndex < mesh.PrimitiveStarts.Length; primIndex++)
+            {
+                int primitiveStart = mesh.PrimitiveStarts[primIndex];
+                int primitiveCount = mesh.PrimitiveCounts[primIndex];
+                if (primitiveStart < 0 || primitiveCount < 3 || primitiveStart + primitiveCount > mesh.Indices.Length)
                 {
-                    int primitiveStart = mesh.PrimitiveStarts[primIndex];
-                    int primitiveCount = mesh.PrimitiveCounts[primIndex];
-                    if (primitiveStart < 0 || primitiveCount < 3 || primitiveStart + primitiveCount > mesh.Indices.Length)
-                    {
-                        continue;
-                    }
-
-                    bool strip = (mesh.PrimitiveMaterials[primIndex] & PrimitiveStripFlag) != 0;
-                    int matIndex = (int)(mesh.PrimitiveMaterials[primIndex] & PrimitiveMaterialMask);
-                    string materialName = GetSafeName(materialNames, matIndex, "");
-
-                    var outVerts = new List<ColladaVertex>();
-                    var outIndices = new List<int>();
-                    EmitPrimitiveTriangles(mesh, primitiveStart, primitiveCount, strip, outVerts, outIndices);
-                    if (outVerts.Count == 0 || outIndices.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    result.Add(new ColladaMesh
-                    {
-                        Name = $"{objectName}_{meshIndex}_{primIndex}",
-                        GeometryName = objectName,
-                        MaterialName = materialName,
-                        SceneNodeName = objectName,
-                        HasBakedTransform = false,
-                        Vertices = outVerts,
-                        Indices = outIndices,
-                    });
+                    continue;
                 }
+
+                bool strip = (mesh.PrimitiveMaterials[primIndex] & PrimitiveStripFlag) != 0;
+                int matIndex = (int)(mesh.PrimitiveMaterials[primIndex] & PrimitiveMaterialMask);
+                string materialName = GetSafeName(materialNames, matIndex, "");
+
+                var outVerts = new List<ColladaVertex>();
+                var outIndices = new List<int>();
+                EmitPrimitiveTriangles(mesh, primitiveStart, primitiveCount, strip, outVerts, outIndices);
+                if (outVerts.Count == 0 || outIndices.Count == 0)
+                {
+                    continue;
+                }
+
+                List<ColladaVertex> bakedVertices = hasObjectTransform
+                    ? BakeVertices(outVerts, objectTransform)
+                    : outVerts;
+
+                result.Add(new ColladaMesh
+                {
+                    Name = $"{objectName}_{meshIndex.Value}_{primIndex}",
+                    GeometryName = objectName,
+                    MaterialName = materialName,
+                    SceneNodeName = objectName,
+                    HasBakedTransform = hasObjectTransform,
+                    Vertices = bakedVertices,
+                    Indices = outIndices,
+                });
             }
         }
 
         if (result.Count == 0 && parsedMeshes.Count > 0)
         {
             var fallbackObject = new DtsObject(0, parsedMeshes.Count, 0);
-            return BuildOutputMeshes(new List<DtsObject> { fallbackObject }, parsedMeshes, new List<string> { "dts_mesh" }, materialNames);
+            return BuildOutputMeshes(
+                new List<DtsObject> { fallbackObject },
+                parsedMeshes,
+                new List<string> { "dts_mesh" },
+                materialNames,
+                Array.Empty<DtsNode>(),
+                Array.Empty<Quaternion>(),
+                Array.Empty<Vector3>(),
+                Array.Empty<DtsDetail>(),
+                Array.Empty<int>(),
+                Array.Empty<int>());
         }
 
         return result;
+    }
+
+    private static int[] BuildObjectSubShapeIndices(
+        int objectCount,
+        IReadOnlyList<int> subShapeFirstObjects,
+        IReadOnlyList<int> subShapeNumObjects)
+    {
+        if (objectCount <= 0)
+        {
+            return [];
+        }
+
+        var result = new int[objectCount];
+        Array.Fill(result, -1);
+
+        int subShapeCount = Math.Min(subShapeFirstObjects.Count, subShapeNumObjects.Count);
+        for (int subShapeIndex = 0; subShapeIndex < subShapeCount; subShapeIndex++)
+        {
+            int start = Math.Max(subShapeFirstObjects[subShapeIndex], 0);
+            int endExclusive = Math.Min(start + Math.Max(subShapeNumObjects[subShapeIndex], 0), objectCount);
+            for (int objectIndex = start; objectIndex < endExclusive; objectIndex++)
+            {
+                result[objectIndex] = subShapeIndex;
+            }
+        }
+
+        return result;
+    }
+
+    private static Dictionary<int, int> SelectPreferredDetails(IReadOnlyList<DtsDetail> details)
+    {
+        var result = new Dictionary<int, int>();
+        foreach (DtsDetail detail in details)
+        {
+            if (detail.SubShapeNum < 0 || detail.ObjectDetailNum < 0)
+            {
+                continue;
+            }
+
+            // Torque detail lists are ordered from highest to lowest visual detail,
+            // so the first detail we see for a subshape is the best static mesh choice.
+            result.TryAdd(detail.SubShapeNum, detail.ObjectDetailNum);
+        }
+
+        return result;
+    }
+
+    private static int? SelectPreferredMeshIndex(
+        int objectIndex,
+        DtsObject obj,
+        IReadOnlyList<int> objectSubShapes,
+        IReadOnlyDictionary<int, int> preferredDetails,
+        IReadOnlyList<ParsedMesh> parsedMeshes)
+    {
+        if (obj.NumMeshes <= 0)
+        {
+            return null;
+        }
+
+        if ((uint)objectIndex < (uint)objectSubShapes.Count)
+        {
+            int subShapeIndex = objectSubShapes[objectIndex];
+            if (subShapeIndex >= 0 &&
+                preferredDetails.TryGetValue(subShapeIndex, out int preferredDetail) &&
+                TryGetObjectMeshIndex(obj, preferredDetail, parsedMeshes, out int preferredMeshIndex))
+            {
+                return preferredMeshIndex;
+            }
+        }
+
+        for (int detailIndex = 0; detailIndex < obj.NumMeshes; detailIndex++)
+        {
+            if (TryGetObjectMeshIndex(obj, detailIndex, parsedMeshes, out int fallbackMeshIndex))
+            {
+                return fallbackMeshIndex;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetObjectMeshIndex(
+        DtsObject obj,
+        int detailIndex,
+        IReadOnlyList<ParsedMesh> parsedMeshes,
+        out int meshIndex)
+    {
+        meshIndex = -1;
+        if (detailIndex < 0 || detailIndex >= obj.NumMeshes)
+        {
+            return false;
+        }
+
+        int candidate = obj.StartMeshIndex + detailIndex;
+        if ((uint)candidate >= (uint)parsedMeshes.Count)
+        {
+            return false;
+        }
+
+        ParsedMesh mesh = parsedMeshes[candidate];
+        if (mesh.PrimitiveStarts.Length == 0 || mesh.Indices.Length == 0)
+        {
+            return false;
+        }
+
+        meshIndex = candidate;
+        return true;
     }
 
     private static void EmitPrimitiveTriangles(
@@ -479,7 +656,7 @@ public static class DtsLoader
                 int c = mesh.Indices[start + i + 2];
                 if ((i & 1) == 1)
                 {
-                    (b, c) = (c, b);
+                    (a, b) = (b, a);
                 }
 
                 EmitTriangle(mesh, a, b, c, outVerts, outIndices, vertexIndexMap);
@@ -528,6 +705,143 @@ public static class DtsLoader
         return nextIndex;
     }
 
+    private static Matrix4x4[] BuildNodeWorldTransforms(
+        IReadOnlyList<DtsNode> nodes,
+        IReadOnlyList<Quaternion> defaultRotations,
+        IReadOnlyList<Vector3> defaultTranslations)
+    {
+        var result = new Matrix4x4[nodes.Count];
+        var resolved = new bool[nodes.Count];
+        var resolving = new bool[nodes.Count];
+
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            ResolveNodeWorldTransform(i, nodes, defaultRotations, defaultTranslations, result, resolved, resolving);
+        }
+
+        return result;
+    }
+
+    private static Matrix4x4 ResolveNodeWorldTransform(
+        int nodeIndex,
+        IReadOnlyList<DtsNode> nodes,
+        IReadOnlyList<Quaternion> defaultRotations,
+        IReadOnlyList<Vector3> defaultTranslations,
+        Matrix4x4[] result,
+        bool[] resolved,
+        bool[] resolving)
+    {
+        if (resolved[nodeIndex])
+        {
+            return result[nodeIndex];
+        }
+
+        if (resolving[nodeIndex])
+        {
+            throw new InvalidDataException("DTS node hierarchy contains a cycle.");
+        }
+
+        resolving[nodeIndex] = true;
+
+        Quaternion rotation = nodeIndex < defaultRotations.Count
+            ? defaultRotations[nodeIndex]
+            : Quaternion.Identity;
+        if (rotation.LengthSquared() <= 1e-8f)
+        {
+            rotation = Quaternion.Identity;
+        }
+        else
+        {
+            rotation = Quaternion.Normalize(rotation);
+        }
+
+        Vector3 translation = nodeIndex < defaultTranslations.Count
+            ? defaultTranslations[nodeIndex]
+            : Vector3.Zero;
+
+        Matrix4x4 localTransform = Matrix4x4.CreateFromQuaternion(rotation);
+        localTransform.M41 = translation.X;
+        localTransform.M42 = translation.Y;
+        localTransform.M43 = translation.Z;
+
+        int parentIndex = nodes[nodeIndex].ParentIndex;
+        result[nodeIndex] = parentIndex >= 0 && parentIndex < nodes.Count
+            ? Matrix4x4.Multiply(
+                localTransform,
+                ResolveNodeWorldTransform(
+                    parentIndex,
+                    nodes,
+                    defaultRotations,
+                    defaultTranslations,
+                    result,
+                    resolved,
+                    resolving))
+            : localTransform;
+
+        resolving[nodeIndex] = false;
+        resolved[nodeIndex] = true;
+        return result[nodeIndex];
+    }
+
+    private static Matrix4x4 GetObjectTransform(IReadOnlyList<Matrix4x4> nodeWorldTransforms, int nodeIndex)
+    {
+        if (nodeIndex < 0 || nodeIndex >= nodeWorldTransforms.Count)
+        {
+            return Matrix4x4.Identity;
+        }
+
+        return nodeWorldTransforms[nodeIndex];
+    }
+
+    private static List<ColladaVertex> BakeVertices(List<ColladaVertex> vertices, Matrix4x4 transform)
+    {
+        var normalTransform = transform;
+        if (Matrix4x4.Invert(transform, out Matrix4x4 inverseTransform))
+        {
+            normalTransform = Matrix4x4.Transpose(inverseTransform);
+        }
+
+        var result = new List<ColladaVertex>(vertices.Count);
+        foreach (ColladaVertex vertex in vertices)
+        {
+            Vector3 position = Vector3.Transform(vertex.Position, transform);
+            Vector3 normal = Vector3.TransformNormal(vertex.Normal, normalTransform);
+            if (normal.LengthSquared() > 1e-8f)
+            {
+                normal = Vector3.Normalize(normal);
+            }
+            else
+            {
+                normal = Vector3.UnitY;
+            }
+
+            result.Add(new ColladaVertex(position, normal, vertex.TexCoord));
+        }
+
+        return result;
+    }
+
+    private static bool IsApproximatelyIdentity(Matrix4x4 matrix)
+    {
+        const float Epsilon = 1e-4f;
+        return MathF.Abs(matrix.M11 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M12) < Epsilon &&
+               MathF.Abs(matrix.M13) < Epsilon &&
+               MathF.Abs(matrix.M14) < Epsilon &&
+               MathF.Abs(matrix.M21) < Epsilon &&
+               MathF.Abs(matrix.M22 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M23) < Epsilon &&
+               MathF.Abs(matrix.M24) < Epsilon &&
+               MathF.Abs(matrix.M31) < Epsilon &&
+               MathF.Abs(matrix.M32) < Epsilon &&
+               MathF.Abs(matrix.M33 - 1f) < Epsilon &&
+               MathF.Abs(matrix.M34) < Epsilon &&
+               MathF.Abs(matrix.M41) < Epsilon &&
+               MathF.Abs(matrix.M42) < Epsilon &&
+               MathF.Abs(matrix.M43) < Epsilon &&
+               MathF.Abs(matrix.M44 - 1f) < Epsilon;
+    }
+
     private static ColladaVertex ReadVertex(ParsedMesh mesh, int index)
     {
         if (index < 0 || index >= mesh.Vertices.Length)
@@ -567,6 +881,42 @@ public static class DtsLoader
         return result;
     }
 
+    private static Quaternion[] ReadQuat16Array(DtsDataBuffer buffer, int count)
+    {
+        if (count <= 0)
+        {
+            return Array.Empty<Quaternion>();
+        }
+
+        var result = new Quaternion[count];
+        for (int i = 0; i < count; i++)
+        {
+            result[i] = new Quaternion(
+                buffer.ReadS16() / Quat16MaxValue,
+                buffer.ReadS16() / Quat16MaxValue,
+                buffer.ReadS16() / Quat16MaxValue,
+                buffer.ReadS16() / Quat16MaxValue);
+        }
+
+        return result;
+    }
+
+    private static int[] ReadS32Array(DtsDataBuffer buffer, int count)
+    {
+        if (count <= 0)
+        {
+            return [];
+        }
+
+        var result = new int[count];
+        for (int i = 0; i < count; i++)
+        {
+            result[i] = buffer.ReadS32();
+        }
+
+        return result;
+    }
+
     private static Vector2[] ReadPoint2Array(DtsDataBuffer buffer, int count)
     {
         if (count <= 0)
@@ -601,6 +951,99 @@ public static class DtsLoader
         reader.BaseStream.Seek(numWords * 4L, SeekOrigin.Current);
     }
 
+    private static List<string> ReadMaterialList(BinaryReader reader, short version)
+    {
+        byte materialListVersion = reader.ReadByte();
+        if (materialListVersion == 0)
+        {
+            return [];
+        }
+
+        if (materialListVersion != 1)
+        {
+            return ReadTextMaterialList(reader, materialListVersion);
+        }
+
+        uint materialCountValue = reader.ReadUInt32();
+        if (materialCountValue > int.MaxValue)
+        {
+            throw new InvalidDataException("Invalid DTS material count.");
+        }
+
+        int materialCount = (int)materialCountValue;
+        var materialNames = new List<string>(materialCount);
+        for (int i = 0; i < materialCount; i++)
+        {
+            materialNames.Add(StripLegacyMaterialPath(ReadTorqueShortString(reader)));
+        }
+
+        SkipMaterialArrays(reader, version, materialCount);
+        return materialNames;
+    }
+
+    private static string ReadTorqueShortString(BinaryReader reader)
+    {
+        int length = reader.ReadByte();
+        byte[] bytes = reader.ReadBytes(length);
+        if (bytes.Length != length)
+        {
+            throw new EndOfStreamException("Unexpected end of DTS file while reading material name.");
+        }
+
+        return System.Text.Encoding.UTF8.GetString(bytes);
+    }
+
+    private static List<string> ReadTextMaterialList(BinaryReader reader, byte firstByte)
+    {
+        var materialNames = new List<string>();
+        var current = new List<byte> { firstByte };
+        while (true)
+        {
+            int next = reader.BaseStream.ReadByte();
+            if (next < 0)
+            {
+                if (current.Count > 0)
+                {
+                    materialNames.Add(StripLegacyMaterialPath(System.Text.Encoding.UTF8.GetString(current.ToArray())));
+                }
+
+                return materialNames;
+            }
+
+            if (next is '\r' or '\n')
+            {
+                if (next == '\r' &&
+                    reader.BaseStream.Position < reader.BaseStream.Length &&
+                    reader.BaseStream.ReadByte() is not '\n')
+                {
+                    reader.BaseStream.Seek(-1, SeekOrigin.Current);
+                }
+
+                if (current.Count == 0)
+                {
+                    return materialNames;
+                }
+
+                materialNames.Add(StripLegacyMaterialPath(System.Text.Encoding.UTF8.GetString(current.ToArray())));
+                current.Clear();
+                continue;
+            }
+
+            current.Add((byte)next);
+        }
+    }
+
+    private static string StripLegacyMaterialPath(string materialName)
+    {
+        if (string.IsNullOrEmpty(materialName))
+        {
+            return materialName;
+        }
+
+        int slashIndex = Math.Max(materialName.LastIndexOf('/'), materialName.LastIndexOf('\\'));
+        return slashIndex >= 0 ? materialName[(slashIndex + 1)..] : materialName;
+    }
+
     private static void SkipMaterialArrays(BinaryReader reader, short version, int numMaterials)
     {
         if (numMaterials <= 0)
@@ -621,7 +1064,16 @@ public static class DtsLoader
         reader.BaseStream.Seek(numMaterials * 4L, SeekOrigin.Current); // matReflectance
     }
 
-    private readonly record struct DtsObject(int NameIndex, int NumMeshes, int StartMeshIndex);
+    private readonly record struct DtsNode(int NameIndex, int ParentIndex);
+    private readonly record struct DtsObject(int NameIndex, int NumMeshes, int StartMeshIndex, int NodeIndex = -1);
+    private readonly record struct DtsDetail(
+        int NameIndex,
+        int SubShapeNum,
+        int ObjectDetailNum,
+        float Size,
+        float AverageError,
+        float MaxError,
+        int PolyCount);
 
     private sealed record ParsedMesh(
         Vector3[] Vertices,
@@ -671,6 +1123,18 @@ public static class DtsLoader
             }
 
             return unchecked((short)_data16[_i16++]);
+        }
+
+        public void Align16To32()
+        {
+            if ((_i16 & 1) != 0)
+            {
+                _i16++;
+                if (_i16 > _data16.Length)
+                {
+                    throw new EndOfStreamException("Unexpected end of DTS 16-bit buffer while aligning to 32-bit boundary.");
+                }
+            }
         }
 
         public byte ReadU8()

@@ -24,6 +24,7 @@ public class VehicleLoader
 {
     private static readonly Logger Log = GlobalLogger.GetLogger("VehicleLoader");
     private sealed record ModelSource(string SourcePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
+    private sealed record SupplementalModelSource(ModelSource Source, IReadOnlyList<string> RequestedMeshNames);
     private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
 
@@ -155,18 +156,14 @@ public class VehicleLoader
         var powertrain = VehiclePowertrainResolver.Resolve(definition);
         var absEnabled = IsAbsEnabled(definition.BrakeControl);
         var absSlipRatioTarget = ResolveAbsSlipRatioTarget(definition.BrakeControl);
-        var wheelRadius = 0.305f;
+        var tractionControlEnabled = IsTractionControlEnabled(definition.TractionControl);
+        var tractionControlSlipRatioTarget = ResolveTractionControlSlipRatioTarget(definition.TractionControl);
+        var tractionControlSlipRatioWindow = ResolveTractionControlSlipRatioWindow(definition.TractionControl);
+        var frontTyreSpec = VehicleTyreSpecResolver.Resolve(definition, front: true);
+        var rearTyreSpec = VehicleTyreSpecResolver.Resolve(definition, front: false);
+        var wheelRadius = VehicleTyreSpecResolver.ResolveDrivenWheelRadius(powertrain, frontTyreSpec, rearTyreSpec);
 
         // ── Vehicle dynamics system ──────────────────────────────────────────
-        // Create the slip-based tyre model for all wheels and configure the
-        // dynamics system with vehicle geometry and differential settings.
-        var tyreModel = new TyreModel(wheelRadius)
-        {
-            Width = 0.205f,
-            PeakFrictionCoefficient = 1.05f,
-            RollingResistanceCoefficient = 0.012f,
-        };
-
         // Estimate vehicle geometry from JBeam nodes (wheelbase, track width, CG height)
         var wheelbase = EstimateWheelbase(result);
         var trackWidth = EstimateTrackWidth(result);
@@ -199,8 +196,16 @@ public class VehicleLoader
             ["wheel_RL"] = result.WheelRL,
             ["wheel_RR"] = result.WheelRR,
         };
+        VehicleTyreSpec[] wheelTyreSpecs =
+        [
+            frontTyreSpec,
+            frontTyreSpec,
+            rearTyreSpec,
+            rearTyreSpec,
+        ];
         for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
         {
+            var tyreModel = CreateTyreModel(wheelTyreSpecs[i]);
             dynamics.TyreModels[i] = tyreModel;
             dynamics.StaticNormalLoads[i] = quarterLoad;
 
@@ -230,6 +235,10 @@ public class VehicleLoader
             AutoClutchLaunchRpm = powertrain.AutoClutchLaunchRpm,
             ShiftUpRpm = powertrain.ShiftUpRpm,
             ShiftDownRpm = powertrain.ShiftDownRpm,
+            TractionControlEnabled = tractionControlEnabled,
+            TractionControlSlipRatioTarget = tractionControlSlipRatioTarget,
+            TractionControlSlipRatioWindow = tractionControlSlipRatioWindow,
+            TractionLossSlipThreshold = tractionControlEnabled ? tractionControlSlipRatioTarget : 0.18f,
             AbsEnabled = absEnabled,
             AbsSlipRatioTarget = absSlipRatioTarget,
             FrontStaticCamberRadians = ResolveCamberRadians("F"),
@@ -256,8 +265,11 @@ public class VehicleLoader
                 : "RWD";
         Log.Info($"[VehicleLoader] Gears: R={reverseGear:F2} " +
                  string.Join(" ", powertrain.GearRatios.Skip(1).Select((g, i) => $"{i + 1}={g:F2}")) +
-                 $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}" +
-                 $" | ABS={(absEnabled ? $"Y@{absSlipRatioTarget:F2}" : "N")}");
+                  $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}" +
+                  $" | ABS={(absEnabled ? $"Y@{absSlipRatioTarget:F2}" : "N")}" +
+                  $" | TCS={(tractionControlEnabled ? $"Y@{tractionControlSlipRatioTarget:F2}±{tractionControlSlipRatioWindow:F2}" : "N")}");
+        Log.Info($"[VehicleLoader] Tyres: F r={frontTyreSpec.Radius:F3}m w={frontTyreSpec.Width:F3}m p={frontTyreSpec.PressureKpa:F0}kPa " +
+                 $"| R r={rearTyreSpec.Radius:F3}m w={rearTyreSpec.Width:F3}m p={rearTyreSpec.PressureKpa:F0}kPa");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
         Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
                  $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
@@ -280,6 +292,46 @@ public class VehicleLoader
         return Math.Clamp(target, 0.05f, 0.35f);
     }
 
+    internal static bool IsTractionControlEnabled(JBeamTractionControlDefinition? tractionControl)
+    {
+        return tractionControl?.EnableTractionControl == true;
+    }
+
+    internal static float ResolveTractionControlSlipRatioTarget(JBeamTractionControlDefinition? tractionControl)
+    {
+        var target = tractionControl?.SlipThreshold ?? 0.15f;
+        return Math.Clamp(target, 0.05f, 0.35f);
+    }
+
+    internal static float ResolveTractionControlSlipRatioWindow(JBeamTractionControlDefinition? tractionControl)
+    {
+        var window = tractionControl?.SlipRangeThreshold ?? 0.10f;
+        return Math.Clamp(window, 0.02f, 0.35f);
+    }
+
+    internal static TyreModel CreateTyreModel(in VehicleTyreSpec spec)
+    {
+        var tyreModel = new TyreModel(spec.Radius)
+        {
+            Width = spec.Width,
+            TyrePressure = spec.PressureKpa,
+            PeakFrictionCoefficient = spec.PeakFrictionCoefficient,
+            RollingResistanceCoefficient = spec.RollingResistanceCoefficient,
+            LoadSensitivity = spec.BeamNgLoadSensitivitySlope.HasValue ? 0f : 0.15f,
+        };
+
+        if (spec.BeamNgNoLoadFrictionCoefficient.HasValue &&
+            spec.BeamNgFullLoadFrictionCoefficient.HasValue &&
+            spec.BeamNgLoadSensitivitySlope.HasValue)
+        {
+            tyreModel.BeamNgNoLoadFrictionCoefficient = spec.BeamNgNoLoadFrictionCoefficient.Value;
+            tyreModel.BeamNgFullLoadFrictionCoefficient = spec.BeamNgFullLoadFrictionCoefficient.Value;
+            tyreModel.BeamNgLoadSensitivitySlope = spec.BeamNgLoadSensitivitySlope.Value;
+        }
+
+        return tyreModel;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Mesh attachment
     // ──────────────────────────────────────────────────────────────────────────
@@ -296,8 +348,9 @@ public class VehicleLoader
     {
         try
         {
-            var modelSources = LoadModelSources(folder);
-            var supplementalDaeFiles = AddSupplementalColladaSources(modelSources, definition, resolvedVehicle);
+            var baseModelSources = LoadModelSources(folder);
+            var modelSources = new List<ModelSource>(baseModelSources);
+            var supplementalModelSources = AddSupplementalColladaSources(modelSources, definition, resolvedVehicle);
             if (modelSources.Count == 0)
             {
                 AttachFallbackChassis(result.ChassisEntity, definition);
@@ -306,7 +359,7 @@ public class VehicleLoader
             }
 
             var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(
-                materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalDaeFiles)),
+                materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalModelSources.Select(source => source.Source.SourcePath))),
                 vehiclesRootDirectories,
                 virtualAssetResolver);
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
@@ -343,35 +396,59 @@ public class VehicleLoader
 
             AttachFallbackTires(result, pcConfig, tireLikeAttachments);
 
-            var mainSource = SelectMainSourceForChassis(modelSources, wheelMeshNames);
-            if (mainSource == null)
+            var chassisFlexBodyMeshNames = GetChassisVisualFlexBodyMeshNames(definition);
+            var chassisMeshNameSet = new HashSet<string>(chassisFlexBodyMeshNames, StringComparer.OrdinalIgnoreCase);
+            var chassisVisualCount = 0;
+            var mainSource = SelectMainSourceForChassis(baseModelSources, wheelMeshNames);
+            if (mainSource != null)
             {
-                Log.Warning("No chassis-like meshes found in model sources.");
-                AttachFallbackChassis(result.ChassisEntity, definition);
-                return;
+                var chassisMeshes = SelectChassisMeshes(
+                    mainSource.Meshes,
+                    mainSource.SourcePath,
+                    chassisFlexBodyMeshNames,
+                    wheelMeshNames);
+
+                if (TryAttachChassisMeshes(result.ChassisEntity, definition.VehicleName, folder, jsonMaterials, mainSource, chassisMeshes))
+                {
+                    chassisVisualCount++;
+                }
             }
 
-            var chassisMeshes = mainSource.Meshes
-                .Where(cm => !wheelMeshNames.Any(meshName => MatchesColladaMesh(cm, meshName)))
-                .ToList();
-
-            var meshEntity = BuildMeshEntity(
-                chassisMeshes,
-                definition.VehicleName,
-                Path.GetDirectoryName(mainSource.SourcePath) ?? folder,
-                jsonMaterials,
-                mainSource.TextureMap);
-
-            if (meshEntity != null)
+            foreach (var supplementalModelSource in supplementalModelSources)
             {
-                // DAE vertices are in BeamNG world space (converted to Stride coords).
-                // The chassis entity sits at its node centroid, so counter-offset the mesh
-                // entity so its vertex positions map to the correct world locations.
-                meshEntity.Transform.Position = -result.ChassisEntity.Transform.Position;
-                result.ChassisEntity.AddChild(meshEntity);
+                var requestedChassisMeshNames = supplementalModelSource.RequestedMeshNames
+                    .Where(chassisMeshNameSet.Contains)
+                    .ToArray();
+                if (requestedChassisMeshNames.Length == 0)
+                {
+                    continue;
+                }
+
+                var chassisMeshes = SelectSupplementalChassisMeshes(
+                    supplementalModelSource.Source.Meshes,
+                    requestedChassisMeshNames,
+                    wheelMeshNames);
+                if (TryAttachChassisMeshes(
+                        result.ChassisEntity,
+                        definition.VehicleName,
+                        folder,
+                        jsonMaterials,
+                        supplementalModelSource.Source,
+                        chassisMeshes))
+                {
+                    chassisVisualCount++;
+                }
+            }
+
+            if (chassisVisualCount > 0)
+            {
                 Log.Info($"Wheel visuals: attached {wheelVisualCount} flexbody instances.");
                 return;
             }
+
+            Log.Warning("No chassis-like meshes found in model sources.");
+            AttachFallbackChassis(result.ChassisEntity, definition);
+            return;
         }
         catch (Exception ex)
         {
@@ -396,6 +473,58 @@ public class VehicleLoader
             .ThenBy(entry => entry.Source.SourcePath, StringComparer.OrdinalIgnoreCase)
             .Select(entry => entry.Source)
             .FirstOrDefault();
+    }
+
+    internal static List<ColladaMesh> SelectChassisMeshes(
+        IReadOnlyList<ColladaMesh> sourceMeshes,
+        string sourcePath,
+        IEnumerable<string> activeChassisMeshNames,
+        ISet<string> excludedWheelMeshNames)
+    {
+        var nonWheelMeshes = sourceMeshes
+            .Where(mesh => !excludedWheelMeshNames.Any(wheelMeshName => MatchesColladaMesh(mesh, wheelMeshName)))
+            .ToList();
+
+        if (!sourcePath.EndsWith(".dts", StringComparison.OrdinalIgnoreCase))
+        {
+            return nonWheelMeshes;
+        }
+
+        var activeMeshNames = activeChassisMeshNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (activeMeshNames.Length == 0)
+        {
+            return nonWheelMeshes;
+        }
+
+        var filteredMeshes = nonWheelMeshes
+            .Where(mesh => activeMeshNames.Any(activeMeshName => MatchesColladaMesh(mesh, activeMeshName)))
+            .ToList();
+
+        return filteredMeshes.Count > 0 ? filteredMeshes : nonWheelMeshes;
+    }
+
+    internal static List<ColladaMesh> SelectSupplementalChassisMeshes(
+        IReadOnlyList<ColladaMesh> sourceMeshes,
+        IEnumerable<string> requestedMeshNames,
+        ISet<string> excludedWheelMeshNames)
+    {
+        var requestedNames = requestedMeshNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (requestedNames.Length == 0)
+        {
+            return new List<ColladaMesh>();
+        }
+
+        return sourceMeshes
+            .Where(mesh =>
+                !excludedWheelMeshNames.Any(wheelMeshName => MatchesColladaMesh(mesh, wheelMeshName)) &&
+                requestedNames.Any(requestedMeshName => MatchesColladaMesh(mesh, requestedMeshName)))
+            .ToList();
     }
 
     private List<ModelSource> LoadModelSources(string folder)
@@ -444,39 +573,54 @@ public class VehicleLoader
         return result;
     }
 
-    private IReadOnlyList<string> AddSupplementalColladaSources(
+    private IReadOnlyList<SupplementalModelSource> AddSupplementalColladaSources(
         List<ModelSource> modelSources,
         VehicleDefinition definition,
         BeamNgResolvedVehicle? resolvedVehicle)
     {
         if (resolvedVehicle == null)
         {
-            return Array.Empty<string>();
+            return Array.Empty<SupplementalModelSource>();
         }
 
-        var missingMeshNames = GetWheelVisualFlexBodies(definition)
+        var missingMeshNames = definition.FlexBodies
             .Select(flexBody => flexBody.MeshName)
+            .Where(meshName => !string.IsNullOrWhiteSpace(meshName))
             .Where(meshName => !TryFindGeometry(modelSources, meshName, out _, out _))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
         if (missingMeshNames.Length == 0)
         {
-            return Array.Empty<string>();
+            return Array.Empty<SupplementalModelSource>();
         }
 
         var supplementalFiles = resolvedVehicle.ResolveColladaFilesForMeshes(missingMeshNames);
         if (supplementalFiles.Count == 0)
         {
-            return Array.Empty<string>();
+            return Array.Empty<SupplementalModelSource>();
         }
 
-        Log.Info($"Supplemental wheel DAEs: {string.Join(", ", supplementalFiles.Select(Path.GetFileName))}");
+        var supplementalSources = new List<SupplementalModelSource>();
         foreach (var source in LoadModelSourcesFromFiles(supplementalFiles))
         {
             modelSources.Add(source);
+            var requestedMeshNames = GetMatchedMeshNames(source.Meshes, missingMeshNames);
+            if (requestedMeshNames.Length == 0)
+            {
+                continue;
+            }
+
+            supplementalSources.Add(new SupplementalModelSource(source, requestedMeshNames));
         }
 
-        return supplementalFiles;
+        if (supplementalSources.Count > 0)
+        {
+            Log.Info("Supplemental model sources: " +
+                     string.Join("; ", supplementalSources.Select(source =>
+                         $"{Path.GetFileName(source.Source.SourcePath)} [{string.Join(", ", source.RequestedMeshNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))}]")));
+        }
+
+        return supplementalSources;
     }
 
     private static IEnumerable<string> GetSupplementalMaterialSearchFolders(IEnumerable<string> colladaFiles)
@@ -505,6 +649,35 @@ public class VehicleLoader
         }
 
         return folders;
+    }
+
+    private bool TryAttachChassisMeshes(
+        Entity chassisEntity,
+        string vehicleName,
+        string vehicleFolder,
+        Dictionary<string, string> jsonMaterials,
+        ModelSource source,
+        List<ColladaMesh> chassisMeshes)
+    {
+        var sourceName = Path.GetFileNameWithoutExtension(source.SourcePath);
+        var meshEntity = BuildMeshEntity(
+            chassisMeshes,
+            string.IsNullOrWhiteSpace(sourceName) ? vehicleName : $"{vehicleName}_{sourceName}",
+            Path.GetDirectoryName(source.SourcePath) ?? vehicleFolder,
+            jsonMaterials,
+            source.TextureMap);
+
+        if (meshEntity == null)
+        {
+            return false;
+        }
+
+        // DAE vertices are in BeamNG world space (converted to Stride coords).
+        // The chassis entity sits at its node centroid, so counter-offset the mesh
+        // entity so its vertex positions map to the correct world locations.
+        meshEntity.Transform.Position = -chassisEntity.Transform.Position;
+        chassisEntity.AddChild(meshEntity);
+        return true;
     }
 
     private int AttachWheelFlexBodyMeshes(
@@ -561,11 +734,25 @@ public class VehicleLoader
 
     private static IEnumerable<AssembledFlexBody> GetWheelVisualFlexBodies(VehicleDefinition definition)
     {
-        return definition.FlexBodies.Where(fb =>
-            TryResolveWheelKey(fb, out _) &&
-            (ContainsWheelVisualToken(fb.MeshName) ||
-             ContainsWheelVisualToken(fb.SourcePartName) ||
-             ContainsWheelVisualToken(fb.SourceSlotType)));
+        return definition.FlexBodies.Where(IsWheelVisualFlexBody);
+    }
+
+    private static IReadOnlyList<string> GetChassisVisualFlexBodyMeshNames(VehicleDefinition definition)
+    {
+        return definition.FlexBodies
+            .Where(flexBody => !IsWheelVisualFlexBody(flexBody))
+            .Select(flexBody => flexBody.MeshName)
+            .Where(meshName => !string.IsNullOrWhiteSpace(meshName))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsWheelVisualFlexBody(AssembledFlexBody flexBody)
+    {
+        return TryResolveWheelKey(flexBody, out _) &&
+               (ContainsWheelVisualToken(flexBody.MeshName) ||
+                ContainsWheelVisualToken(flexBody.SourcePartName) ||
+                ContainsWheelVisualToken(flexBody.SourceSlotType));
     }
 
     private static bool TryResolveWheelKey(AssembledFlexBody flexBody, out string? wheelKey)
@@ -626,6 +813,16 @@ public class VehicleLoader
         source = null!;
         meshes = null!;
         return false;
+    }
+
+    private static string[] GetMatchedMeshNames(
+        IReadOnlyList<ColladaMesh> sourceMeshes,
+        IEnumerable<string> lookupNames)
+    {
+        return lookupNames
+            .Where(lookupName => sourceMeshes.Any(mesh => MatchesColladaMesh(mesh, lookupName)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     internal static bool MatchesColladaMesh(ColladaMesh mesh, string lookupName)

@@ -8,7 +8,6 @@
     "slotType" : "TutoFormulaBee_gauges",
     "flexbodies":[
         ["mesh", "[group]:", "nonFlexMaterials"],
-        ["TutoFBee_Gauges", ["FormulaBeeSpaceframe"]], //This flexbody is just an example to help you get started. It is not required for the vehicle to work and should be removed.
 	],
     "props": [
         ["func",     "mesh",           "idRef:","idX:","idY:", "baseRotation",            "rotation",            "translation",         "min", "max", "offset", "multiplier"],

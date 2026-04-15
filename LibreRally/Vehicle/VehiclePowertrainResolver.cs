@@ -64,7 +64,7 @@ public static class VehiclePowertrainResolver
         var finalDriveFallback = driveRearAxle && !driveFrontAxle
             ? GetVar(definition, "finaldrive_R", GetVar(definition, "finaldrive_F", 4.55f))
             : GetVar(definition, "finaldrive_F", GetVar(definition, "finaldrive_R", 4.55f));
-        var finalDrive = ResolveFinalDrive(definition.PowertrainDevices, deviceMap, engineNames, drivenWheelCodes, finalDriveFallback);
+        var finalDrive = ResolveFinalDrive(definition, deviceMap, engineNames, drivenWheelCodes, finalDriveFallback);
         var gearRatios = ResolveGearRatios(definition.Gearbox);
         var torqueCurve = ResolveTorqueCurve(definition.Engine);
         var maxRpm = definition.Engine?.MaxRpm > 0f ? definition.Engine.MaxRpm : GetVar(definition, "maxRPM", 7500f);
@@ -182,14 +182,14 @@ public static class VehiclePowertrainResolver
     }
 
     private static float ResolveFinalDrive(
-        IEnumerable<JBeamPowertrainDevice> devices,
+        VehicleDefinition definition,
         IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
         IReadOnlySet<string> engineNames,
         IReadOnlySet<string> drivenWheelCodes,
         float fallback)
     {
         var ratios = new List<float>();
-        foreach (var device in devices)
+        foreach (var device in definition.PowertrainDevices)
         {
             if (string.IsNullOrWhiteSpace(device.ConnectedWheel) ||
                 !drivenWheelCodes.Contains(device.ConnectedWheel) ||
@@ -199,7 +199,7 @@ public static class VehiclePowertrainResolver
             }
 
             var ratio = 1f;
-            var foundAny = false;
+            var foundMeaningfulRatio = false;
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var currentInput = device.InputName;
             while (!string.IsNullOrWhiteSpace(currentInput))
@@ -224,20 +224,26 @@ public static class VehiclePowertrainResolver
                     upstreamDevice.GearRatio is { } gearRatio &&
                     MathF.Abs(gearRatio) > 1e-4f)
                 {
-                    ratio *= MathF.Abs(gearRatio);
-                    foundAny = true;
+                    var absGearRatio = MathF.Abs(gearRatio);
+                    ratio *= absGearRatio;
+                    foundMeaningfulRatio |= MathF.Abs(absGearRatio - 1f) > 1e-3f;
                 }
 
                 currentInput = upstreamDevice.InputName;
             }
 
-            if (foundAny)
+            if (foundMeaningfulRatio)
             {
                 ratios.Add(ratio);
             }
         }
 
-        return ratios.Count > 0 ? ratios.Average() : fallback;
+        if (ratios.Count > 0)
+        {
+            return ratios.Average();
+        }
+
+        return ResolveFinalDrivePartRatio(definition.PartGearRatios, drivenWheelCodes) ?? fallback;
     }
 
     private static float[] ResolveGearRatios(JBeamGearboxDefinition? gearbox)
@@ -413,6 +419,36 @@ public static class VehiclePowertrainResolver
             preloadTorque: MathF.Max(0f, device.LsdPreload ?? fallback.PreloadTorque));
     }
 
+    private static float? ResolveFinalDrivePartRatio(
+        IEnumerable<AssembledPartGearRatio> partGearRatios,
+        IReadOnlySet<string> drivenWheelCodes)
+    {
+        var candidates = partGearRatios
+            .Where(part => part.GearRatio > 0f && IsFinalDriveSlot(part.SourceSlotType))
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        var wantsFront = drivenWheelCodes.Overlaps(FrontWheelCodes);
+        var wantsRear = drivenWheelCodes.Overlaps(RearWheelCodes);
+        if (wantsFront ^ wantsRear)
+        {
+            var axleCandidates = candidates
+                .Where(candidate => VehicleTyreSpecResolver.MatchesAxle(candidate.SourceSlotType, wantsFront) ||
+                                    VehicleTyreSpecResolver.MatchesAxle(candidate.SourcePartName, wantsFront))
+                .Select(candidate => candidate.GearRatio)
+                .ToList();
+            if (axleCandidates.Count > 0)
+            {
+                return axleCandidates.Average();
+            }
+        }
+
+        return candidates.Select(candidate => candidate.GearRatio).Average();
+    }
+
     private static string ToWheelKey(string wheelCode) => $"wheel_{wheelCode.ToUpperInvariant()}";
 
     private static float GetVar(VehicleDefinition definition, string name, float fallback)
@@ -425,4 +461,6 @@ public static class VehiclePowertrainResolver
     private static bool IsGearboxType(string type) => type.Contains("gearbox", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsDifferentialType(string type) => type.Contains("differential", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsFinalDriveSlot(string slotType) => slotType.Contains("finaldrive", StringComparison.OrdinalIgnoreCase);
 }

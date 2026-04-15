@@ -490,10 +490,8 @@ public static class VehiclePhysicsBuilder
                           $"F: spring={springF:F0}N/m freq={springFreqF:F2}Hz ratio={dampRatioF:F2} " +
                           $"R: spring={springR:F0}N/m freq={springFreqR:F2}Hz ratio={dampRatioR:F2}");
         Console.Error.WriteLine($"[VehiclePhysicsBuilder] Wheel centres from flexbodies: {string.Join(", ", wheelCentresFromFlexbodies.Keys)}");
-
-        // Wheel radius from vars (default 0.305m ≈ 195/65 R15)
-        var wheelRadius = GetVar("tireWidth", 0f);  // not typically a var; use fixed default
-        wheelRadius = 0.305f;
+        var frontTyreSpec = VehicleTyreSpecResolver.Resolve(def, front: true);
+        var rearTyreSpec = VehicleTyreSpecResolver.Resolve(def, front: false);
 
         var staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
         float ComputeStaticSag(float springRate) => staticNormalLoad / Math.Max(springRate, 1f);
@@ -515,6 +513,7 @@ public static class VehiclePhysicsBuilder
 
         Entity GetWheel(string label, bool isFront)
         {
+            var tyreSpec = isFront ? frontTyreSpec : rearTyreSpec;
             pressureWheelsByKey.TryGetValue(label, out var pressureWheel);
             Vector3 pos;
             if (wheelCentresFromFlexbodies.TryGetValue(label, out var jbeamPos))
@@ -529,7 +528,7 @@ public static class VehiclePhysicsBuilder
             }
             else if (wheelGroupNodes.TryGetValue(label, out var nodes) && nodes.Count > 0)
             {
-                pos = ComputeWheelCenter(nodes);
+                pos = ComputeWheelCenter(nodes, tyreSpec.Radius);
                 Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label} centre (nodes)={pos:F3}");
             }
             else
@@ -543,7 +542,7 @@ public static class VehiclePhysicsBuilder
             var reboundTravel = isFront ? reboundTravelF : reboundTravelR;
             var suspensionAxis = ResolveSuspensionAxis(def, pressureWheel, pos);
             var targetOffset = ComputeTargetOffset(isFront);
-            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, suspensionAxis, targetOffset, freq, ratio, wheelRadius, staticNormalLoad, bumpTravel, reboundTravel);
+            return BuildWheelEntity(label, pos, chassisBody, chassisWorldPos, isFront, suspensionAxis, targetOffset, freq, ratio, tyreSpec.Radius, tyreSpec.Width, staticNormalLoad, bumpTravel, reboundTravel);
         }
 
         return (GetWheel("wheel_FL", true), GetWheel("wheel_FR", true),
@@ -556,16 +555,15 @@ public static class VehiclePhysicsBuilder
     /// Uses the most laterally-outer node for X, the mean of all filtered nodes for Y,
     /// and the minimum node Z (hub lower ball joint) + a fixed spindle offset for Z.
     /// </summary>
-    private static Vector3 ComputeWheelCenter(List<AssembledNode> nodes)
+    private static Vector3 ComputeWheelCenter(List<AssembledNode> nodes, float wheelRadius)
     {
-        const float WheelRadius    = 0.305f;
         const float SpindleOffset  = 0.08f;  // hub lower ball joint → wheel centre height
 
         var positions = nodes.Select(n => n.Position).ToList();
 
         var meanY  = positions.Average(p => p.Y);  // BeamNG Y = longitudinal
         var minZ   = positions.Min(p => p.Z);       // lowest valid node ≈ hub lower ball joint
-        var centreZ = Math.Max(minZ + SpindleOffset, WheelRadius);
+        var centreZ = Math.Max(minZ + SpindleOffset, wheelRadius);
 
         // The outermost lateral node gives the wheel contact-patch lateral position.
         var outerX = positions.OrderByDescending(p => Math.Abs(p.X)).First().X;
@@ -584,11 +582,11 @@ public static class VehiclePhysicsBuilder
         float springFreq = 2.5f,
         float dampingRatio = 0.9f,
         float wheelRadius = 0.305f,
+        float wheelWidth = 0.205f,
         float staticNormalLoad = 0f,
         float bumpTravel = 0.1f,
         float reboundTravel = 0.08f)
     {
-        const float WheelWidth  = 0.175f;
         const float WheelMass   = 18f;
 
         var entity = new Entity(name) { Transform = { Position = position } };
@@ -605,7 +603,7 @@ public static class VehiclePhysicsBuilder
                     new CylinderCollider
                     {
                         Radius = wheelRadius,
-                        Length = WheelWidth,
+                        Length = wheelWidth,
                         Mass   = WheelMass,
                         // Default cylinder axis is Y; rotate 90° around Z to orient axis along X (wheel rolling axis)
                         RotationLocal = Quaternion.RotationZ(MathF.PI / 2),
@@ -730,7 +728,7 @@ public static class VehiclePhysicsBuilder
             SuspensionTargetOffset = targetOffset,
             SuspensionMinimumOffset = minimumOffset,
             SuspensionMaximumOffset = maximumOffset,
-            TyreModel = new TyreModel(wheelRadius),
+            TyreModel = new TyreModel(wheelRadius) { Width = wheelWidth },
         });
         return entity;
     }

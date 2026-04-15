@@ -41,6 +41,16 @@ public record AssembledFlexBody(
     string SourcePartName = "",
     string SourceSlotType = "");
 
+public record AssembledPressureWheelOptions(
+    string SourcePartName,
+    string SourceSlotType,
+    JBeamPressureWheelOptions Options);
+
+public record AssembledPartGearRatio(
+    string SourcePartName,
+    string SourceSlotType,
+    float GearRatio);
+
 /// <summary>
 /// A logical car part derived from a jbeam slot, containing all its nodes and mesh info.
 /// Parts marked Detachable become separate physics bodies with a breakable weld.
@@ -111,6 +121,12 @@ public class VehicleDefinition
     /// <summary>Pressure wheel metadata assembled from active parts.</summary>
     public List<JBeamPressureWheel> PressureWheels { get; init; } = new();
 
+    /// <summary>Pressure-wheel option objects assembled from the active parts.</summary>
+    public List<AssembledPressureWheelOptions> PressureWheelOptions { get; init; } = new();
+
+    /// <summary>Top-level gear ratios defined by active selected parts such as final drives.</summary>
+    public List<AssembledPartGearRatio> PartGearRatios { get; init; } = new();
+
     /// <summary>Engine metadata parsed from the active JBeam parts, when present.</summary>
     public JBeamEngineDefinition? Engine { get; init; }
 
@@ -122,4 +138,7 @@ public class VehicleDefinition
 
     /// <summary>Brake-controller metadata parsed from active parts, including ABS flags and targets.</summary>
     public JBeamBrakeControlDefinition? BrakeControl { get; init; }
+
+    /// <summary>Traction-control metadata parsed from active parts, when present.</summary>
+    public JBeamTractionControlDefinition? TractionControl { get; init; }
 }

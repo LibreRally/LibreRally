@@ -65,6 +65,39 @@ public class RallyCarComponentControlTests
     }
 
     [Fact]
+    public void ResolveAutoClutchDrivenWheelOmega_UsesSlowestGroundedDrivenWheel()
+    {
+        float resolvedOmega = RallyCarComponent.ResolveAutoClutchDrivenWheelOmega(
+            fallbackOmega: 0.25f,
+            sampledWheelOmegas: [28f, 1.5f, 40f],
+            sampledWheelGrounded: [true, true, false]);
+
+        Assert.Equal(1.5f, resolvedOmega, 3);
+    }
+
+    [Fact]
+    public void ComputeAutoClutchTorqueScale_DoesNotPunishSingleGroundedWheelspinOutlier()
+    {
+        float tractionWheelOmega = RallyCarComponent.ResolveAutoClutchDrivenWheelOmega(
+            fallbackOmega: 0f,
+            sampledWheelOmegas: [28f, 1f],
+            sampledWheelGrounded: [true, true]);
+        float slipClampedOmega = RallyCarComponent.ClampDrivenWheelOmegaForSlip(
+            roadWheelOmega: 0f,
+            drivenWheelOmega: tractionWheelOmega,
+            effectiveRatio: 12.87f,
+            slipAllowanceRpm: 1400f);
+        float scale = RallyCarComponent.ComputeAutoClutchTorqueScale(
+            drivenWheelOmega: tractionWheelOmega,
+            slipClampedDrivenWheelOmega: slipClampedOmega,
+            effectiveRatio: 12.87f,
+            wheelspinWindowRpm: 1400f,
+            minTorqueScale: 0.25f);
+
+        Assert.Equal(1f, scale, 3);
+    }
+
+    [Fact]
     public void ComputePointVelocity_AddsAngularContributionAtWheelPoint()
     {
         Vector3 pointVelocity = RallyCarComponent.ComputePointVelocity(
@@ -149,10 +182,9 @@ public class RallyCarComponentControlTests
     public void ComputeTractionControlTorqueScale_RemainsFull_WhenDriveWheelMatchesRoadSpeed()
     {
         float scale = RallyCarComponent.ComputeTractionControlTorqueScale(
-            maxDrivenWheelOmega: 8f,
-            roadWheelOmega: 8f,
-            effectiveRatio: 4.5f,
-            wheelspinWindowRpm: 800f,
+            drivenWheelSlipRatio: 0.15f,
+            slipRatioTarget: 0.15f,
+            slipRatioWindow: 0.10f,
             minTorqueScale: 0.08f);
 
         Assert.Equal(1f, scale, 3);
@@ -162,10 +194,9 @@ public class RallyCarComponentControlTests
     public void ComputeTractionControlTorqueScale_ReachesFloor_WhenSingleDrivenWheelRunsFarAhead()
     {
         float scale = RallyCarComponent.ComputeTractionControlTorqueScale(
-            maxDrivenWheelOmega: 40f,
-            roadWheelOmega: 2f,
-            effectiveRatio: 4.5f,
-            wheelspinWindowRpm: 800f,
+            drivenWheelSlipRatio: 0.30f,
+            slipRatioTarget: 0.15f,
+            slipRatioWindow: 0.10f,
             minTorqueScale: 0.08f);
 
         Assert.Equal(0.08f, scale, 3);

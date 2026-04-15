@@ -97,6 +97,24 @@ public record JBeamPressureWheel(
     string NodeArm,
     float WheelDir);
 
+public class JBeamPressureWheelOptions
+{
+    public bool? HasTire { get; init; }
+    public float? Radius { get; init; }
+    public float? TireWidth { get; init; }
+    public float? PressurePsi { get; init; }
+    public float? FrictionCoef { get; init; }
+    public float? SlidingFrictionCoef { get; init; }
+    public float? TreadCoef { get; init; }
+    public float? NoLoadCoef { get; init; }
+    public float? LoadSensitivitySlope { get; init; }
+    public float? FullLoadCoef { get; init; }
+    public float? SoftnessCoef { get; init; }
+    public float? HubRadius { get; init; }
+    public float? HubWidth { get; init; }
+    public float? WheelOffset { get; init; }
+}
+
 public record JBeamTorquePoint(float Rpm, float Torque);
 
 public class JBeamEngineDefinition
@@ -132,6 +150,14 @@ public class JBeamBrakeControlDefinition
     public bool HasLegacyAbsController { get; init; }
 }
 
+public class JBeamTractionControlDefinition
+{
+    public bool? EnableTractionControl { get; init; }
+    public float? SlipThreshold { get; init; }
+    public float? SlipRangeThreshold { get; init; }
+    public float? MaxVelocity { get; init; }
+}
+
 /// <summary>All raw data parsed from a single .jbeam section (one named object within a file).</summary>
 public class JBeamPart
 {
@@ -146,10 +172,13 @@ public class JBeamPart
     public Dictionary<string, float> Variables { get; init; } = new(System.StringComparer.OrdinalIgnoreCase);
     public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
     public List<JBeamPressureWheel> PressureWheels { get; init; } = new();
+    public JBeamPressureWheelOptions? PressureWheelOptions { get; init; }
+    public float? GearRatio { get; init; }
     public JBeamEngineDefinition? Engine { get; init; }
     public JBeamGearboxDefinition? Gearbox { get; init; }
     public JBeamVehicleControllerDefinition? VehicleController { get; init; }
     public JBeamBrakeControlDefinition? BrakeControl { get; init; }
+    public JBeamTractionControlDefinition? TractionControl { get; init; }
 
     /// <summary>Ref nodes: ref, back, left, up positions used for orientation.</summary>
     public Dictionary<string, string> RefNodes { get; init; } = new();
