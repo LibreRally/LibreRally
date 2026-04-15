@@ -183,10 +183,13 @@ public static class JBeamAssembler
         var allFlexBodies = new List<AssembledFlexBody>();
         var allPowertrainDevices = new List<JBeamPowertrainDevice>();
         var allPressureWheels = new List<JBeamPressureWheel>();
+        var allPressureWheelOptions = new List<AssembledPressureWheelOptions>();
+        var allPartGearRatios = new List<AssembledPartGearRatio>();
         JBeamEngineDefinition? engine = null;
         JBeamGearboxDefinition? gearbox = null;
         JBeamVehicleControllerDefinition? controller = null;
         JBeamBrakeControlDefinition? brakeControl = null;
+        JBeamTractionControlDefinition? tractionControl = null;
         var resolvedParts = parts.Select(p => p.Part).ToList();
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
@@ -241,10 +244,25 @@ public static class JBeamAssembler
 
             allPowertrainDevices.AddRange(part.PowertrainDevices);
             allPressureWheels.AddRange(part.PressureWheels);
+            if (part.PressureWheelOptions != null)
+            {
+                allPressureWheelOptions.Add(new AssembledPressureWheelOptions(
+                    part.Name,
+                    part.SlotType,
+                    part.PressureWheelOptions));
+            }
+            if (part.GearRatio is { } partGearRatio && MathF.Abs(partGearRatio) > 1e-4f)
+            {
+                allPartGearRatios.Add(new AssembledPartGearRatio(
+                    part.Name,
+                    part.SlotType,
+                    MathF.Abs(partGearRatio)));
+            }
             engine ??= part.Engine;
             gearbox ??= part.Gearbox;
             controller = MergeVehicleController(controller, part.VehicleController);
             brakeControl = MergeBrakeControl(brakeControl, part.BrakeControl);
+            tractionControl = MergeTractionControl(tractionControl, part.TractionControl);
         }
 
         // Build logical parts:
@@ -268,10 +286,13 @@ public static class JBeamAssembler
             RefNodes = refNodes,
             PowertrainDevices = allPowertrainDevices,
             PressureWheels = allPressureWheels,
+            PressureWheelOptions = allPressureWheelOptions,
+            PartGearRatios = allPartGearRatios,
             Engine = engine,
             Gearbox = gearbox,
             VehicleController = controller,
             BrakeControl = brakeControl,
+            TractionControl = tractionControl,
         };
     }
 
@@ -319,6 +340,29 @@ public static class JBeamAssembler
             EnableAbs = next.EnableAbs ?? current.EnableAbs,
             AbsSlipRatioTarget = next.AbsSlipRatioTarget ?? current.AbsSlipRatioTarget,
             HasLegacyAbsController = current.HasLegacyAbsController || next.HasLegacyAbsController,
+        };
+    }
+
+    private static JBeamTractionControlDefinition? MergeTractionControl(
+        JBeamTractionControlDefinition? current,
+        JBeamTractionControlDefinition? next)
+    {
+        if (next == null)
+        {
+            return current;
+        }
+
+        if (current == null)
+        {
+            return next;
+        }
+
+        return new JBeamTractionControlDefinition
+        {
+            EnableTractionControl = next.EnableTractionControl ?? current.EnableTractionControl,
+            SlipThreshold = next.SlipThreshold ?? current.SlipThreshold,
+            SlipRangeThreshold = next.SlipRangeThreshold ?? current.SlipRangeThreshold,
+            MaxVelocity = next.MaxVelocity ?? current.MaxVelocity,
         };
     }
 

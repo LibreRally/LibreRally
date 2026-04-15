@@ -119,6 +119,33 @@ public class TyreModelTests
     }
 
     [Fact]
+    public void EffectiveFriction_UsesBeamNgLoadCurveWhenProvided()
+    {
+        var referenceMu = TyreModel.ComputeBeamNgLoadCoefficient(3000f, 1.6f, 0.5f, 0.000165f);
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = referenceMu,
+            LoadSensitivity = 0.4f,
+            BeamNgNoLoadFrictionCoefficient = 1.6f,
+            BeamNgFullLoadFrictionCoefficient = 0.5f,
+            BeamNgLoadSensitivitySlope = 0.000165f,
+            ReferenceLoad = 3000f,
+            ContactAreaGripExponent = 0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+        };
+
+        float measuredReferenceMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+        float highLoadMu = model.ComputeEffectiveFriction(6000f, Tarmac, 30f, 1.0f);
+        float expectedHighLoadMu = referenceMu *
+                                   (TyreModel.ComputeBeamNgLoadCoefficient(6000f, 1.6f, 0.5f, 0.000165f) / referenceMu);
+
+        Assert.Equal(referenceMu, measuredReferenceMu, 4);
+        Assert.Equal(expectedHighLoadMu, highLoadMu, 4);
+    }
+
+    [Fact]
     public void EffectiveFriction_IncreasesWithLargerPatchArea()
     {
         var model = new TyreModel(0.305f)

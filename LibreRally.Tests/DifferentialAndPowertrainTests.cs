@@ -83,4 +83,29 @@ public sealed class DifferentialAndPowertrainTests
         Assert.True(largerDeltaTransfer > nearZeroTransfer);
         Assert.True(largerDeltaTransfer < 120f);
     }
+
+    [Fact]
+    public void ResolveFinalDrive_UsesSelectedFinalDrivePartRatioWhenIntermediateDevicesStayAtUnitRatio()
+    {
+        var definition = new VehicleDefinition
+        {
+            PowertrainDevices = new List<JBeamPowertrainDevice>
+            {
+                new("engine", "mainEngine", "", 0, "", null, "", null, null, null),
+                new("differential", "rearDiff", "mainEngine", 0, "", 1f, "open", null, null, null),
+                new("wheelaxle", "wheelaxleRL", "rearDiff", 0, "RL", null, "", null, null, null),
+                new("wheelaxle", "wheelaxleRR", "rearDiff", 0, "RR", null, "", null, null, null),
+            },
+            PartGearRatios = new List<AssembledPartGearRatio>
+            {
+                new("fgx_finaldrive_R_391", "fgx_finaldrive_R", 3.91f),
+            },
+        };
+
+        var setup = VehiclePowertrainResolver.Resolve(definition);
+
+        Assert.False(setup.DriveFrontAxle);
+        Assert.True(setup.DriveRearAxle);
+        Assert.Equal(3.91f, setup.FinalDrive, 3);
+    }
 }

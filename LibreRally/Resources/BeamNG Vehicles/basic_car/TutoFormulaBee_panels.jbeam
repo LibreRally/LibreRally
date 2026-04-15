@@ -8,7 +8,6 @@
     "slotType":"TutoFormulaBee_panels",
     "flexbodies":[
         ["mesh", "[group]:", "nonFlexMaterials"],
-        ["TutoFBee_Spaceframe", ["FormulaBeeSpaceframe"]], //This flexbody is just an example to help you get started. It is not required for the vehicle to work and should be removed.
 	],
     "nodes":[
         ["id", "posX", "posY", "posZ"],

@@ -192,6 +192,15 @@ public sealed class TyreModel
     /// </summary>
     public float LoadSensitivity { get; set; } = 0.15f;
 
+    /// <summary>BeamNG-style zero-load friction coefficient, when provided by JBeam tyre metadata.</summary>
+    public float? BeamNgNoLoadFrictionCoefficient { get; set; }
+
+    /// <summary>BeamNG-style asymptotic full-load friction coefficient, when provided by JBeam tyre metadata.</summary>
+    public float? BeamNgFullLoadFrictionCoefficient { get; set; }
+
+    /// <summary>BeamNG-style exponential load-sensitivity slope (1/N), when provided by JBeam tyre metadata.</summary>
+    public float? BeamNgLoadSensitivitySlope { get; set; }
+
     /// <summary>Reference vertical load for µ rating (N).</summary>
     public float ReferenceLoad { get; set; } = 3000f;
 
@@ -745,10 +754,18 @@ public sealed class TyreModel
             mu *= ComputeWetGripFactor(waterDepth, macroLevel, absVx);
         }
 
-        // Load sensitivity: rubber grip follows a non-linear power-law with load.
         var referenceLoad = MathF.Max(ReferenceLoad, 1f);
-        var loadRatio = MathF.Max(normalLoad / referenceLoad, 1e-3f);
-        mu *= MathF.Pow(loadRatio, -LoadSensitivity);
+        var beamNgLoadScale = ComputeBeamNgLoadScale(normalLoad, referenceLoad);
+        if (beamNgLoadScale is { } loadScale)
+        {
+            mu *= loadScale;
+        }
+        else
+        {
+            // Load sensitivity: rubber grip follows a non-linear power-law with load.
+            var loadRatio = MathF.Max(normalLoad / referenceLoad, 1e-3f);
+            mu *= MathF.Pow(loadRatio, -LoadSensitivity);
+        }
 
         // Effective patch area contributes a small secondary grip change.
         var areaGripExponent = MathF.Max(ContactAreaGripExponent, 0f);
@@ -783,6 +800,36 @@ public sealed class TyreModel
         }
 
         return MathF.Max(mu, 0.05f);
+    }
+
+    internal static float ComputeBeamNgLoadCoefficient(
+        float normalLoad,
+        float noLoadCoef,
+        float fullLoadCoef,
+        float loadSensitivitySlope)
+    {
+        var load = MathF.Max(normalLoad, 0f);
+        var slope = MathF.Max(loadSensitivitySlope, 0f);
+        return fullLoadCoef + (noLoadCoef - fullLoadCoef) * MathF.Exp(-slope * load);
+    }
+
+    private float? ComputeBeamNgLoadScale(float normalLoad, float referenceLoad)
+    {
+        if (BeamNgNoLoadFrictionCoefficient is not { } noLoadCoef ||
+            BeamNgFullLoadFrictionCoefficient is not { } fullLoadCoef ||
+            BeamNgLoadSensitivitySlope is not { } loadSensitivitySlope)
+        {
+            return null;
+        }
+
+        var referenceMu = ComputeBeamNgLoadCoefficient(referenceLoad, noLoadCoef, fullLoadCoef, loadSensitivitySlope);
+        if (referenceMu <= 1e-4f)
+        {
+            return null;
+        }
+
+        var loadMu = ComputeBeamNgLoadCoefficient(normalLoad, noLoadCoef, fullLoadCoef, loadSensitivitySlope);
+        return MathF.Max(loadMu / referenceMu, 0.05f);
     }
 
     /// <summary>

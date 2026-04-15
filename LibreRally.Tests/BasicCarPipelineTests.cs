@@ -70,7 +70,7 @@ public class BasicCarPipelineTests
         Assert.Equal("TutoFormulaBee_Chassis", chassisPart.Name);
         Assert.True(chassisPart.Nodes.Count >= 1);
         Assert.Equal("fr4", chassisPart.RefNodes["ref"]);
-        Assert.Contains(chassisPart.FlexBodies, flexBody => flexBody.Mesh == "TutoFBee_Spaceframe");
+        Assert.DoesNotContain(chassisPart.FlexBodies, flexBody => flexBody.Mesh == "TutoFBee_Spaceframe");
 
         Assert.True(frontBrakes.FlexBodies.Count >= 2);
         Assert.Contains(frontBrakes.FlexBodies, flexBody => flexBody.Groups.Contains("wheel_FL"));
@@ -94,8 +94,10 @@ public class BasicCarPipelineTests
         Assert.Equal(30000f, definition.Vars["spring_F"]);
         Assert.Equal(20000f, definition.Vars["arb_spring_F"]);
         Assert.Equal(4.125f, definition.Vars["finaldrive_R"], 3);
-        Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "TutoFBee_Spaceframe");
+        Assert.DoesNotContain(definition.FlexBodies, flexBody => flexBody.MeshName == "TutoFBee_Spaceframe");
         Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "autobello_brakedisk_track_FR");
+        Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "autobello_muffler_b");
+        Assert.Contains(definition.FlexBodies, flexBody => flexBody.MeshName == "autobello_shifter_5M");
         Assert.NotNull(definition.Engine);
         Assert.NotNull(definition.Gearbox);
         Assert.NotNull(definition.VehicleController);
