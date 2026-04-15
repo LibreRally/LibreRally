@@ -476,16 +476,14 @@ public class VehicleSpawner : SyncScript
         if (_engineGaugeStrip != null && _car != null)
         {
             _engineGaugeStrip.TurboBoostBar      = _car.TurboBoostBar;
-            _engineGaugeStrip.TurboMaxBoostBar    = _car.TurboMaxBoostPsi * 0.0689476f; // PSI → bar
+            _engineGaugeStrip.TurboMaxBoostBar    = _car.TurboMaxBoostPsi * RallyCarComponent.PsiToBar;
             _engineGaugeStrip.HasTurbo            = _car.HasTurbo;
             _engineGaugeStrip.EngineTempC          = _car.EngineTemp;
             _engineGaugeStrip.EngineTempDamageC    = _car.EngineBlockTempDamageThreshold;
-            _engineGaugeStrip.EngineTempTargetC    = _car.AirRegulatorTemperature;
             _engineGaugeStrip.FuelLiters           = _car.FuelLiters;
             _engineGaugeStrip.FuelCapacityLiters   = _car.FuelCapacityLiters;
             _engineGaugeStrip.HasFuel              = _car.FuelCapacityLiters > 0f;
             _engineGaugeStrip.OilPressureBar       = _car.OilPressure;
-            _engineGaugeStrip.OilTempC             = _car.OilTemp;
             _engineGaugeStrip.HasOil               = _car.OilVolumeLiters > 0f;
         }
 

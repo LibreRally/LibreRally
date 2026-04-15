@@ -293,7 +293,18 @@ public class RallyCarComponent : SyncScript
         _engineRpm = IdleRpm;
         _engineTemp = AirRegulatorTemperature > 0f ? AirRegulatorTemperature * 0.5f : 40f;
         _oilTemp = _engineTemp;
-        _fuelLiters = StartingFuelLiters > 0f ? StartingFuelLiters : FuelCapacityLiters;
+        var startingFuelLiters = StartingFuelLiters >= 0f
+            ? MathUtil.Clamp(StartingFuelLiters, 0f, FuelCapacityLiters)
+            : FuelCapacityLiters;
+
+        _fuelLiters = startingFuelLiters;
+        _turboBoostBar = 0f;
+
+        EngineTemp = _engineTemp;
+        OilTemp = _oilTemp;
+        FuelLiters = _fuelLiters;
+        TurboBoostBar = _turboBoostBar;
+        OilPressure = 0f;
 
         // Create default dynamics system if none was injected by VehicleLoader
         Dynamics ??= new VehicleDynamicsSystem();
@@ -571,7 +582,7 @@ public class RallyCarComponent : SyncScript
         EngineRpm  = _engineRpm;
 
         // ── Engine thermal / oil / fuel / turbo simulation ────────────────────
-        UpdateEngineThermals(dt, driveInput, engineOmega, forwardSpeed);
+        UpdateEngineThermals(dt, driveInput, forwardSpeed);
 
         // ── Steering motors (front wheels) ────────────────────────────────────
         const float SteerServoGain = 12f;
@@ -861,7 +872,7 @@ public class RallyCarComponent : SyncScript
     /// Produces gauge-plausible values from JBeam engine/fuel-tank data without full
     /// thermo-fluid modelling.
     /// </summary>
-    private void UpdateEngineThermals(float dt, float throttle, float engineOmega, float forwardSpeed)
+    private void UpdateEngineThermals(float dt, float throttle, float forwardSpeed)
     {
         // ── Engine temperature ──────────────────────────────────────────────
         // Heat generated is proportional to RPM and throttle (proxy for combustion power).
@@ -940,7 +951,7 @@ public class RallyCarComponent : SyncScript
     }
 
     /// <summary>PSI to bar conversion factor.</summary>
-    private const float PsiToBar = 0.0689476f;
+    public const float PsiToBar = 0.0689476f;
 
     /// <summary>
     /// Interpolates the burn efficiency curve at the given throttle fraction.
