@@ -524,18 +524,15 @@ public class VehicleSpawner : SyncScript
         }
         catch (SocketException ex)
         {
-            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-            _outGaugeSendFailed = true;
+            HandleOutGaugeSendFailure(ex);
         }
         catch (ObjectDisposedException ex)
         {
-            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-            _outGaugeSendFailed = true;
+            HandleOutGaugeSendFailure(ex);
         }
         catch (InvalidOperationException ex)
         {
-            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-            _outGaugeSendFailed = true;
+            HandleOutGaugeSendFailure(ex);
         }
     }
 
@@ -570,5 +567,11 @@ public class VehicleSpawner : SyncScript
         _outGaugeTargetHost = null;
         _outGaugeTargetPort = 0;
         _outGaugeSendFailed = false;
+    }
+
+    private void HandleOutGaugeSendFailure(Exception ex)
+    {
+        Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+        _outGaugeSendFailed = true;
     }
 }
