@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using LibreRally.Camera;
 using LibreRally.HUD;
+using LibreRally.Telemetry;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
 using Stride.BepuPhysics;
@@ -31,6 +33,11 @@ public class VehicleSpawner : SyncScript
     public string ConfigFileName { get; set; } = "rally_pro_asphalt.pc";
 
     public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
+    public bool OutGaugeEnabled { get; set; } = true;
+    public int OutGaugeDelayCentiseconds { get; set; } = 1;
+    public string OutGaugeIp { get; set; } = "127.0.0.1";
+    public int OutGaugePort { get; set; } = 4444;
+    public int OutGaugeId { get; set; }
 
     private string _status = "Loading...";
     private bool _showDebug = true;
@@ -41,6 +48,11 @@ public class VehicleSpawner : SyncScript
     private int _selectedVehicleIndex;
     private bool _showVehicleMenu;
     private LoadedVehicle? _loadedVehicle;
+    private UdpClient? _outGaugeClient;
+    private string? _outGaugeTargetHost;
+    private int _outGaugeTargetPort;
+    private bool _outGaugeSendFailed;
+    private float _outGaugeElapsed;
 
     public override void Start()
     {
@@ -124,6 +136,7 @@ public class VehicleSpawner : SyncScript
 
         _loadedVehicle = null;
         _car = null;
+        _outGaugeElapsed = 0f;
     }
 
     private SpeedoGauge? _speedoGauge;
@@ -430,6 +443,7 @@ public class VehicleSpawner : SyncScript
     public override void Update()
     {
         HandleVehicleSelectionInput();
+        var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
 
         // Push telemetry to gauge each frame
         if (_speedoGauge != null && _car != null)
@@ -445,6 +459,8 @@ public class VehicleSpawner : SyncScript
             _speedoGauge.TractionControlActive = _car.TractionControlActive;
             _speedoGauge.DrivenWheelSlipRatio = _car.DrivenWheelSlipRatio;
         }
+
+        SendOutGaugeTelemetry(dt);
 
         // Toggle debug info with F3
         if (Input.IsKeyPressed(Keys.F3))
@@ -471,5 +487,81 @@ public class VehicleSpawner : SyncScript
         {
             DebugText.Print(_status, new Int2(10, 10));
         }
+    }
+
+    private void SendOutGaugeTelemetry(float deltaTime)
+    {
+        if (!OutGaugeEnabled || _car == null)
+        {
+            _outGaugeElapsed = 0f;
+            if (!OutGaugeEnabled)
+            {
+                DisposeOutGaugeClient();
+            }
+            return;
+        }
+
+        var sendIntervalSeconds = Math.Max(0, OutGaugeDelayCentiseconds) * 0.01f;
+        _outGaugeElapsed += Math.Max(0f, deltaTime);
+        if (sendIntervalSeconds > 0f && _outGaugeElapsed < sendIntervalSeconds)
+        {
+            return;
+        }
+
+        _outGaugeElapsed = 0f;
+        EnsureOutGaugeClient();
+        if (_outGaugeClient == null || _outGaugeSendFailed || string.IsNullOrWhiteSpace(_outGaugeTargetHost))
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = OutGaugeProtocol.FromCar(_car, unchecked((uint)Environment.TickCount64));
+            var payload = OutGaugeProtocol.Encode(snapshot, OutGaugeId);
+            _outGaugeClient.Send(payload, payload.Length, _outGaugeTargetHost, _outGaugeTargetPort);
+        }
+        catch (Exception ex)
+        {
+            if (!_outGaugeSendFailed)
+            {
+                Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+            }
+
+            _outGaugeSendFailed = true;
+        }
+    }
+
+    private void EnsureOutGaugeClient()
+    {
+        var targetHost = OutGaugeIp?.Trim();
+        var targetPort = OutGaugePort;
+        if (string.IsNullOrWhiteSpace(targetHost) || targetPort is < 1 or > 65535)
+        {
+            DisposeOutGaugeClient();
+            return;
+        }
+
+        if (_outGaugeClient != null &&
+            string.Equals(_outGaugeTargetHost, targetHost, StringComparison.OrdinalIgnoreCase) &&
+            _outGaugeTargetPort == targetPort)
+        {
+            return;
+        }
+
+        DisposeOutGaugeClient();
+        _outGaugeClient = new UdpClient();
+        _outGaugeTargetHost = targetHost;
+        _outGaugeTargetPort = targetPort;
+        _outGaugeSendFailed = false;
+    }
+
+    private void DisposeOutGaugeClient()
+    {
+        _outGaugeClient?.Dispose();
+        _outGaugeClient = null;
+        _outGaugeTargetHost = null;
+        _outGaugeTargetPort = 0;
+        _outGaugeSendFailed = false;
     }
 }
