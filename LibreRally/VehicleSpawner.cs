@@ -51,7 +51,7 @@ public class VehicleSpawner : SyncScript
     private UdpClient? _outGaugeClient;
     private string? _outGaugeTargetHost;
     private int _outGaugeTargetPort;
-    private const double OutGaugeFailureLogIntervalSeconds = 5d;
+    private const double FailureLogIntervalSeconds = 5d;
     private bool _outGaugeSendFailed;
     private double _outGaugeNextFailureLogTimeSeconds;
     private float _outGaugeElapsed;
@@ -580,7 +580,7 @@ public class VehicleSpawner : SyncScript
         if (!_outGaugeSendFailed || sessionSeconds >= _outGaugeNextFailureLogTimeSeconds)
         {
             Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-            _outGaugeNextFailureLogTimeSeconds = sessionSeconds + OutGaugeFailureLogIntervalSeconds;
+            _outGaugeNextFailureLogTimeSeconds = sessionSeconds + FailureLogIntervalSeconds;
         }
 
         _outGaugeSendFailed = true;
