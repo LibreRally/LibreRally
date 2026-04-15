@@ -52,7 +52,7 @@ internal static class OutGaugeProtocol
 
     internal static OutGaugeSnapshot FromCar(RallyCarComponent car, uint timeMilliseconds)
     {
-        var dashLights = OutGaugeDashLights.Handbrake | OutGaugeDashLights.TractionControl | OutGaugeDashLights.Abs | OutGaugeDashLights.Shift;
+        var availableDashLights = OutGaugeDashLights.Handbrake | OutGaugeDashLights.TractionControl | OutGaugeDashLights.Abs | OutGaugeDashLights.Shift;
         var showLights = OutGaugeDashLights.None;
 
         if (car.HandbrakeEngaged)
@@ -86,7 +86,7 @@ internal static class OutGaugeProtocol
             Fuel = 0f,
             OilPressure = 0f,
             OilTemp = 0f,
-            DashLights = (uint)dashLights,
+            DashLights = (uint)availableDashLights,
             ShowLights = (uint)showLights,
             Throttle = Math.Clamp(car.ThrottleInput, 0f, 1f),
             Brake = Math.Clamp(car.BrakeInput, 0f, 1f),
