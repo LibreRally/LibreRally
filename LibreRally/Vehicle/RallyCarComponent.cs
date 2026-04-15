@@ -31,6 +31,12 @@ public class RallyCarComponent : SyncScript
     private const float BaseBurnRateLitersPerSecond = 0.015f;
     private const float DefaultBurnEfficiency = 0.3f;
     private const float TurboSpoolRatePerSecond = 3f;
+    /// <summary>Fraction of heat generated at idle (no throttle).</summary>
+    private const float IdleHeatFraction = 0.15f;
+    /// <summary>Oil viscosity coefficient: pressure drops by this fraction per °C above reference.</summary>
+    private const float OilViscosityTempCoef = 0.003f;
+    /// <summary>Oil reference temperature (°C) above which pressure starts to drop.</summary>
+    private const float OilViscosityRefTempC = 80f;
 
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
@@ -860,7 +866,7 @@ public class RallyCarComponent : SyncScript
         // ── Engine temperature ──────────────────────────────────────────────
         // Heat generated is proportional to RPM and throttle (proxy for combustion power).
         var rpmFraction = MaxRpm > 0f ? _engineRpm / MaxRpm : 0f;
-        var heatInput = (0.15f + 0.85f * throttle) * rpmFraction;
+        var heatInput = (IdleHeatFraction + (1f - IdleHeatFraction) * throttle) * rpmFraction;
 
         // Cooling: air cooling (speed-dependent) plus the thermostat regulation.
         var targetTemp = AirRegulatorTemperature > 0f ? AirRegulatorTemperature : 85f;
@@ -887,7 +893,7 @@ public class RallyCarComponent : SyncScript
         if (OilVolumeLiters > 0f)
         {
             var basePressure = 1f + 4f * rpmFraction; // 1 bar idle → 5 bar at redline
-            var tempFactor = 1f - 0.003f * MathF.Max(0f, _oilTemp - 80f); // pressure drops as oil thins
+            var tempFactor = 1f - OilViscosityTempCoef * MathF.Max(0f, _oilTemp - OilViscosityRefTempC);
             OilPressure = MathF.Max(0f, basePressure * Math.Clamp(tempFactor, 0.3f, 1f));
         }
         else
