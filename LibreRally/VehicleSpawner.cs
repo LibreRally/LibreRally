@@ -571,7 +571,11 @@ public class VehicleSpawner : SyncScript
 
     private void HandleOutGaugeSendFailure(Exception ex)
     {
-        Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+        if (!_outGaugeSendFailed)
+        {
+            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+        }
+
         _outGaugeSendFailed = true;
     }
 }
