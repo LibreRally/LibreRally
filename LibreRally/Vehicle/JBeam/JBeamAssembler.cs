@@ -190,6 +190,7 @@ public static class JBeamAssembler
         JBeamVehicleControllerDefinition? controller = null;
         JBeamBrakeControlDefinition? brakeControl = null;
         JBeamTractionControlDefinition? tractionControl = null;
+        JBeamFuelTankDefinition? fuelTank = null;
         var resolvedParts = parts.Select(p => p.Part).ToList();
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
@@ -263,6 +264,7 @@ public static class JBeamAssembler
             controller = MergeVehicleController(controller, part.VehicleController);
             brakeControl = MergeBrakeControl(brakeControl, part.BrakeControl);
             tractionControl = MergeTractionControl(tractionControl, part.TractionControl);
+            fuelTank ??= part.FuelTank;
         }
 
         // Build logical parts:
@@ -293,6 +295,7 @@ public static class JBeamAssembler
             VehicleController = controller,
             BrakeControl = brakeControl,
             TractionControl = tractionControl,
+            FuelTank = fuelTank,
         };
     }
 

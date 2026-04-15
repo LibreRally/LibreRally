@@ -141,4 +141,7 @@ public class VehicleDefinition
 
     /// <summary>Traction-control metadata parsed from active parts, when present.</summary>
     public JBeamTractionControlDefinition? TractionControl { get; init; }
+
+    /// <summary>Fuel-tank metadata parsed from active parts (capacity, starting fuel).</summary>
+    public JBeamFuelTankDefinition? FuelTank { get; init; }
 }

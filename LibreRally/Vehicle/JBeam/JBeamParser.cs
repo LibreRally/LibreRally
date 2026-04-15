@@ -329,6 +329,7 @@ public static class JBeamParser
             VehicleController = ParseVehicleControllerDefinition(obj),
             BrakeControl = ParseBrakeControlDefinition(obj),
             TractionControl = ParseTractionControlDefinition(obj),
+            FuelTank = ParseFuelTankDefinition(obj),
             RefNodes = ParseRefNodes(obj),
         };
 
@@ -1191,6 +1192,127 @@ public static class JBeamParser
             Friction = GetOptionalFloat(engineSection, "friction"),
             DynamicFriction = GetOptionalFloat(engineSection, "dynamicFriction"),
             EngineBrakeTorque = GetOptionalFloat(engineSection, "engineBrakeTorque"),
+            ThermalsEnabled = engineSection.TryGetProperty("thermalsEnabled", out var te) && GetBool(te),
+            OilVolume = GetOptionalFloat(engineSection, "oilVolume"),
+            EngineBlockMaterial = engineSection.TryGetProperty("engineBlockMaterial", out var mat) ? SafeGetString(mat) : "iron",
+            EngineBlockTemperatureDamageThreshold = GetOptionalFloat(engineSection, "engineBlockTemperatureDamageThreshold"),
+            CylinderWallTemperatureDamageThreshold = GetOptionalFloat(engineSection, "cylinderWallTemperatureDamageThreshold"),
+            BurnEfficiency = ParseBurnEfficiencyCurve(engineSection),
+            IsAirCooledOnly = engineSection.TryGetProperty("isAirCooledOnly", out var ac) && GetBool(ac),
+            AirRegulatorTemperature = GetOptionalFloat(engineSection, "airRegulatorTemperature"),
+            EngineBlockAirCoolingEfficiency = GetOptionalFloat(engineSection, "engineBlockAirCoolingEfficiency"),
+            Turbo = ParseTurboDefinition(obj),
+        };
+    }
+
+    private static List<JBeamBurnEfficiencyPoint> ParseBurnEfficiencyCurve(JsonElement engineSection)
+    {
+        var points = new List<JBeamBurnEfficiencyPoint>();
+        if (!engineSection.TryGetProperty("burnEfficiency", out var burnElement))
+        {
+            return points;
+        }
+
+        if (burnElement.ValueKind != JsonValueKind.Array)
+        {
+            return points;
+        }
+
+        foreach (var elem in burnElement.EnumerateArray())
+        {
+            if (elem.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = elem.EnumerateArray().ToList();
+            if (items.Count < 2)
+            {
+                continue;
+            }
+
+            points.Add(new JBeamBurnEfficiencyPoint(GetFloat(items[0]), GetFloat(items[1])));
+        }
+
+        return points;
+    }
+
+    private static JBeamTurboDefinition? ParseTurboDefinition(JsonElement obj)
+    {
+        if (!TryGetNamedSection(obj, section =>
+                section.TryGetProperty("wastegatePressure", out _) ||
+                section.TryGetProperty("pressureRatePSI", out _),
+            out var turboSection))
+        {
+            return null;
+        }
+
+        return new JBeamTurboDefinition
+        {
+            WastegatePressure = GetOptionalFloat(turboSection, "wastegatePressure"),
+            FrictionCoef = GetOptionalFloat(turboSection, "frictionCoef"),
+            Inertia = GetOptionalFloat(turboSection, "inertia"),
+            GammaIn = GetOptionalFloat(turboSection, "gamma_in"),
+            GammaOut = GetOptionalFloat(turboSection, "gamma_out"),
+            PressureRatePsi = GetOptionalFloat(turboSection, "pressureRatePSI"),
+        };
+    }
+
+    private static JBeamFuelTankDefinition? ParseFuelTankDefinition(JsonElement obj)
+    {
+        // Look for an energyStorage table; its named rows reference named blocks
+        // e.g. energyStorage: [["type","name"],["fuelTank","mainTank"]]
+        if (!obj.TryGetProperty("energyStorage", out var storageElement) ||
+            storageElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        // Find the tank name from the energyStorage table (first non-header row)
+        string? tankName = null;
+        var headerSeen = false;
+        foreach (var row in storageElement.EnumerateArray())
+        {
+            if (row.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var items = row.EnumerateArray().ToList();
+            if (!headerSeen)
+            {
+                headerSeen = true;
+                continue;
+            }
+
+            if (items.Count >= 2)
+            {
+                tankName = SafeGetString(items[1]);
+                break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(tankName))
+        {
+            return null;
+        }
+
+        // The tank block is a named object property at the part level, e.g. "mainTank": { ... }
+        if (!obj.TryGetProperty(tankName, out var tankBlock) ||
+            tankBlock.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var fuelCapacity = GetOptionalFloat(tankBlock, "fuelCapacity");
+        var startingFuelStr = TryGetOptionalFloat(tankBlock, "startingFuelCapacity");
+        var startingFuel = startingFuelStr ?? fuelCapacity;
+
+        return new JBeamFuelTankDefinition
+        {
+            EnergyType = tankBlock.TryGetProperty("energyType", out var et) ? SafeGetString(et) : "gasoline",
+            FuelCapacity = fuelCapacity,
+            StartingFuelCapacity = startingFuel,
         };
     }
 

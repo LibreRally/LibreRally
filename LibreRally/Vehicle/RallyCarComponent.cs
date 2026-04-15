@@ -182,6 +182,38 @@ public class RallyCarComponent : SyncScript
     /// <summary>Vehicle speed below which holding brake can select reverse gear.</summary>
     public float ReverseEngageSpeedKmh { get; set; } = 1.5f;
 
+    // ── Engine thermal / oil / fuel / turbo ──────────────────────────────────
+
+    /// <summary>Fuel tank capacity (litres). Zero when no tank is defined.</summary>
+    public float FuelCapacityLiters { get; set; }
+
+    /// <summary>Initial fuel load (litres), resolved from JBeam startingFuelCapacity.</summary>
+    public float StartingFuelLiters { get; set; }
+
+    /// <summary>Engine oil volume (litres) from JBeam. Used for thermal mass calculation.</summary>
+    public float OilVolumeLiters { get; set; }
+
+    /// <summary>Engine block temperature at which damage begins (°C).</summary>
+    public float EngineBlockTempDamageThreshold { get; set; } = 180f;
+
+    /// <summary>Thermostat target temperature (°C) — the engine's normal operating temperature.</summary>
+    public float AirRegulatorTemperature { get; set; } = 85f;
+
+    /// <summary>Air cooling efficiency coefficient from JBeam.</summary>
+    public float EngineBlockAirCoolingEfficiency { get; set; }
+
+    /// <summary>Burn efficiency throttle axis (0–1). Pair with <see cref="BurnEfficiencyValues"/>.</summary>
+    public float[] BurnEfficiencyThrottle { get; set; } = Array.Empty<float>();
+
+    /// <summary>Burn efficiency values (0–1) corresponding to each throttle point.</summary>
+    public float[] BurnEfficiencyValues { get; set; } = Array.Empty<float>();
+
+    /// <summary>Whether this engine has a turbocharger.</summary>
+    public bool HasTurbo { get; set; }
+
+    /// <summary>Maximum turbo boost pressure in PSI (from wastegate setting).</summary>
+    public float TurboMaxBoostPsi { get; set; }
+
     // ── Read-only telemetry ──────────────────────────────────────────────────
     public float SpeedKmh { get; private set; }
     public float ForwardSpeedMs { get; private set; }
@@ -203,6 +235,22 @@ public class RallyCarComponent : SyncScript
     public float TractionControlTorqueScale { get; private set; } = 1f;
     public int CurrentGear { get; private set; } = 1;
 
+    // ── Engine thermal / oil / fuel / turbo runtime state ────────────────────
+    /// <summary>Current engine block temperature (°C). Settles at the air-regulator setpoint.</summary>
+    public float EngineTemp { get; private set; }
+
+    /// <summary>Remaining fuel (litres).</summary>
+    public float FuelLiters { get; private set; }
+
+    /// <summary>Current oil pressure (bar). Correlates with RPM and oil volume.</summary>
+    public float OilPressure { get; private set; }
+
+    /// <summary>Current oil temperature (°C). Lags slightly behind engine block temp.</summary>
+    public float OilTemp { get; private set; }
+
+    /// <summary>Current turbo boost pressure (bar). Zero when no turbo is present.</summary>
+    public float TurboBoostBar { get; private set; }
+
     public float DriveRatio => EffectiveRatio;
 
     private float EffectiveRatio => GearRatios[Math.Clamp(CurrentGear, 0, GearRatios.Length - 1)] * FinalDrive;
@@ -210,6 +258,11 @@ public class RallyCarComponent : SyncScript
 
     // Simulated engine RPM — the engine drives the drivetrain, not the other way around.
     private float _engineRpm;
+    // Thermal / oil / fuel / turbo simulation state
+    private float _engineTemp;
+    private float _oilTemp;
+    private float _fuelLiters;
+    private float _turboBoostBar;
 
     // ── Cached arrays for VehicleDynamicsSystem (avoid per-frame allocations) ─
     private readonly Vector3[] _wheelPositions = new Vector3[VehicleDynamicsSystem.WheelCount];
@@ -225,6 +278,9 @@ public class RallyCarComponent : SyncScript
     public override void Start()
     {
         _engineRpm = IdleRpm;
+        _engineTemp = AirRegulatorTemperature > 0f ? AirRegulatorTemperature * 0.5f : 40f;
+        _oilTemp = _engineTemp;
+        _fuelLiters = StartingFuelLiters > 0f ? StartingFuelLiters : FuelCapacityLiters;
 
         // Create default dynamics system if none was injected by VehicleLoader
         Dynamics ??= new VehicleDynamicsSystem();
@@ -500,6 +556,9 @@ public class RallyCarComponent : SyncScript
 
         _engineRpm = Math.Clamp(_engineRpm, IdleRpm, MaxRpm + 300f);
         EngineRpm  = _engineRpm;
+
+        // ── Engine thermal / oil / fuel / turbo simulation ────────────────────
+        UpdateEngineThermals(dt, driveInput, engineOmega, forwardSpeed);
 
         // ── Steering motors (front wheels) ────────────────────────────────────
         const float SteerServoGain = 12f;
@@ -782,6 +841,120 @@ public class RallyCarComponent : SyncScript
             }
         }
         return TorqueCurveNm[^1];
+    }
+
+    /// <summary>
+    /// Lightweight per-frame engine thermal, fuel consumption, oil, and turbo simulation.
+    /// Produces gauge-plausible values from JBeam engine/fuel-tank data without full
+    /// thermo-fluid modelling.
+    /// </summary>
+    private void UpdateEngineThermals(float dt, float throttle, float engineOmega, float forwardSpeed)
+    {
+        // ── Engine temperature ──────────────────────────────────────────────
+        // Heat generated is proportional to RPM and throttle (proxy for combustion power).
+        var rpmFraction = MaxRpm > 0f ? _engineRpm / MaxRpm : 0f;
+        var heatInput = (0.15f + 0.85f * throttle) * rpmFraction;
+
+        // Cooling: air cooling (speed-dependent) plus the thermostat regulation.
+        var targetTemp = AirRegulatorTemperature > 0f ? AirRegulatorTemperature : 85f;
+        var airSpeed = MathF.Abs(forwardSpeed);
+        var coolingCoef = EngineBlockAirCoolingEfficiency > 0f ? EngineBlockAirCoolingEfficiency : 10f;
+        var airCooling = (1f + airSpeed * 0.1f) * coolingCoef * 0.001f;
+
+        // Simple first-order approach toward target ± offset from load
+        var heatTarget = targetTemp + heatInput * 30f; // load can push up to 30 °C above thermostat
+        _engineTemp += (heatTarget - _engineTemp) * Math.Min(airCooling * dt, 1f);
+        _engineTemp = Math.Clamp(_engineTemp, 0f, EngineBlockTempDamageThreshold + 50f);
+        EngineTemp = _engineTemp;
+
+        // ── Oil temperature ─────────────────────────────────────────────────
+        // Oil temperature follows engine temp with a thermal lag.
+        var oilTarget = _engineTemp - 5f; // Oil runs slightly cooler than block
+        _oilTemp += (oilTarget - _oilTemp) * Math.Min(0.3f * dt, 1f);
+        _oilTemp = Math.Clamp(_oilTemp, 0f, EngineBlockTempDamageThreshold + 20f);
+        OilTemp = _oilTemp;
+
+        // ── Oil pressure ────────────────────────────────────────────────────
+        // Approximation: proportional to RPM, reduced when oil is hot.
+        // Typical range is 1–5 bar. With zero oil volume the gauge stays at zero.
+        if (OilVolumeLiters > 0f)
+        {
+            var basePressure = 1f + 4f * rpmFraction; // 1 bar idle → 5 bar at redline
+            var tempFactor = 1f - 0.003f * MathF.Max(0f, _oilTemp - 80f); // pressure drops as oil thins
+            OilPressure = MathF.Max(0f, basePressure * Math.Clamp(tempFactor, 0.3f, 1f));
+        }
+        else
+        {
+            OilPressure = 0f;
+        }
+
+        // ── Fuel consumption ────────────────────────────────────────────────
+        if (FuelCapacityLiters > 0f && _fuelLiters > 0f)
+        {
+            // Burn efficiency interpolation (throttle → efficiency)
+            var efficiency = InterpolateBurnEfficiency(throttle);
+            // Litres per second: simplified volumetric model.
+            // At full throttle and max RPM the engine burns roughly 0.01–0.03 L/s for
+            // a small 1.5 L engine; scale with displacement proxy (torque × rpm).
+            var powerFraction = throttle * rpmFraction;
+            var baseBurnRate = 0.015f; // litres/s at full power
+            var burnRate = baseBurnRate * powerFraction;
+            // Higher efficiency → less fuel for the same power
+            if (efficiency > 0f)
+            {
+                burnRate /= (efficiency / 0.3f); // normalise around 30% baseline
+            }
+
+            _fuelLiters -= burnRate * dt;
+            _fuelLiters = MathF.Max(0f, _fuelLiters);
+        }
+
+        FuelLiters = _fuelLiters;
+
+        // ── Turbo boost ─────────────────────────────────────────────────────
+        if (HasTurbo && TurboMaxBoostPsi > 0f)
+        {
+            // Simplified spool model: boost proportional to RPM × throttle with lag.
+            var targetBoostPsi = TurboMaxBoostPsi * throttle * rpmFraction;
+            var spoolRate = 3f; // approximate spool-up constant (1/s)
+            _turboBoostBar += (targetBoostPsi * PsiToBar - _turboBoostBar) * Math.Min(spoolRate * dt, 1f);
+            _turboBoostBar = MathF.Max(0f, _turboBoostBar);
+        }
+        else
+        {
+            _turboBoostBar = 0f;
+        }
+
+        TurboBoostBar = _turboBoostBar;
+    }
+
+    /// <summary>PSI to bar conversion factor.</summary>
+    private const float PsiToBar = 0.0689476f;
+
+    /// <summary>
+    /// Interpolates the burn efficiency curve at the given throttle fraction.
+    /// Returns a default of 0.3 when no curve is defined.
+    /// </summary>
+    private float InterpolateBurnEfficiency(float throttle)
+    {
+        if (BurnEfficiencyThrottle == null || BurnEfficiencyThrottle.Length < 2 ||
+            BurnEfficiencyValues  == null || BurnEfficiencyValues.Length < BurnEfficiencyThrottle.Length)
+        {
+            return 0.3f;
+        }
+
+        throttle = Math.Clamp(throttle, BurnEfficiencyThrottle[0], BurnEfficiencyThrottle[^1]);
+        for (var i = 1; i < BurnEfficiencyThrottle.Length; i++)
+        {
+            if (throttle <= BurnEfficiencyThrottle[i])
+            {
+                var t = (throttle - BurnEfficiencyThrottle[i - 1]) /
+                        (BurnEfficiencyThrottle[i] - BurnEfficiencyThrottle[i - 1]);
+                return BurnEfficiencyValues[i - 1] + t * (BurnEfficiencyValues[i] - BurnEfficiencyValues[i - 1]);
+            }
+        }
+
+        return BurnEfficiencyValues[^1];
     }
 
     private static bool IsRearWheel(Entity wheel, WheelSettings? wheelSettings)

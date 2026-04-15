@@ -126,6 +126,46 @@ public class JBeamEngineDefinition
     public float Friction { get; init; }
     public float DynamicFriction { get; init; }
     public float EngineBrakeTorque { get; init; }
+
+    // Thermal properties
+    public bool ThermalsEnabled { get; init; }
+    public float OilVolume { get; init; }
+    public string EngineBlockMaterial { get; init; } = "iron";
+    public float EngineBlockTemperatureDamageThreshold { get; init; }
+    public float CylinderWallTemperatureDamageThreshold { get; init; }
+
+    // Burn efficiency curve: throttle → efficiency (0–1)
+    public List<JBeamBurnEfficiencyPoint> BurnEfficiency { get; init; } = new();
+
+    // Cooling
+    public bool IsAirCooledOnly { get; init; }
+    public float AirRegulatorTemperature { get; init; }
+    public float EngineBlockAirCoolingEfficiency { get; init; }
+
+    // Turbo/forced induction (present when the engine has a turbocharger section)
+    public JBeamTurboDefinition? Turbo { get; init; }
+}
+
+/// <summary>Burn efficiency point: throttle fraction → thermal efficiency.</summary>
+public record JBeamBurnEfficiencyPoint(float Throttle, float Efficiency);
+
+/// <summary>Turbocharger definition parsed from a turbocharger section.</summary>
+public class JBeamTurboDefinition
+{
+    public float WastegatePressure { get; init; }
+    public float FrictionCoef { get; init; }
+    public float Inertia { get; init; }
+    public float GammaIn { get; init; }
+    public float GammaOut { get; init; }
+    public float PressureRatePsi { get; init; }
+}
+
+/// <summary>Fuel tank / energy storage parsed from an energyStorage section and its named block.</summary>
+public class JBeamFuelTankDefinition
+{
+    public string EnergyType { get; init; } = "gasoline";
+    public float FuelCapacity { get; init; }
+    public float StartingFuelCapacity { get; init; }
 }
 
 public class JBeamGearboxDefinition
@@ -179,6 +219,7 @@ public class JBeamPart
     public JBeamVehicleControllerDefinition? VehicleController { get; init; }
     public JBeamBrakeControlDefinition? BrakeControl { get; init; }
     public JBeamTractionControlDefinition? TractionControl { get; init; }
+    public JBeamFuelTankDefinition? FuelTank { get; init; }
 
     /// <summary>Ref nodes: ref, back, left, up positions used for orientation.</summary>
     public Dictionary<string, string> RefNodes { get; init; } = new();
