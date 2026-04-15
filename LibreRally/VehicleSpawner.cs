@@ -142,6 +142,7 @@ public class VehicleSpawner : SyncScript
     }
 
     private SpeedoGauge? _speedoGauge;
+    private EngineGaugeStrip? _engineGaugeStrip;
 
     private void AttachSpeedoGauge(RallyCarComponent car)
     {
@@ -154,7 +155,16 @@ public class VehicleSpawner : SyncScript
         _speedoGauge = new SpeedoGauge(Services);
         ((Game)Game).GameSystems.Add(_speedoGauge);
 
-        // The gauge reads from _speedoGauge properties we update in Update()
+        // Attach the engine auxiliary gauge strip below the speedo cluster
+        if (_engineGaugeStrip != null)
+        {
+            ((Game)Game).GameSystems.Remove(_engineGaugeStrip);
+            _engineGaugeStrip.Dispose();
+        }
+        _engineGaugeStrip = new EngineGaugeStrip(Services);
+        ((Game)Game).GameSystems.Add(_engineGaugeStrip);
+
+        // The gauge reads from _speedoGauge/_engineGaugeStrip properties we update in Update()
         // Store reference so Update() can push telemetry
         _car = car;
     }
@@ -460,6 +470,23 @@ public class VehicleSpawner : SyncScript
             _speedoGauge.TractionLossDetected = _car.TractionLossDetected;
             _speedoGauge.TractionControlActive = _car.TractionControlActive;
             _speedoGauge.DrivenWheelSlipRatio = _car.DrivenWheelSlipRatio;
+        }
+
+        // Push engine auxiliary telemetry to the gauge strip
+        if (_engineGaugeStrip != null && _car != null)
+        {
+            _engineGaugeStrip.TurboBoostBar      = _car.TurboBoostBar;
+            _engineGaugeStrip.TurboMaxBoostBar    = _car.TurboMaxBoostPsi * 0.0689476f; // PSI → bar
+            _engineGaugeStrip.HasTurbo            = _car.HasTurbo;
+            _engineGaugeStrip.EngineTempC          = _car.EngineTemp;
+            _engineGaugeStrip.EngineTempDamageC    = _car.EngineBlockTempDamageThreshold;
+            _engineGaugeStrip.EngineTempTargetC    = _car.AirRegulatorTemperature;
+            _engineGaugeStrip.FuelLiters           = _car.FuelLiters;
+            _engineGaugeStrip.FuelCapacityLiters   = _car.FuelCapacityLiters;
+            _engineGaugeStrip.HasFuel              = _car.FuelCapacityLiters > 0f;
+            _engineGaugeStrip.OilPressureBar       = _car.OilPressure;
+            _engineGaugeStrip.OilTempC             = _car.OilTemp;
+            _engineGaugeStrip.HasOil               = _car.OilVolumeLiters > 0f;
         }
 
         SendOutGaugeTelemetry(dt);
