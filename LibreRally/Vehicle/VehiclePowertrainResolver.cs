@@ -27,6 +27,20 @@ public sealed class VehiclePowertrainSetup
     public DifferentialConfig FrontDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f);
     public DifferentialConfig RearDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
     public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+
+    // Thermal / oil / fuel
+    public float OilVolumeLiters { get; init; }
+    public float FuelCapacityLiters { get; init; }
+    public float StartingFuelLiters { get; init; }
+    public float EngineBlockTempDamageThreshold { get; init; } = 180f;
+    public float AirRegulatorTemperature { get; init; } = 85f;
+    public float EngineBlockAirCoolingEfficiency { get; init; }
+    public float[] BurnEfficiencyThrottle { get; init; } = Array.Empty<float>();
+    public float[] BurnEfficiencyValues { get; init; } = Array.Empty<float>();
+
+    // Turbo
+    public bool HasTurbo { get; init; }
+    public float TurboMaxBoostPsi { get; init; }
 }
 
 public static class VehiclePowertrainResolver
@@ -99,6 +113,19 @@ public static class VehiclePowertrainResolver
             FrontDiff = ResolveDifferential(definition.PowertrainDevices, childMap, FrontWheelCodes, DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f)),
             RearDiff = ResolveDifferential(definition.PowertrainDevices, childMap, RearWheelCodes, DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f)),
             CenterDiff = ResolveCenterDifferential(definition.PowertrainDevices, childMap),
+            OilVolumeLiters = definition.Engine?.OilVolume > 0f ? definition.Engine.OilVolume : 0f,
+            FuelCapacityLiters = definition.FuelTank?.FuelCapacity > 0f ? definition.FuelTank.FuelCapacity : 0f,
+            StartingFuelLiters = definition.FuelTank?.StartingFuelCapacity > 0f ? definition.FuelTank.StartingFuelCapacity : 0f,
+            EngineBlockTempDamageThreshold = definition.Engine?.EngineBlockTemperatureDamageThreshold > 0f
+                ? definition.Engine.EngineBlockTemperatureDamageThreshold : 180f,
+            AirRegulatorTemperature = definition.Engine?.AirRegulatorTemperature > 0f
+                ? definition.Engine.AirRegulatorTemperature : 85f,
+            EngineBlockAirCoolingEfficiency = definition.Engine?.EngineBlockAirCoolingEfficiency > 0f
+                ? definition.Engine.EngineBlockAirCoolingEfficiency : 0f,
+            BurnEfficiencyThrottle = ResolveBurnEfficiencyThrottle(definition.Engine),
+            BurnEfficiencyValues = ResolveBurnEfficiencyValues(definition.Engine),
+            HasTurbo = definition.Engine?.Turbo != null,
+            TurboMaxBoostPsi = definition.Engine?.Turbo?.WastegatePressure ?? 0f,
         };
     }
 
@@ -463,4 +490,24 @@ public static class VehiclePowertrainResolver
     private static bool IsDifferentialType(string type) => type.Contains("differential", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsFinalDriveSlot(string slotType) => slotType.Contains("finaldrive", StringComparison.OrdinalIgnoreCase);
+
+    private static float[] ResolveBurnEfficiencyThrottle(JBeamEngineDefinition? engine)
+    {
+        if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
+        {
+            return Array.Empty<float>();
+        }
+
+        return engine.BurnEfficiency.Select(p => p.Throttle).ToArray();
+    }
+
+    private static float[] ResolveBurnEfficiencyValues(JBeamEngineDefinition? engine)
+    {
+        if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
+        {
+            return Array.Empty<float>();
+        }
+
+        return engine.BurnEfficiency.Select(p => p.Efficiency).ToArray();
+    }
 }

@@ -244,6 +244,17 @@ public class VehicleLoader
             FrontStaticCamberRadians = ResolveCamberRadians("F"),
             RearStaticCamberRadians = ResolveCamberRadians("R"),
             Dynamics = dynamics,
+            // Engine thermal / oil / fuel / turbo
+            FuelCapacityLiters = powertrain.FuelCapacityLiters,
+            StartingFuelLiters = powertrain.StartingFuelLiters,
+            OilVolumeLiters = powertrain.OilVolumeLiters,
+            EngineBlockTempDamageThreshold = powertrain.EngineBlockTempDamageThreshold,
+            AirRegulatorTemperature = powertrain.AirRegulatorTemperature,
+            EngineBlockAirCoolingEfficiency = powertrain.EngineBlockAirCoolingEfficiency,
+            BurnEfficiencyThrottle = powertrain.BurnEfficiencyThrottle,
+            BurnEfficiencyValues = powertrain.BurnEfficiencyValues,
+            HasTurbo = powertrain.HasTurbo,
+            TurboMaxBoostPsi = powertrain.TurboMaxBoostPsi,
         };
         car.Wheels.AddRange(wheelEntities);
         car.SteerWheels.AddRange(new[] { result.WheelFL, result.WheelFR });
@@ -271,6 +282,9 @@ public class VehicleLoader
         Log.Info($"[VehicleLoader] Tyres: F r={frontTyreSpec.Radius:F3}m w={frontTyreSpec.Width:F3}m p={frontTyreSpec.PressureKpa:F0}kPa " +
                  $"| R r={rearTyreSpec.Radius:F3}m w={rearTyreSpec.Width:F3}m p={rearTyreSpec.PressureKpa:F0}kPa");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
+        Log.Info($"[VehicleLoader] Engine: fuel={powertrain.FuelCapacityLiters:F1}L start={powertrain.StartingFuelLiters:F1}L " +
+                 $"oil={powertrain.OilVolumeLiters:F1}L thermostat={powertrain.AirRegulatorTemperature:F0}°C " +
+                 $"turbo={powertrain.HasTurbo} maxBoost={powertrain.TurboMaxBoostPsi:F1}psi");
         Log.Info($"[VehicleLoader] Active vehicle='{definition.VehicleName}' folder='{vehicleFolderPath}' " +
                  $"config='{(pcPath != null ? Path.GetFileName(pcPath) : "<jbeam defaults>")}' nodes={definition.Nodes.Count} mass={vehicleMass:F0}kg");
         if (pcPath != null)
