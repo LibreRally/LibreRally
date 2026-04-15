@@ -51,7 +51,9 @@ public class VehicleSpawner : SyncScript
     private UdpClient? _outGaugeClient;
     private string? _outGaugeTargetHost;
     private int _outGaugeTargetPort;
+    private const double OutGaugeFailureLogIntervalSeconds = 5d;
     private bool _outGaugeSendFailed;
+    private double _outGaugeNextFailureLogTimeSeconds;
     private float _outGaugeElapsed;
 
     public override void Start()
@@ -510,7 +512,7 @@ public class VehicleSpawner : SyncScript
 
         _outGaugeElapsed = 0f;
         EnsureOutGaugeClient();
-        if (_outGaugeClient == null || _outGaugeSendFailed || string.IsNullOrWhiteSpace(_outGaugeTargetHost))
+        if (_outGaugeClient == null || string.IsNullOrWhiteSpace(_outGaugeTargetHost))
         {
             return;
         }
@@ -521,6 +523,7 @@ public class VehicleSpawner : SyncScript
             var snapshot = OutGaugeProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds));
             var payload = OutGaugeProtocol.Encode(snapshot, OutGaugeId);
             _outGaugeClient.Send(payload, payload.Length, _outGaugeTargetHost, _outGaugeTargetPort);
+            _outGaugeSendFailed = false;
         }
         catch (SocketException ex)
         {
@@ -558,6 +561,7 @@ public class VehicleSpawner : SyncScript
         _outGaugeTargetHost = targetHost;
         _outGaugeTargetPort = targetPort;
         _outGaugeSendFailed = false;
+        _outGaugeNextFailureLogTimeSeconds = 0d;
     }
 
     private void DisposeOutGaugeClient()
@@ -567,13 +571,16 @@ public class VehicleSpawner : SyncScript
         _outGaugeTargetHost = null;
         _outGaugeTargetPort = 0;
         _outGaugeSendFailed = false;
+        _outGaugeNextFailureLogTimeSeconds = 0d;
     }
 
     private void HandleOutGaugeSendFailure(Exception ex)
     {
-        if (!_outGaugeSendFailed)
+        var sessionSeconds = Math.Max(0d, Game.UpdateTime.Total.TotalSeconds);
+        if (!_outGaugeSendFailed || sessionSeconds >= _outGaugeNextFailureLogTimeSeconds)
         {
             Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+            _outGaugeNextFailureLogTimeSeconds = sessionSeconds + OutGaugeFailureLogIntervalSeconds;
         }
 
         _outGaugeSendFailed = true;
