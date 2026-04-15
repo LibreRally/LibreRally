@@ -24,6 +24,13 @@ public class RallyCarComponent : SyncScript
     private const float CamberRadiansPerPrecompressionUnit = 0.9f;
     private const float MaxStaticCamberFromAlignmentRadians = 0.2f;
     private const float MaxDynamicAlignmentCamberRadians = 0.35f;
+    // Engine thermal simulation constants
+    private const float MaxLoadTempIncreaseC = 30f;
+    private const float AirSpeedCoolingMultiplier = 0.1f;
+    private const float CoolingCoefScale = 0.001f;
+    private const float BaseBurnRateLitersPerSecond = 0.015f;
+    private const float DefaultBurnEfficiency = 0.3f;
+    private const float TurboSpoolRatePerSecond = 3f;
 
     public Entity CarBody { get; set; } = new();
     public List<Entity> Wheels { get; set; } = new();
@@ -859,10 +866,10 @@ public class RallyCarComponent : SyncScript
         var targetTemp = AirRegulatorTemperature > 0f ? AirRegulatorTemperature : 85f;
         var airSpeed = MathF.Abs(forwardSpeed);
         var coolingCoef = EngineBlockAirCoolingEfficiency > 0f ? EngineBlockAirCoolingEfficiency : 10f;
-        var airCooling = (1f + airSpeed * 0.1f) * coolingCoef * 0.001f;
+        var airCooling = (1f + airSpeed * AirSpeedCoolingMultiplier) * coolingCoef * CoolingCoefScale;
 
         // Simple first-order approach toward target ± offset from load
-        var heatTarget = targetTemp + heatInput * 30f; // load can push up to 30 °C above thermostat
+        var heatTarget = targetTemp + heatInput * MaxLoadTempIncreaseC;
         _engineTemp += (heatTarget - _engineTemp) * Math.Min(airCooling * dt, 1f);
         _engineTemp = Math.Clamp(_engineTemp, 0f, EngineBlockTempDamageThreshold + 50f);
         EngineTemp = _engineTemp;
@@ -897,12 +904,11 @@ public class RallyCarComponent : SyncScript
             // At full throttle and max RPM the engine burns roughly 0.01–0.03 L/s for
             // a small 1.5 L engine; scale with displacement proxy (torque × rpm).
             var powerFraction = throttle * rpmFraction;
-            var baseBurnRate = 0.015f; // litres/s at full power
-            var burnRate = baseBurnRate * powerFraction;
+            var burnRate = BaseBurnRateLitersPerSecond * powerFraction;
             // Higher efficiency → less fuel for the same power
             if (efficiency > 0f)
             {
-                burnRate /= (efficiency / 0.3f); // normalise around 30% baseline
+                burnRate /= (efficiency / DefaultBurnEfficiency);
             }
 
             _fuelLiters -= burnRate * dt;
@@ -916,8 +922,7 @@ public class RallyCarComponent : SyncScript
         {
             // Simplified spool model: boost proportional to RPM × throttle with lag.
             var targetBoostPsi = TurboMaxBoostPsi * throttle * rpmFraction;
-            var spoolRate = 3f; // approximate spool-up constant (1/s)
-            _turboBoostBar += (targetBoostPsi * PsiToBar - _turboBoostBar) * Math.Min(spoolRate * dt, 1f);
+            _turboBoostBar += (targetBoostPsi * PsiToBar - _turboBoostBar) * Math.Min(TurboSpoolRatePerSecond * dt, 1f);
             _turboBoostBar = MathF.Max(0f, _turboBoostBar);
         }
         else
@@ -940,7 +945,7 @@ public class RallyCarComponent : SyncScript
         if (BurnEfficiencyThrottle == null || BurnEfficiencyThrottle.Length < 2 ||
             BurnEfficiencyValues  == null || BurnEfficiencyValues.Length < BurnEfficiencyThrottle.Length)
         {
-            return 0.3f;
+            return DefaultBurnEfficiency;
         }
 
         throttle = Math.Clamp(throttle, BurnEfficiencyThrottle[0], BurnEfficiencyThrottle[^1]);
