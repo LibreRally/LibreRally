@@ -33,7 +33,7 @@ public class VehicleSpawner : SyncScript
     public string ConfigFileName { get; set; } = "rally_pro_asphalt.pc";
 
     public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
-    public bool OutGaugeEnabled { get; set; } = true;
+    public bool OutGaugeEnabled { get; set; }
     public int OutGaugeDelayCentiseconds { get; set; } = 1;
     public string OutGaugeIp { get; set; } = "127.0.0.1";
     public int OutGaugePort { get; set; } = 4444;

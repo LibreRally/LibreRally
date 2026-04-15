@@ -168,7 +168,7 @@ internal static class OutGaugeProtocol
             for (var i = 0; i < charCount; i++)
             {
                 var c = value[i];
-                destination[i] = c <= sbyte.MaxValue ? (byte)c : (byte)'?';
+                destination[i] = c <= 127 ? (byte)c : (byte)'?';
             }
         }
 
