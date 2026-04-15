@@ -19,11 +19,9 @@ public class EngineGaugeStrip : GameSystemBase
     public float TurboMaxBoostBar { get; set; }
     public float EngineTempC { get; set; }
     public float EngineTempDamageC { get; set; } = 180f;
-    public float EngineTempTargetC { get; set; } = 85f;
     public float FuelLiters { get; set; }
     public float FuelCapacityLiters { get; set; }
     public float OilPressureBar { get; set; }
-    public float OilTempC { get; set; }
     public bool HasTurbo { get; set; }
     public bool HasFuel { get; set; }
     public bool HasOil { get; set; }
@@ -105,13 +103,18 @@ public class EngineGaugeStrip : GameSystemBase
         var gaugeClusterLeft = speedCx - 74f - 28f; // matches SpeedoGauge panelLeft
         var gaugeClusterRight = rpmCx + 74f + 16f;  // matches SpeedoGauge panelRight
 
-        // Strip sits just below the speedo backdrop
-        var stripTop = sh - 22f + PanelTopMargin;
         var totalGaugeWidth = gaugeCount * (LabelWidth + GaugeWidth) + (gaugeCount - 1) * GaugeSpacing;
         var panelWidth = totalGaugeWidth + PanelPadding * 2f;
         var panelCenterX = (gaugeClusterLeft + gaugeClusterRight) * 0.5f;
         var panelLeft = panelCenterX - panelWidth * 0.5f;
         var panelHeight = StripHeight + PanelPadding * 2f;
+
+        // Strip sits just below the speedo backdrop, but must remain fully visible on-screen.
+        var speedoPanelBottom = sh - 22f;
+        var preferredStripTop = speedoPanelBottom + PanelTopMargin;
+        var minStripTop = PanelTopMargin;
+        var maxStripTop = sh - panelHeight - PanelTopMargin;
+        var stripTop = MathUtil.Clamp(preferredStripTop, minStripTop, maxStripTop);
 
         cmd.SetRenderTargetAndViewport(null, back);
         _sb.Begin(ctx, SpriteSortMode.Deferred, BlendStates.AlphaBlend);
