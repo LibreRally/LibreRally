@@ -522,13 +522,19 @@ public class VehicleSpawner : SyncScript
             var payload = OutGaugeProtocol.Encode(snapshot, OutGaugeId);
             _outGaugeClient.Send(payload, payload.Length, _outGaugeTargetHost, _outGaugeTargetPort);
         }
-        catch (Exception ex)
+        catch (SocketException ex)
         {
-            if (!_outGaugeSendFailed)
-            {
-                Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-            }
-
+            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+            _outGaugeSendFailed = true;
+        }
+        catch (ObjectDisposedException ex)
+        {
+            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
+            _outGaugeSendFailed = true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
             _outGaugeSendFailed = true;
         }
     }
