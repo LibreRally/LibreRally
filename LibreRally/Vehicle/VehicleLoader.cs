@@ -311,22 +311,25 @@ public class VehicleLoader
 
     internal static TyreModel CreateTyreModel(in VehicleTyreSpec spec)
     {
+        bool hasBeamNgLoadCurve =
+            spec.BeamNgNoLoadFrictionCoefficient.HasValue &&
+            spec.BeamNgFullLoadFrictionCoefficient.HasValue &&
+            spec.BeamNgLoadSensitivitySlope.HasValue;
+
         var tyreModel = new TyreModel(spec.Radius)
         {
             Width = spec.Width,
             TyrePressure = spec.PressureKpa,
             PeakFrictionCoefficient = spec.PeakFrictionCoefficient,
             RollingResistanceCoefficient = spec.RollingResistanceCoefficient,
-            LoadSensitivity = spec.BeamNgLoadSensitivitySlope.HasValue ? 0f : 0.15f,
+            LoadSensitivity = hasBeamNgLoadCurve ? 0f : 0.15f,
         };
 
-        if (spec.BeamNgNoLoadFrictionCoefficient.HasValue &&
-            spec.BeamNgFullLoadFrictionCoefficient.HasValue &&
-            spec.BeamNgLoadSensitivitySlope.HasValue)
+        if (hasBeamNgLoadCurve)
         {
-            tyreModel.BeamNgNoLoadFrictionCoefficient = spec.BeamNgNoLoadFrictionCoefficient.Value;
-            tyreModel.BeamNgFullLoadFrictionCoefficient = spec.BeamNgFullLoadFrictionCoefficient.Value;
-            tyreModel.BeamNgLoadSensitivitySlope = spec.BeamNgLoadSensitivitySlope.Value;
+            tyreModel.BeamNgNoLoadFrictionCoefficient = spec.BeamNgNoLoadFrictionCoefficient.GetValueOrDefault();
+            tyreModel.BeamNgFullLoadFrictionCoefficient = spec.BeamNgFullLoadFrictionCoefficient.GetValueOrDefault();
+            tyreModel.BeamNgLoadSensitivitySlope = spec.BeamNgLoadSensitivitySlope.GetValueOrDefault();
         }
 
         return tyreModel;
