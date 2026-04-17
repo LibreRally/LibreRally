@@ -8,6 +8,7 @@ using LibreRally.HUD;
 using LibreRally.Telemetry;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
+using LibreRally.Vehicle.Physics;
 using Stride.BepuPhysics;
 using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
@@ -70,6 +71,7 @@ public class VehicleSpawner : SyncScript
         Vector3 localPosition,
         Quaternion localRotation,
         Vector3 colliderSize,
+        SurfaceType surfaceType,
         Color4 albedo,
         float uvScale,
         float frictionCoefficient)
@@ -78,6 +80,7 @@ public class VehicleSpawner : SyncScript
         public Vector3 LocalPosition { get; } = localPosition;
         public Quaternion LocalRotation { get; } = localRotation;
         public Vector3 ColliderSize { get; } = colliderSize;
+        public SurfaceType SurfaceType { get; } = surfaceType;
         public Color4 Albedo { get; } = albedo;
         public float UvScale { get; } = uvScale;
         public float FrictionCoefficient { get; } = frictionCoefficient;
@@ -398,6 +401,7 @@ public class VehicleSpawner : SyncScript
                     new Vector3(0f, 0.5f, 0f),
                     Quaternion.Identity,
                     new Vector3(60f, 0.2f, 16f),
+                    SurfaceType.Tarmac,
                     new Color4(0.21f, 0.21f, 0.22f, 1f),
                     7.5f,
                     1.35f),
@@ -406,6 +410,7 @@ public class VehicleSpawner : SyncScript
                     new Vector3(-22f, 0.5f, 26f),
                     Quaternion.Identity,
                     new Vector3(28f, 0.25f, 14f),
+                    SurfaceType.Gravel,
                     new Color4(0.47f, 0.40f, 0.29f, 1f),
                     5f,
                     1.05f),
@@ -414,6 +419,7 @@ public class VehicleSpawner : SyncScript
                     new Vector3(22f, 0.5f, 26f),
                     Quaternion.Identity,
                     new Vector3(28f, 0.25f, 14f),
+                    SurfaceType.Snow,
                     new Color4(0.88f, 0.9f, 0.92f, 1f),
                     5f,
                     0.85f),
@@ -422,6 +428,7 @@ public class VehicleSpawner : SyncScript
                     new Vector3(38f, 1.8f, -6f),
                     Quaternion.RotationZ(BankedSectionRollAngleRadians),
                     new Vector3(20f, 0.25f, 28f),
+                    SurfaceType.Tarmac,
                     new Color4(0.24f, 0.24f, 0.25f, 1f),
                     4f,
                     1.2f),
@@ -430,6 +437,7 @@ public class VehicleSpawner : SyncScript
                     new Vector3(0f, 1.7f, 40f),
                     Quaternion.RotationX(InclineSectionPitchAngleRadians),
                     new Vector3(12f, 0.25f, 42f),
+                    SurfaceType.Tarmac,
                     new Color4(0.23f, 0.23f, 0.24f, 1f),
                     5.25f,
                     1.25f),
@@ -442,7 +450,7 @@ public class VehicleSpawner : SyncScript
         }
         catch (Exception ex)
         {
-            Log.Warning($"Could not build test track sections: {ex.Message}");
+            Log.Warning($"Could not build test track sections: {ex}");
         }
     }
 
@@ -506,10 +514,15 @@ public class VehicleSpawner : SyncScript
             {
                 Colliders =
                 {
-                    new BoxCollider { Size = segment.ColliderSize },
+                    new BoxCollider
+                    {
+                        Size = segment.ColliderSize,
+                        PositionLocal = new Vector3(0f, -segment.ColliderSize.Y * 0.5f, 0f),
+                    },
                 },
             },
         });
+        trackEntity.Add(new TrackSurfaceComponent { SurfaceType = segment.SurfaceType });
         trackEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
 
         return trackEntity;
