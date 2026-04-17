@@ -15,6 +15,13 @@ namespace LibreRally.Vehicle.Physics;
 /// <summary>
 /// Result of <see cref="VehiclePhysicsBuilder.Build"/>.
 /// </summary>
+/// <param name="RootEntity">Root entity that contains chassis and wheel child entities.</param>
+/// <param name="ChassisEntity">Entity representing the chassis rigid body.</param>
+/// <param name="ChassisBody">Physics body attached to <paramref name="ChassisEntity"/>.</param>
+/// <param name="WheelFL">Front-left wheel entity.</param>
+/// <param name="WheelFR">Front-right wheel entity.</param>
+/// <param name="WheelRL">Rear-left wheel entity.</param>
+/// <param name="WheelRR">Rear-right wheel entity.</param>
 public record VehicleBuilderResult(
     Entity RootEntity,
     Entity ChassisEntity,
@@ -25,13 +32,8 @@ public record VehicleBuilderResult(
     Entity WheelRR);
 
 /// <summary>
-/// Builds the Stride entity hierarchy and BEPU physics bodies for a vehicle.
-///
-/// Coordinate mapping from BeamNG (X=right, Y=forward, Z=up)
-/// to Stride (X=right, Y=up, Z=backward):
-///   strideX = jbeamX
-///   strideY = jbeamZ
-///   strideZ = -jbeamY
+/// Builds the Stride entity graph and BEPU physics bodies for an assembled vehicle definition, including
+/// the chassis body and four wheel bodies connected by suspension constraints.
 /// </summary>
 public static class VehiclePhysicsBuilder
 {
@@ -45,6 +47,11 @@ public static class VehiclePhysicsBuilder
     ///     a <see cref="WeldConstraintComponent"/> connecting it to the chassis.
     ///   - Four wheel entities with suspension constraints.
     /// </summary>
+    /// <param name="def">Assembled vehicle definition containing nodes, parts, and beam metadata.</param>
+    /// <returns>A <see cref="VehicleBuilderResult"/> containing the created entities and chassis body.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the vehicle definition does not contain a non-detachable chassis part.
+    /// </exception>
     public static VehicleBuilderResult Build(VehicleDefinition def)
     {
         var root = new Entity(def.VehicleName);
@@ -869,6 +876,11 @@ public static class VehiclePhysicsBuilder
     // Stride: X=right, Y=up, Z=backward
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Converts a BeamNG-space vector to Stride-space coordinates.
+    /// </summary>
+    /// <param name="v">Vector expressed in BeamNG coordinates (X right, Y forward, Z up).</param>
+    /// <returns>Equivalent vector in Stride coordinates (X right, Y up, Z backward).</returns>
     public static Vector3 BeamNGToStride(System.Numerics.Vector3 v)
         => new Vector3(v.X, v.Z, -v.Y);
 

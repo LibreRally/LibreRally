@@ -7,14 +7,8 @@ using System.Text.Json;
 namespace LibreRally.Vehicle.Rendering;
 
 /// <summary>
-/// Parses BeamNG *.materials.json files and resolves material names to absolute texture paths.
-///
-/// BeamNG material convention:
-///   - Material name (JSON key) matches the DAE binding symbol without the "-material" suffix
-///   - Texture paths use the form  "/vehicles/&lt;name&gt;/..." or "vehicles/&lt;name&gt;/..."
-///     where &lt;name&gt; is relative to the BeamNG vehicles root directory
-///   - "null.dds" / "null2.dds" etc. are placeholder entries meaning "no texture"
-///   - Each material has "Stages" array; Stage 0 (or first non-empty stage) holds the base colour
+/// Loads BeamNG <c>*.materials.json</c> files and resolves material identifiers to concrete diffuse texture
+/// file paths so imported meshes can bind textures at runtime.
 /// </summary>
 public static class BeamNGMaterialLoader
 {
@@ -32,6 +26,11 @@ public static class BeamNGMaterialLoader
     /// e.g. the "BeamNG Vehicles" directory.  It is used to resolve /vehicles/… paths.
     /// </para>
     /// </summary>
+    /// <param name="vehicleFolder">Folder containing the target vehicle's material definition files.</param>
+    /// <param name="vehiclesRootDir">Root vehicles directory used to resolve BeamNG virtual texture paths.</param>
+    /// <returns>
+    /// A dictionary keyed by material name, where each value is the absolute path of the resolved base-color texture.
+    /// </returns>
     public static Dictionary<string, string> LoadMaterialTextures(
         string vehicleFolder,
         string vehiclesRootDir)
@@ -39,6 +38,19 @@ public static class BeamNGMaterialLoader
         return LoadMaterialTextures([vehicleFolder], [vehiclesRootDir], null);
     }
 
+    /// <summary>
+    /// Loads and merges material texture mappings from one or more search folders.
+    /// </summary>
+    /// <param name="materialSearchFolders">Candidate directories to scan for <c>*.materials.json</c> files.</param>
+    /// <param name="vehiclesRootDirs">
+    /// One or more BeamNG vehicles root directories used to resolve virtual <c>/vehicles/...</c> texture paths.
+    /// </param>
+    /// <param name="virtualPathResolver">
+    /// Optional callback that resolves virtual BeamNG paths when the texture is not found directly on disk.
+    /// </param>
+    /// <returns>
+    /// A dictionary keyed by material name, where each value is the best resolved base-color texture path.
+    /// </returns>
     public static Dictionary<string, string> LoadMaterialTextures(
         IEnumerable<string> materialSearchFolders,
         IEnumerable<string> vehiclesRootDirs,
@@ -113,7 +125,7 @@ public static class BeamNGMaterialLoader
 
     /// <summary>
     /// Returns the first non-null diffuse/baseColor texture path found in any stage,
-    /// skipping null placeholder textures. Returns null if none found.
+    /// skipping <see langword="null" /> placeholder textures. Returns <see langword="null" /> if none are found.
     /// </summary>
     private static string? FindBestTexturePath(JsonElement material)
     {
