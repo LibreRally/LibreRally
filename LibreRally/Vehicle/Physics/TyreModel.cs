@@ -89,29 +89,23 @@ public sealed class TyreModel
     // geometry, transient response, and steering feel.
 
     /// <summary>
-    /// Tyre inflation pressure in kilopascals.
-    /// This value scales vertical stiffness, estimated contact-patch dimensions, and brush stiffness in the force model.
-    /// Increasing pressure makes the tyre stiffer and usually reduces peak grip by shrinking the contact patch.
-    /// <para>verticalStiffness = baseStiffness × (TyrePressure / referencePressure)</para>
-    /// <para>contactPatchLength ≈ normalLoad / (pressure × width)</para>
-    /// <para>brushStiffness ∝ pressure × width</para>
+    /// Gets or sets the tyre inflation pressure in kilopascals.
+    /// Higher values increase carcass stiffness and reduce the effective contact-patch size.
+    /// Lower values increase compliance and usually improve low-speed grip.
     /// </summary>
     public float TyrePressure { get; set; } = 220f;
 
     /// <summary>
-    /// Sidewall stiffness multiplier where 1.0 represents the calibrated baseline carcass response.
-    /// This controls how quickly lateral slip builds and therefore how direct the steering response feels.
-    /// Higher values produce quicker response and less compliance over uneven surfaces.
-    /// Applied as a multiplier to the lateral cornering stiffness (LateralB).
-    /// <para>corneringStiffness *= SidewallStiffness</para>
+    /// Gets or sets the sidewall stiffness multiplier, where 1.0 is the baseline response.
+    /// Increasing this value sharpens turn-in by building lateral force more quickly.
+    /// Decreasing this value makes the tyre feel softer and slower to respond.
     /// </summary>
     public float SidewallStiffness { get; set; } = 1.0f;
 
     /// <summary>
-    /// Carcass stiffness multiplier where 1.0 represents the baseline tyre body compliance.
-    /// This controls transient deformation in the contact patch and therefore the delay before forces build.
-    /// Higher values shorten effective relaxation length and yield faster force buildup.
-    /// <para>effectiveRelaxationLength = RelaxationLength / CarcassStiffness</para>
+    /// Gets or sets the carcass stiffness multiplier, where 1.0 is the baseline tyre-body compliance.
+    /// Increasing this value reduces transient delay before forces build at the contact patch.
+    /// Decreasing this value allows more carcass deformation and slower transient response.
     /// </summary>
     public float CarcassStiffness { get; set; } = 1.0f;
 
@@ -205,9 +199,9 @@ public sealed class TyreModel
     public float ReferenceLoad { get; set; } = 3000f;
 
     /// <summary>
-    /// Exponent controlling grip gain from effective contact-patch area.
-    /// The model applies this as a small power-law multiplier so larger patches provide modest additional grip.
-    /// <para><c>µ_effective *= (patchArea / referencePatchArea)^ContactAreaGripExponent</c></para>
+    /// Gets or sets the exponent used for contact-patch-area grip scaling.
+    /// Larger values make grip more sensitive to contact-patch area changes under load.
+    /// Smaller values keep grip closer to the baseline friction curve.
     /// </summary>
     public float ContactAreaGripExponent { get; set; } = 0.05f;
 
