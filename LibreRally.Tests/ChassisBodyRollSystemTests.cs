@@ -1,5 +1,4 @@
 using LibreRally.Vehicle.Physics;
-using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests;
 
@@ -161,6 +160,107 @@ public class ChassisBodyRollSystemTests
         Assert.Equal(0f, torque, precision: 6);
     }
 
+    /// <summary>
+    /// Viscous damping should oppose positive roll rate (reduce torque).
+    /// </summary>
+    [Fact]
+    public void Damping_OpposesPositiveRollRate()
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            FrontRollStiffness = 5000f,
+            RearRollStiffness = 4000f,
+            RollDampingCoefficient = 800f,
+        };
+
+        float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
+
+        var undampedTorque = ComputeRollTorque(system, compressions);
+        var dampedTorque = ComputeRollTorqueWithDamping(system, compressions, rollRate: 2.0f);
+
+        Assert.True(undampedTorque > 0f, "Base torque should be positive");
+        Assert.True(dampedTorque < undampedTorque,
+            $"Damped torque {dampedTorque} should be less than undamped {undampedTorque}");
+    }
+
+    /// <summary>
+    /// Viscous damping should oppose negative roll rate (increase torque towards positive).
+    /// </summary>
+    [Fact]
+    public void Damping_OpposesNegativeRollRate()
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            FrontRollStiffness = 5000f,
+            RearRollStiffness = 4000f,
+            RollDampingCoefficient = 800f,
+        };
+
+        float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
+
+        var undampedTorque = ComputeRollTorque(system, compressions);
+        var dampedTorque = ComputeRollTorqueWithDamping(system, compressions, rollRate: -2.0f);
+
+        Assert.True(dampedTorque > undampedTorque,
+            $"Damped torque {dampedTorque} with negative roll rate should exceed undamped {undampedTorque}");
+    }
+
+    /// <summary>
+    /// Damping magnitude scales linearly with the damping coefficient.
+    /// </summary>
+    [Fact]
+    public void DampingMagnitude_ScalesWithCoefficient()
+    {
+        float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
+        const float rollRate = 1.5f;
+
+        var low = new ChassisBodyRollSystem
+        {
+            FrontRollStiffness = 5000f,
+            RearRollStiffness = 4000f,
+            RollDampingCoefficient = 400f,
+        };
+
+        var high = new ChassisBodyRollSystem
+        {
+            FrontRollStiffness = 5000f,
+            RearRollStiffness = 4000f,
+            RollDampingCoefficient = 1200f,
+        };
+
+        var baseTorque = ComputeRollTorque(low, compressions);
+        var lowDamped = ComputeRollTorqueWithDamping(low, compressions, rollRate);
+        var highDamped = ComputeRollTorqueWithDamping(high, compressions, rollRate);
+
+        var lowReduction = baseTorque - lowDamped;
+        var highReduction = baseTorque - highDamped;
+
+        // High coefficient (1200) should produce 3× the damping reduction of low (400)
+        Assert.Equal(lowReduction * 3f, highReduction, precision: 2);
+    }
+
+    /// <summary>
+    /// Zero roll rate with non-zero damping coefficient should produce
+    /// the same torque as zero damping (no damping contribution).
+    /// </summary>
+    [Fact]
+    public void ZeroRollRate_DampingHasNoEffect()
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            FrontRollStiffness = 5000f,
+            RearRollStiffness = 4000f,
+            RollDampingCoefficient = 800f,
+        };
+
+        float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
+
+        var undampedTorque = ComputeRollTorque(system, compressions);
+        var dampedTorque = ComputeRollTorqueWithDamping(system, compressions, rollRate: 0f);
+
+        Assert.Equal(undampedTorque, dampedTorque, precision: 4);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -176,6 +276,19 @@ public class ChassisBodyRollSystemTests
 
         return deltaFront * system.FrontRollStiffness
              + deltaRear * system.RearRollStiffness;
+    }
+
+    /// <summary>
+    /// Computes the expected scalar roll torque including viscous damping.
+    /// Mirrors the full formula in <see cref="ChassisBodyRollSystem.Apply"/>.
+    /// </summary>
+    /// <param name="system">Body roll configuration.</param>
+    /// <param name="compressions">Per-wheel suspension compressions.</param>
+    /// <param name="rollRate">Current roll rate (rad/s) about the forward axis.</param>
+    private static float ComputeRollTorqueWithDamping(ChassisBodyRollSystem system, float[] compressions, float rollRate)
+    {
+        var baseTorque = ComputeRollTorque(system, compressions);
+        return baseTorque - rollRate * system.RollDampingCoefficient;
     }
 
     /// <summary>

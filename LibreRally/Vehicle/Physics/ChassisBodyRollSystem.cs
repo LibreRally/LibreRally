@@ -10,7 +10,7 @@ namespace LibreRally.Vehicle.Physics;
 /// <para>For each axle the compression delta between left and right wheels generates a
 /// roll moment about the vehicle's longitudinal axis:
 /// <code>
-///   τ_roll = (compression_left − compression_right) × rollStiffness × trackWidth
+///   τ_roll = (compression_left − compression_right) × rollStiffness
 /// </code>
 /// The resulting torque is applied as an angular impulse to the chassis body each
 /// physics step, producing realistic body lean during cornering.</para>
@@ -66,7 +66,7 @@ public struct ChassisBodyRollSystem
                       - suspensionCompressions[VehicleDynamicsSystem.RR];
 
         // Total roll torque about the longitudinal axis (N·m).
-        // Positive delta (left more compressed) → positive torque → chassis rolls right.
+        // Positive delta (left more compressed) → positive torque along +forward (+Z) → chassis rolls left.
         var rollTorque = deltaFront * FrontRollStiffness
                        + deltaRear * RearRollStiffness;
 
@@ -83,7 +83,8 @@ public struct ChassisBodyRollSystem
             return;
         }
 
-        // Convert torque to angular impulse: Δω = τ × dt, applied about the forward axis.
+        // Convert torque to angular impulse (L = τ × dt), applied about the forward axis.
+        // The body's inertia tensor determines the resulting angular velocity change.
         var rollImpulse = chassisForward * (rollTorque * dt);
 
         chassisBody.Awake = true;
