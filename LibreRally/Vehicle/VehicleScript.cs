@@ -9,13 +9,8 @@ using Stride.Input;
 namespace LibreRally.Vehicle;
 
 /// <summary>
-/// Driving script for a vehicle built by <see cref="VehicleLoader"/>.
-/// Attach to the vehicle root entity.
-///
-/// Controls:
-///   W / S       — throttle / brake
-///   A / D       — steer left / steer right
-///   Space       — handbrake
+/// Handles keyboard driving input for a vehicle assembled by <see cref="VehicleLoader"/> and applies
+/// steering, drive, brake, and anti-roll impulses to the chassis body.
 /// </summary>
 public class VehicleScript : SyncScript
 {
@@ -23,11 +18,22 @@ public class VehicleScript : SyncScript
     // Tuning parameters (editable in Stride Editor)
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Maximum forward drive impulse scaling applied while accelerating.</summary>
     public float EngineTorque { get; set; } = 2500f;
+
+    /// <summary>Braking impulse scaling applied when the brake or handbrake is engaged.</summary>
     public float BrakeTorque { get; set; } = 4000f;
+
+    /// <summary>Maximum steering angle in radians.</summary>
     public float MaxSteerAngle { get; set; } = 0.45f;   // radians (~26°)
+
+    /// <summary>Rate at which steering angle increases when steering input is held.</summary>
     public float SteerSpeed { get; set; } = 2.5f;
+
+    /// <summary>Rate at which steering angle returns toward center when input is released.</summary>
     public float SteerReturnSpeed { get; set; } = 4f;
+
+    /// <summary>Maximum chassis speed in metres per second at which engine impulse is applied.</summary>
     public float MaxSpeedMs { get; set; } = 70f;         // ~250 km/h
 
     // ──────────────────────────────────────────────────────────────────────────
