@@ -55,6 +55,24 @@ public class VehicleSpawner : SyncScript
     private bool _outGaugeSendFailed;
     private double _outGaugeNextFailureLogTimeSeconds;
     private float _outGaugeElapsed;
+    
+    private readonly struct TrackSegmentDefinition(
+        string name,
+        Vector3 localPosition,
+        Quaternion localRotation,
+        Vector3 colliderSize,
+        Color4 albedo,
+        float uvScale,
+        float frictionCoefficient)
+    {
+        public string Name { get; } = name;
+        public Vector3 LocalPosition { get; } = localPosition;
+        public Quaternion LocalRotation { get; } = localRotation;
+        public Vector3 ColliderSize { get; } = colliderSize;
+        public Color4 Albedo { get; } = albedo;
+        public float UvScale { get; } = uvScale;
+        public float FrictionCoefficient { get; } = frictionCoefficient;
+    }
 
     public override void Start()
     {
@@ -356,100 +374,135 @@ public class VehicleSpawner : SyncScript
             }
         });
 
-        // Add checkerboard visual so there's a visual reference for movement
-        AddCheckerboardFloor();
+        AddRoadTestSections();
     }
 
-    /// <summary>
-    /// Creates a large tessellated quad mesh with a procedural checkerboard texture
-    /// so the player has a visual reference while driving.
-    /// </summary>
-    private void AddCheckerboardFloor()
+    private void AddRoadTestSections()
     {
         try
         {
             var gd = ((Game)Game).GraphicsDevice;
-
-            // ── Procedural 2×2 checkerboard texture ──────────────────────────
-            // Two shades of grey; tiled heavily via UV scaling so tiles are ~8m each.
-            byte dark  = 55;
-            byte light = 115;
-            var pixelBytes = new byte[]
+            var segments = new[]
             {
-                dark,  dark,  dark,  255,   // top-left: dark
-                light, light, light, 255,   // top-right: light
-                light, light, light, 255,   // bottom-left: light
-                dark,  dark,  dark,  255,   // bottom-right: dark
-            };
-            var image = Image.New2D(2, 2, 1, PixelFormat.R8G8B8A8_UNorm);
-            var imageData = image.GetPixelBuffer(0, 0).GetPixels<byte>();
-            for (var i = 0; i < pixelBytes.Length; i++) imageData[i] = pixelBytes[i];
-            var checkerTex = Texture.New(gd, image);
-            image.Dispose();
-
-            // ── Large flat quad (500×500 m), Y = +0.5 so it sits on the top of the box ──
-            // UV 0→125 means each 2×2 pixel tile = 4m. With nearest-neighbour wrap that
-            // creates a clean 4m checkerboard across the whole ground plane.
-            const float Half    = 250f;
-            const float UvScale = 62.5f;   // 500m / 8m per tile
-            const float SurfY   = 0.5f;    // top of the 1m-thick box
-
-            var verts = new VertexPositionNormalTexture[]
-            {
-                new(new Vector3(-Half, SurfY, -Half), Vector3.UnitY, new Vector2(0,       0)),
-                new(new Vector3( Half, SurfY, -Half), Vector3.UnitY, new Vector2(UvScale, 0)),
-                new(new Vector3( Half, SurfY,  Half), Vector3.UnitY, new Vector2(UvScale, UvScale)),
-                new(new Vector3(-Half, SurfY,  Half), Vector3.UnitY, new Vector2(0,       UvScale)),
-            };
-            var indices = new int[] { 0, 1, 2, 0, 2, 3 };
-
-            var mesh = new Mesh
-            {
-                BoundingBox = new BoundingBox(new Vector3(-Half, SurfY - 0.01f, -Half),
-                                              new Vector3( Half, SurfY + 0.01f,  Half)),
-                Draw = new MeshDraw
-                {
-                    PrimitiveType = PrimitiveType.TriangleList,
-                    VertexBuffers = new[]
-                    {
-                        new VertexBufferBinding(
-                            Stride.Graphics.Buffer.Vertex.New(gd, verts, GraphicsResourceUsage.Immutable),
-                            VertexPositionNormalTexture.Layout, verts.Length)
-                    },
-                    IndexBuffer = new IndexBufferBinding(
-                        Stride.Graphics.Buffer.Index.New(gd, indices), true, indices.Length),
-                    DrawCount = indices.Length,
-                }
+                new TrackSegmentDefinition(
+                    "test_track_tarmac",
+                    new Vector3(0f, 0.5f, 0f),
+                    Quaternion.Identity,
+                    new Vector3(60f, 0.2f, 16f),
+                    new Color4(0.21f, 0.21f, 0.22f, 1f),
+                    7.5f,
+                    1.35f),
+                new TrackSegmentDefinition(
+                    "test_track_gravel",
+                    new Vector3(-22f, 0.5f, 26f),
+                    Quaternion.Identity,
+                    new Vector3(28f, 0.25f, 14f),
+                    new Color4(0.47f, 0.40f, 0.29f, 1f),
+                    5f,
+                    1.05f),
+                new TrackSegmentDefinition(
+                    "test_track_snow",
+                    new Vector3(22f, 0.5f, 26f),
+                    Quaternion.Identity,
+                    new Vector3(28f, 0.25f, 14f),
+                    new Color4(0.88f, 0.9f, 0.92f, 1f),
+                    5f,
+                    0.85f),
+                new TrackSegmentDefinition(
+                    "test_track_banked",
+                    new Vector3(38f, 1.8f, -6f),
+                    Quaternion.RotationZ(-0.35f),
+                    new Vector3(20f, 0.25f, 28f),
+                    new Color4(0.24f, 0.24f, 0.25f, 1f),
+                    4f,
+                    1.2f),
+                new TrackSegmentDefinition(
+                    "test_track_incline",
+                    new Vector3(0f, 1.7f, 40f),
+                    Quaternion.RotationX(0.22f),
+                    new Vector3(12f, 0.25f, 42f),
+                    new Color4(0.23f, 0.23f, 0.24f, 1f),
+                    5.25f,
+                    1.25f),
             };
 
-            // Nearest-neighbour sampler so checker tiles have crisp edges
-            var samplerDesc = new SamplerStateDescription(TextureFilter.Point, TextureAddressMode.Wrap);
-            var sampler = SamplerState.New(gd, samplerDesc);
-
-            var diffuseMap = new ComputeTextureColor(checkerTex)
+            foreach (var segment in segments)
             {
-                AddressModeU = TextureAddressMode.Wrap,
-                AddressModeV = TextureAddressMode.Wrap,
-                Filtering    = TextureFilter.Point,
-            };
-
-            var material = Material.New(gd, new MaterialDescriptor
-            {
-                Attributes = new MaterialAttributes
-                {
-                    Diffuse      = new MaterialDiffuseMapFeature(diffuseMap),
-                    DiffuseModel = new MaterialDiffuseLambertModelFeature(),
-                }
-            });
-
-            var floorEntity = new Entity("ground_checker");
-            floorEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
-            Entity.AddChild(floorEntity);
+                Entity.AddChild(CreateTrackSegment(gd, segment));
+            }
         }
         catch (Exception ex)
         {
-            Log.Warning($"Could not build checkerboard floor: {ex.Message}");
+            Log.Warning($"Could not build test track sections: {ex.Message}");
         }
+    }
+
+    private Entity CreateTrackSegment(GraphicsDevice graphicsDevice, in TrackSegmentDefinition segment)
+    {
+        var halfWidth = segment.ColliderSize.X * 0.5f;
+        var halfLength = segment.ColliderSize.Z * 0.5f;
+        var uvScale = MathF.Max(0.25f, segment.UvScale);
+
+        var vertices = new VertexPositionNormalTexture[]
+        {
+            new(new Vector3(-halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(0f, 0f)),
+            new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(uvScale, 0f)),
+            new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(uvScale, uvScale)),
+            new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, uvScale)),
+        };
+        var indices = new[] { 0, 1, 2, 0, 2, 3 };
+
+        var mesh = new Mesh
+        {
+            BoundingBox = new BoundingBox(
+                new Vector3(-halfWidth, -0.02f, -halfLength),
+                new Vector3(halfWidth, 0.02f, halfLength)),
+            Draw = new MeshDraw
+            {
+                PrimitiveType = PrimitiveType.TriangleList,
+                VertexBuffers =
+                [
+                    new VertexBufferBinding(
+                        Stride.Graphics.Buffer.Vertex.New(graphicsDevice, vertices, GraphicsResourceUsage.Immutable),
+                        VertexPositionNormalTexture.Layout,
+                        vertices.Length),
+                ],
+                IndexBuffer = new IndexBufferBinding(
+                    Stride.Graphics.Buffer.Index.New(graphicsDevice, indices),
+                    true,
+                    indices.Length),
+                DrawCount = indices.Length,
+            },
+        };
+
+        var material = Material.New(graphicsDevice, new MaterialDescriptor
+        {
+            Attributes = new MaterialAttributes
+            {
+                Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }),
+                DiffuseModel = new MaterialDiffuseLambertModelFeature(),
+                MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = 0.2f }),
+                Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = 0f }),
+            },
+        });
+
+        var trackEntity = new Entity(segment.Name);
+        trackEntity.Transform.Position = segment.LocalPosition;
+        trackEntity.Transform.Rotation = segment.LocalRotation;
+        trackEntity.Add(new StaticComponent
+        {
+            FrictionCoefficient = segment.FrictionCoefficient,
+            Collider = new CompoundCollider
+            {
+                Colliders =
+                {
+                    new BoxCollider { Size = segment.ColliderSize },
+                },
+            },
+        });
+        trackEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
+
+        return trackEntity;
     }
 
     public override void Update()
