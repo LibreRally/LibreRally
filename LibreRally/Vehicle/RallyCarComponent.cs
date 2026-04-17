@@ -840,7 +840,6 @@ public class RallyCarComponent : SyncScript
             _wheelGrounded[i] = contactScale > 0.05f;
             var dynamicsIndex = wheelSettings.DynamicsIndex >= 0 ? wheelSettings.DynamicsIndex : i;
             if (dynamics != null &&
-                dynamicsIndex >= 0 &&
                 dynamicsIndex < dynamics.WheelSurfaces.Length)
             {
                 dynamics.WheelSurfaces[dynamicsIndex] = SurfaceProperties.ForType(wheelSettings.CurrentSurface);
@@ -1562,13 +1561,13 @@ public class RallyCarComponent : SyncScript
 	            continue;
             }
 
-            if (hit.Distance >= bestDistance)
+            if (hit.Distance < bestDistance)
             {
-                continue;
+                // Surface selection follows the closest valid ground hit so tyre grip reflects
+                // the section actually in contact beneath the wheel.
+                bestDistance = hit.Distance;
+                bestSurfaceType = ResolveSurfaceType(hit.Collidable);
             }
-
-            bestDistance = hit.Distance;
-            bestSurfaceType = ResolveSurfaceType(hit.Collidable);
         }
 
         if (!float.IsFinite(bestDistance))
