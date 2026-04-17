@@ -39,7 +39,7 @@ public static class BeamNGMaterialLoader
     }
 
     /// <summary>
-    /// Loads and merges material texture mappings from one or more search folders.
+    /// Loads material texture mappings from one or more search folders.
     /// </summary>
     /// <param name="materialSearchFolders">Candidate directories to scan for <c>*.materials.json</c> files.</param>
     /// <param name="vehiclesRootDirs">
@@ -49,7 +49,8 @@ public static class BeamNGMaterialLoader
     /// Optional callback that resolves virtual BeamNG paths when the texture is not found directly on disk.
     /// </param>
     /// <returns>
-    /// A dictionary keyed by material name, where each value is the best resolved base-color texture path.
+    /// A dictionary keyed by material name, where each value is the first resolved base-color texture path.
+    /// When duplicate material names are discovered, the existing mapping is kept and later matches are ignored.
     /// </returns>
     public static Dictionary<string, string> LoadMaterialTextures(
         IEnumerable<string> materialSearchFolders,
