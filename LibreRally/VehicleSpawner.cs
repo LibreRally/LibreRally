@@ -55,7 +55,16 @@ public class VehicleSpawner : SyncScript
     private bool _outGaugeSendFailed;
     private double _outGaugeNextFailureLogTimeSeconds;
     private float _outGaugeElapsed;
-    
+    private const float MinTrackUvScale = 0.25f;
+    private const float TrackMeshBoundsHalfHeight = 0.02f;
+    private const float BankedSectionRollAngleRadians = -0.35f;
+    private const float InclineSectionPitchAngleRadians = 0.22f;
+    private const float TrackSurfaceGlossiness = 0.2f;
+    private const float TrackSurfaceMetalness = 0f;
+
+    /// <summary>
+    /// Lightweight configuration for one procedural test-track section.
+    /// </summary>
     private readonly struct TrackSegmentDefinition(
         string name,
         Vector3 localPosition,
@@ -411,7 +420,7 @@ public class VehicleSpawner : SyncScript
                 new TrackSegmentDefinition(
                     "test_track_banked",
                     new Vector3(38f, 1.8f, -6f),
-                    Quaternion.RotationZ(-0.35f),
+                    Quaternion.RotationZ(BankedSectionRollAngleRadians),
                     new Vector3(20f, 0.25f, 28f),
                     new Color4(0.24f, 0.24f, 0.25f, 1f),
                     4f,
@@ -419,7 +428,7 @@ public class VehicleSpawner : SyncScript
                 new TrackSegmentDefinition(
                     "test_track_incline",
                     new Vector3(0f, 1.7f, 40f),
-                    Quaternion.RotationX(0.22f),
+                    Quaternion.RotationX(InclineSectionPitchAngleRadians),
                     new Vector3(12f, 0.25f, 42f),
                     new Color4(0.23f, 0.23f, 0.24f, 1f),
                     5.25f,
@@ -441,7 +450,8 @@ public class VehicleSpawner : SyncScript
     {
         var halfWidth = segment.ColliderSize.X * 0.5f;
         var halfLength = segment.ColliderSize.Z * 0.5f;
-        var uvScale = MathF.Max(0.25f, segment.UvScale);
+        // Clamp UV tiling to a sane minimum to avoid near-zero texture repetition artifacts.
+        var uvScale = MathF.Max(MinTrackUvScale, segment.UvScale);
 
         var vertices = new VertexPositionNormalTexture[]
         {
@@ -455,8 +465,8 @@ public class VehicleSpawner : SyncScript
         var mesh = new Mesh
         {
             BoundingBox = new BoundingBox(
-                new Vector3(-halfWidth, -0.02f, -halfLength),
-                new Vector3(halfWidth, 0.02f, halfLength)),
+                new Vector3(-halfWidth, -TrackMeshBoundsHalfHeight, -halfLength),
+                new Vector3(halfWidth, TrackMeshBoundsHalfHeight, halfLength)),
             Draw = new MeshDraw
             {
                 PrimitiveType = PrimitiveType.TriangleList,
@@ -481,8 +491,8 @@ public class VehicleSpawner : SyncScript
             {
                 Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }),
                 DiffuseModel = new MaterialDiffuseLambertModelFeature(),
-                MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = 0.2f }),
-                Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = 0f }),
+                MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }),
+                Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
             },
         });
 
