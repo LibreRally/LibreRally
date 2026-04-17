@@ -180,6 +180,12 @@ public class VehicleLoader
             TrackWidth = trackWidth,
             FrontAntiRollStiffness = GetVarWithFallbacks(8000f, "antiroll_front", "arb_spring_F"),
             RearAntiRollStiffness = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R"),
+            BodyRoll = new ChassisBodyRollSystem
+            {
+                FrontRollStiffness = GetVarWithFallbacks(5000f, "roll_stiffness_front", "spring_roll_F"),
+                RearRollStiffness = GetVarWithFallbacks(4000f, "roll_stiffness_rear", "spring_roll_R"),
+                RollDampingCoefficient = GetVarWithFallbacks(800f, "roll_damping"),
+            },
             FrontDiff = powertrain.FrontDiff,
             RearDiff = powertrain.RearDiff,
             CenterDiff = powertrain.CenterDiff,

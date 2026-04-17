@@ -16,6 +16,7 @@ namespace LibreRally.Vehicle.Physics;
 /// <list type="number">
 ///   <item>Compute longitudinal and lateral load transfer from chassis acceleration.</item>
 ///   <item>Compute anti-roll bar forces from suspension compression difference.</item>
+///   <item>Apply chassis body roll torque from suspension compression difference.</item>
 ///   <item>Split engine torque through the drivetrain (center diff → axle diffs → wheels).</item>
 ///   <item>Evaluate tyre model for each wheel (slip ratio, slip angle → Fx, Fy, Mz).</item>
 ///   <item>Apply all computed forces/impulses to BEPU bodies.</item>
@@ -61,6 +62,12 @@ public sealed class VehicleDynamicsSystem
 
     /// <summary>Rear anti-roll bar stiffness (N/m of compression difference). 0 = disabled.</summary>
     public float RearAntiRollStiffness { get; set; } = 5000f;
+
+    /// <summary>
+    /// Chassis body roll system. Generates roll torque from left/right suspension
+    /// compression difference and applies it as an angular impulse to the chassis.
+    /// </summary>
+    public ChassisBodyRollSystem BodyRoll;
 
     /// <summary>Front axle differential configuration.</summary>
     public DifferentialConfig FrontDiff { get; set; } = DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f);
@@ -183,6 +190,9 @@ public sealed class VehicleDynamicsSystem
 
         // ── 3. Compute anti-roll bar forces ──────────────────────────────────
         ComputeAntiRollForces(suspensionCompressions);
+
+        // ── 3b. Chassis body roll torque from suspension compression difference ─
+        BodyRoll.Apply(chassisBody, forwardDir, suspensionCompressions, dt);
 
         // ── 4. Split engine torque through drivetrain ────────────────────────
         ComputeDrivetrainTorque(engineTorqueAtWheels);
