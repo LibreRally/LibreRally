@@ -246,6 +246,18 @@ Simplified tyre models may be used initially, but systems should be designed so 
 
 ---
 
+# Stride + BEPU Integration Guidelines
+
+When generating physics-driven gameplay:
+
+* Prefer forces/impulses through physics APIs over directly writing transforms.
+* Treat physics simulation state as authoritative for movement and collision outcomes.
+* Keep wheel/suspension updates allocation-free inside frame loops.
+* Cache entity/component references in `Start()` and reuse them in `Update()`.
+* Keep timestep handling explicit and consistent so simulation behaviour is predictable.
+
+---
+
 # Performance Guidelines
 
 Game systems should avoid:
