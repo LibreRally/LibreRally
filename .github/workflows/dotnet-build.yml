@@ -24,6 +24,8 @@ jobs:
         with:
           dotnet-version: 10.0.x
           cache: true
+          cache-dependency-path: |
+            **/*.csproj
 
       - name: Restore
         run: dotnet restore LibreRally.Windows/LibreRally.Windows.csproj
