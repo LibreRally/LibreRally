@@ -779,6 +779,7 @@ public class RallyCarComponent : SyncScript
     /// </summary>
     private void GatherWheelData(BodyComponent chassisBody, Matrix chassisWorld)
     {
+        var dynamics = Dynamics;
         var chassisRightAxis = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
         var fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
         var fallbackLongitudinal = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
@@ -795,6 +796,10 @@ public class RallyCarComponent : SyncScript
                 _wheelGrounded[i] = false;
                 _suspensionCompressions[i] = 0f;
                 _camberAngles[i] = 0f;
+                if (dynamics != null && i < dynamics.WheelSurfaces.Length)
+                {
+                    dynamics.WheelSurfaces[i] = SurfaceProperties.ForType(SurfaceType.Tarmac);
+                }
                 continue;
             }
 
@@ -833,6 +838,13 @@ public class RallyCarComponent : SyncScript
             var contactScale = ProbeWheelContactScale(chassisBody, wheelBody, wheelSettings, _wheelPositions[i], wheelUp);
             _wheelContactScales[i] = contactScale;
             _wheelGrounded[i] = contactScale > 0.05f;
+            var dynamicsIndex = wheelSettings.DynamicsIndex >= 0 ? wheelSettings.DynamicsIndex : i;
+            if (dynamics != null &&
+                dynamicsIndex >= 0 &&
+                dynamicsIndex < dynamics.WheelSurfaces.Length)
+            {
+                dynamics.WheelSurfaces[dynamicsIndex] = SurfaceProperties.ForType(wheelSettings.CurrentSurface);
+            }
 
             var isFrontAxle = !IsRearWheel(wheel, wheelSettings);
             var staticCamber = isFrontAxle ? FrontStaticCamberRadians : RearStaticCamberRadians;
@@ -1542,6 +1554,7 @@ public class RallyCarComponent : SyncScript
         simulation.RayCastPenetrating(in rayOrigin, in rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
 
         var bestDistance = float.PositiveInfinity;
+        var bestSurfaceType = SurfaceType.Tarmac;
         foreach (var hit in wheelSettings.GroundProbeHits)
         {
             if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
@@ -1549,15 +1562,37 @@ public class RallyCarComponent : SyncScript
 	            continue;
             }
 
-            bestDistance = MathF.Min(bestDistance, hit.Distance);
+            if (hit.Distance >= bestDistance)
+            {
+                continue;
+            }
+
+            bestDistance = hit.Distance;
+            bestSurfaceType = ResolveSurfaceType(hit.Collidable);
         }
 
         if (!float.IsFinite(bestDistance))
         {
+            wheelSettings.CurrentSurface = SurfaceType.Tarmac;
 	        return 0f;
         }
 
+        wheelSettings.CurrentSurface = bestSurfaceType;
         return ComputeGroundProbeContactScale(bestDistance, wheelRadius, GroundProbeMargin);
+    }
+
+    private static SurfaceType ResolveSurfaceType(object collidable)
+    {
+        if (collidable is EntityComponent entityComponent)
+        {
+            var surfaceTag = entityComponent.Entity.Get<TrackSurfaceComponent>();
+            if (surfaceTag != null)
+            {
+                return surfaceTag.SurfaceType;
+            }
+        }
+
+        return SurfaceType.Tarmac;
     }
 
     internal static float ComputeGroundProbeContactScale(float hitDistance, float wheelRadius, float probeMargin)
