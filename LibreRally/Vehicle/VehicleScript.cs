@@ -10,7 +10,7 @@ namespace LibreRally.Vehicle;
 
 /// <summary>
 /// Handles keyboard driving input for a vehicle assembled by <see cref="VehicleLoader"/> and applies
-/// steering, drive, brake, and anti-roll impulses to the chassis body.
+/// drive and brake impulses to the chassis body, tracks steering input, and performs roll stabilization.
 /// </summary>
 public class VehicleScript : SyncScript
 {
