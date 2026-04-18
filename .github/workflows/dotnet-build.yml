@@ -1,4 +1,4 @@
-name: .NET Build (Windows)
+name: .NET Build Artifacts (Windows Runner)
 
 on:
   workflow_dispatch:
@@ -11,9 +11,25 @@ permissions:
   contents: read
 
 jobs:
-  build-windows:
-    name: Build LibreRally.Windows
+  build-artifacts:
+    name: Publish ${{ matrix.platform }} ${{ matrix.rid }}
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            rid: win-x64
+            project: LibreRally.Windows/LibreRally.Windows.csproj
+          - platform: windows
+            rid: win-arm64
+            project: LibreRally.Windows/LibreRally.Windows.csproj
+          - platform: linux
+            rid: linux-x64
+            project: LibreRally.Linux/LibreRally.Linux.csproj
+          - platform: linux
+            rid: linux-arm64
+            project: LibreRally.Linux/LibreRally.Linux.csproj
 
     steps:
       - name: Checkout
@@ -28,7 +44,14 @@ jobs:
             **/*.csproj
 
       - name: Restore
-        run: dotnet restore LibreRally.Windows/LibreRally.Windows.csproj
+        run: dotnet restore ${{ matrix.project }} -r ${{ matrix.rid }}
 
-      - name: Build
-        run: dotnet build LibreRally.Windows/LibreRally.Windows.csproj -c Release --no-restore --nologo -v minimal --tl:off
+      - name: Publish
+        run: dotnet publish ${{ matrix.project }} -c Release -r ${{ matrix.rid }} --self-contained false --no-restore --nologo -v minimal --tl:off -o "${{ github.workspace }}/artifacts/${{ matrix.platform }}-${{ matrix.rid }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreRally-${{ matrix.platform }}-${{ matrix.rid }}
+          path: ${{ github.workspace }}/artifacts/${{ matrix.platform }}-${{ matrix.rid }}
+          if-no-files-found: error

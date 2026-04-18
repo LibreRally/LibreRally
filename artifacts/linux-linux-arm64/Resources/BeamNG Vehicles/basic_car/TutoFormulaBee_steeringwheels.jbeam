@@ -1,0 +1,15 @@
+{
+"TutoFormulaBee_steer": {
+    "information":{
+        "authors":"BeamNG",
+        "name":"Steering Wheel",
+        "value":310,
+    },
+    "slotType" : "TutoFormulaBee_steer",
+    "props": [
+        ["func",     "mesh",      "idRef:", "idX:", "idY:", "baseRotation",            "rotation",            "translation",         "min", "max", "offset", "multiplier"],
+        //steering wheel
+        ["steering", "TutoFBee_steering_wheel_b", "b3ll","b3rr","b4ll", {"x":24, "y":0, "z":180}, {"x":0, "y":0, "z":1}, {"x":0, "y":0, "z":0}, -1000, 1000, 0, 1],
+    ],
+}
+}

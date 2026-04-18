@@ -1,0 +1,59 @@
+{
+"TutoFormulaBee_fueltank": {
+    "information":{
+        "authors":"BeamNG",
+        "name":"Fuel Tank",
+        "value":150,
+    },
+    "slotType" : "TutoFormulaBee_fueltank",
+    "flexbodies": [
+        ["mesh", "[group]:", "nonFlexMaterials"],
+    ],
+    "variables": [
+        ["name", "type", "unit", "category", "default", "min", "max", "title", "description"],
+        ["$fuel", "range", "L", "Chassis", 25, 0, 25, "Fuel Volume", "Initial fuel volume", {"stepDis":0.5}],
+    ],
+    "energyStorage": [
+        ["type", "name"],
+        ["fuelTank", "mainTank"],
+    ],
+    "mainTank": {
+        "energyType":"gasoline",
+        "fuelCapacity": 25,
+        "startingFuelCapacity": "$fuel",
+        "fuel": {"[engineGroup]:":["fuel"]},
+        "breakTriggerBeam": "fuelTank",
+    },
+    "nodes": [
+        ["id", "posX", "posY", "posZ"],
+        //fuel tank particles
+        {"frictionCoef":1},
+        {"nodeMaterial":"|NM_PLASTIC"},
+
+
+        {"engineGroup":""},
+        {"chemEnergy":false,"burnRate":false,"flashPoint":false,"vaporPoint":false,"specHeat":false,"selfIgnitionCoef":false,"smokePoint":false,"containerBeam":false},
+        {"selfCollision":false},
+    ],
+    "beams": [
+        ["id1:", "id2:"],
+        {"deformLimitExpansion":1.2},
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1, "beamShortBound":1},
+        {"beamSpring":801000,"beamDamp":50},
+        {"beamDeform":4000,"beamStrength":"FLT_MAX"},
+
+
+
+        {"deformLimitExpansion":1.2},
+        {"beamPrecompression":1, "beamType":"|NORMAL", "beamLongBound":1, "beamShortBound":1},
+    ],
+    "triangles": [
+        ["id1:","id2:","id3:"],
+        //fueltank container
+        {"groundModel":"metal"},
+
+        {"breakGroup":""},
+        {"group":""},
+    ],
+},
+}
