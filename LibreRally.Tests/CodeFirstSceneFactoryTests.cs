@@ -1,4 +1,5 @@
 using System.Linq;
+using LibreRally;
 using Stride.Engine;
 using Stride.Rendering;
 using Stride.Rendering.Lights;
@@ -14,6 +15,7 @@ public class CodeFirstSceneFactoryTests
         var entities = scene.Entities.ToList();
 
         var ground = Assert.Single(entities.Where(entity => entity.Name == "Ground"));
+        Assert.NotNull(ground.Get<ModelComponent>());
         Assert.NotNull(ground.Get<VehicleSpawner>());
 
         var camera = Assert.Single(entities.Where(entity => entity.Name == "Camera"));
@@ -24,5 +26,11 @@ public class CodeFirstSceneFactoryTests
         var lightComponent = directionalLight.Get<LightComponent>();
         Assert.NotNull(lightComponent);
         Assert.IsType<LightDirectional>(lightComponent!.Type);
+
+        var skyboxEntity = Assert.Single(entities.Where(entity => entity.Name == "Skybox"));
+        Assert.NotNull(skyboxEntity.Get<BackgroundComponent>());
+        var skyboxLightComponent = skyboxEntity.Get<LightComponent>();
+        Assert.NotNull(skyboxLightComponent);
+        Assert.IsType<LightSkybox>(skyboxLightComponent!.Type);
     }
 }

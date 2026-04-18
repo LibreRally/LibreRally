@@ -2,18 +2,27 @@ using System;
 using System.Threading.Tasks;
 using Stride.Core.Mathematics;
 using Stride.Engine;
+using Stride.Graphics;
 using Stride.Rendering;
 using Stride.Rendering.Lights;
+using Stride.Rendering.Skyboxes;
 
 namespace LibreRally;
 
 public static class CodeFirstSceneFactory
 {
-    public static Scene CreateMainScene()
+    public static Scene CreateMainScene() => CreateMainScene(null);
+
+    public static Scene CreateMainScene(Game? game)
     {
+        var groundModel = LoadAsset<Model>(game, "Ground");
+        var skyboxTexture = LoadAsset<Texture>(game, "Skybox texture");
+        var skybox = LoadAsset<Skybox>(game, "Skybox");
+
         var scene = new Scene();
 
         var ground = new Entity("Ground");
+        ground.Add(new ModelComponent { Model = groundModel });
         ground.Add(new VehicleSpawner
         {
             VehicleFolderPath = "Resources/BeamNG Vehicles/basic_car",
@@ -48,7 +57,33 @@ public static class CodeFirstSceneFactory
         });
         scene.Entities.Add(directionalLight);
 
+        var skyboxEntity = new Entity("Skybox");
+        skyboxEntity.Transform.Position = new Vector3(0f, 2f, -2f);
+
+        var background = new BackgroundComponent();
+        if (skyboxTexture != null)
+        {
+            background.Texture = skyboxTexture;
+        }
+
+        skyboxEntity.Add(background);
+
+        var skyboxLight = new LightSkybox();
+        if (skybox != null)
+        {
+            skyboxLight.Skybox = skybox;
+        }
+
+        skyboxEntity.Add(new LightComponent { Type = skyboxLight });
+        scene.Entities.Add(skyboxEntity);
+
         return scene;
+    }
+
+    private static T? LoadAsset<T>(Game? game, string assetName)
+        where T : class
+    {
+        return game?.Content.Load<T>(assetName);
     }
 }
 
@@ -65,6 +100,6 @@ public sealed class LibreRallyGame : Game
             throw new InvalidOperationException("Stride SceneInstance is unavailable during startup.");
         }
 
-        sceneSystem.SceneInstance.RootScene = CodeFirstSceneFactory.CreateMainScene();
+        sceneSystem.SceneInstance.RootScene = CodeFirstSceneFactory.CreateMainScene(this);
     }
 }
