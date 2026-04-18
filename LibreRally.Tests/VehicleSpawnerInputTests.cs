@@ -41,4 +41,14 @@ public class VehicleSpawnerInputTests
 
         Assert.True(requested);
     }
+
+    [Fact]
+    public void IsVehicleMenuMoveUpRequested_AcceptsControllerDPadUp()
+    {
+        bool requested = VehicleSpawner.IsVehicleMenuMoveUpRequested(
+            keyboardUpPressed: false,
+            controllerUpPressed: true);
+
+        Assert.True(requested);
+    }
 }
