@@ -304,6 +304,32 @@ public class RallyCarComponentControlTests
     }
 
     [Fact]
+    public void ComputeWheelSurfaceVfxIntensity_IsClampedToOneForSpawnScaling()
+    {
+        float intensity = RallyCarComponent.ComputeWheelSurfaceVfxIntensity(
+            surfaceType: SurfaceType.Tarmac,
+            slipRatio: 1.6f,
+            slipAngleRadians: 0.6f,
+            normalLoadScale: 3f,
+            contactScale: 1f);
+
+        Assert.Equal(1f, intensity, 3);
+    }
+
+    [Fact]
+    public void ComputeWheelSurfaceVfxIntensity_IsClampedToOneForSpawnScalingOnGravel()
+    {
+        float intensity = RallyCarComponent.ComputeWheelSurfaceVfxIntensity(
+            surfaceType: SurfaceType.Gravel,
+            slipRatio: 1.6f,
+            slipAngleRadians: 0.6f,
+            normalLoadScale: 3f,
+            contactScale: 1f);
+
+        Assert.Equal(1f, intensity, 3);
+    }
+
+    [Fact]
     public void ComputeLowSpeedYawAssistRate_UsesDriveDirectionForReverseLaunch()
     {
         float assist = RallyCarComponent.ComputeLowSpeedYawAssistRate(

@@ -43,6 +43,12 @@ public class RallyCarComponent : SyncScript
     private const float WheelSurfaceVfxMaxSpawnRate = 90f;
     private const float WheelSurfaceVfxSlipAngleWeight = 1.1f;
     private const float WheelSurfaceVfxMinSlipRampRange = 1e-4f;
+    private const float TarmacVfxSlipRampStart = 0.22f;
+    private const float TarmacVfxSlipRampFull = 0.90f;
+    private const float GravelVfxSlipRampStart = 0.06f;
+    private const float GravelVfxSlipRampFull = 0.40f;
+    private const float WheelSurfaceVfxIntensityClampMax = 1f;
+    private const float WheelSurfaceVfxMaxLoadScale = 1.25f;
     private const float WheelSurfaceVfxContactPatchRadiusScale = 0.82f;
     private const float WheelSurfaceVfxMinVerticalOffset = 0.12f;
     private const float WheelSurfaceVfxPositionMinX = -0.10f;
@@ -1666,14 +1672,14 @@ public class RallyCarComponent : SyncScript
         var absSlipSignal = MathF.Max(MathF.Abs(slipRatio), MathF.Abs(slipAngleRadians) * WheelSurfaceVfxSlipAngleWeight);
         float surfaceIntensity = surfaceType switch
         {
-            SurfaceType.Tarmac or SurfaceType.WetTarmac => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: 0.22f, full: 0.90f),
-            SurfaceType.Gravel => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: 0.06f, full: 0.40f),
+            SurfaceType.Tarmac or SurfaceType.WetTarmac => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: TarmacVfxSlipRampStart, full: TarmacVfxSlipRampFull),
+            SurfaceType.Gravel => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: GravelVfxSlipRampStart, full: GravelVfxSlipRampFull),
             _ => 0f,
         };
 
-        var clampedLoad = Math.Clamp(normalLoadScale, 0f, 1.25f);
+        var clampedLoad = Math.Clamp(normalLoadScale, 0f, WheelSurfaceVfxMaxLoadScale);
         var clampedContact = Math.Clamp(contactScale, 0f, 1f);
-        return surfaceIntensity * clampedLoad * clampedContact;
+        return Math.Clamp(surfaceIntensity * clampedLoad * clampedContact, 0f, WheelSurfaceVfxIntensityClampMax);
     }
 
     private static float ComputeWheelSurfaceVfxSlipRamp(float slipSignal, float start, float full)
