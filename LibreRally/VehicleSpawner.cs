@@ -284,7 +284,10 @@ public class VehicleSpawner : SyncScript
 
     private void HandleVehicleSelectionInput()
     {
-        if (Input.IsKeyPressed(Keys.F2))
+        var pad = Input.GamePads.FirstOrDefault();
+        var toggleVehicleMenuRequested = Input.IsKeyPressed(Keys.F2) || (pad?.IsButtonPressed(GamePadButton.Start) ?? false);
+
+        if (toggleVehicleMenuRequested)
         {
             _showVehicleMenu = !_showVehicleMenu;
         }
@@ -301,7 +304,8 @@ public class VehicleSpawner : SyncScript
 
         if (_availableVehicles.Count == 0)
         {
-            if (Input.IsKeyPressed(Keys.Escape))
+            var closeEmptyMenuRequested = Input.IsKeyPressed(Keys.Escape) || (pad?.IsButtonPressed(GamePadButton.B) ?? false);
+            if (closeEmptyMenuRequested)
             {
                 _showVehicleMenu = false;
             }
@@ -314,17 +318,17 @@ public class VehicleSpawner : SyncScript
             _selectedVehicleIndex = 0;
         }
 
-        if (Input.IsKeyPressed(Keys.Up))
+        if (Input.IsKeyPressed(Keys.Up) || (pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
         {
             _selectedVehicleIndex = (_selectedVehicleIndex - 1 + _availableVehicles.Count) % _availableVehicles.Count;
         }
 
-        if (Input.IsKeyPressed(Keys.Down))
+        if (Input.IsKeyPressed(Keys.Down) || (pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
         {
             _selectedVehicleIndex = (_selectedVehicleIndex + 1) % _availableVehicles.Count;
         }
 
-        if (Input.IsKeyPressed(Keys.Enter))
+        if (Input.IsKeyPressed(Keys.Enter) || (pad?.IsButtonPressed(GamePadButton.A) ?? false))
         {
             var selectedVehicle = _availableVehicles[_selectedVehicleIndex];
             _showVehicleMenu = false;
@@ -332,7 +336,7 @@ public class VehicleSpawner : SyncScript
             return;
         }
 
-        if (Input.IsKeyPressed(Keys.Escape))
+        if (Input.IsKeyPressed(Keys.Escape) || (pad?.IsButtonPressed(GamePadButton.B) ?? false))
         {
             _showVehicleMenu = false;
         }
