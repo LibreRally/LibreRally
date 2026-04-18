@@ -6,6 +6,13 @@ using Stride.BepuPhysics;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Input;
+using Stride.Particles;
+using Stride.Particles.Components;
+using Stride.Particles.Initializers;
+using Stride.Particles.Materials;
+using Stride.Particles.Modules;
+using Stride.Particles.ShapeBuilders;
+using Stride.Particles.Spawners;
 
 namespace LibreRally.Vehicle;
 
@@ -31,6 +38,10 @@ public class RallyCarComponent : SyncScript
     private const float BaseBurnRateLitersPerSecond = 0.015f;
     private const float DefaultBurnEfficiency = 0.3f;
     private const float TurboSpoolRatePerSecond = 3f;
+    private const float WheelSurfaceVfxRiseRate = 12f;
+    private const float WheelSurfaceVfxFallRate = 4f;
+    private const float WheelSurfaceVfxMaxSpawnRate = 90f;
+    private static readonly Color4 TransparentColor = new(0f, 0f, 0f, 0f);
     /// <summary>Fraction of heat generated at idle (no throttle).</summary>
     private const float IdleHeatFraction = 0.15f;
     /// <summary>Oil viscosity coefficient: pressure drops by this fraction per °C above reference.</summary>
@@ -287,6 +298,11 @@ public class RallyCarComponent : SyncScript
     private readonly float[] _brakeTorques = new float[VehicleDynamicsSystem.WheelCount];
     private readonly float[] _camberAngles = new float[VehicleDynamicsSystem.WheelCount];
     private readonly float[] _absBrakeTorqueScales = { 1f, 1f, 1f, 1f };
+    private readonly Entity?[] _wheelSurfaceVfxEntities = new Entity?[VehicleDynamicsSystem.WheelCount];
+    private readonly ParticleSystemComponent?[] _wheelSurfaceVfxComponents = new ParticleSystemComponent?[VehicleDynamicsSystem.WheelCount];
+    private readonly SpawnerPerSecond?[] _wheelSurfaceVfxSpawners = new SpawnerPerSecond?[VehicleDynamicsSystem.WheelCount];
+    private readonly float[] _wheelSurfaceVfxIntensity = new float[VehicleDynamicsSystem.WheelCount];
+    private bool _wheelSurfaceVfxInitialized;
 
     public override void Start()
     {
@@ -308,6 +324,7 @@ public class RallyCarComponent : SyncScript
 
         // Create default dynamics system if none was injected by VehicleLoader
         Dynamics ??= new VehicleDynamicsSystem();
+        InitializeWheelSurfaceVfx();
     }
 
     public override void Update()
@@ -771,6 +788,8 @@ public class RallyCarComponent : SyncScript
                 chassisBody.AngularVelocity = assistAv;
             }
         }
+
+        UpdateWheelSurfaceVfx(dt, chassisTransform.WorldMatrix);
     }
 
     /// <summary>
@@ -1602,6 +1621,175 @@ public class RallyCarComponent : SyncScript
         var maxContactDistance = nominalContactDistance + safeMargin;
         var normalizedDistance = Math.Clamp((hitDistance - nominalContactDistance) / (maxContactDistance - nominalContactDistance), 0f, 1f);
         return 1f - normalizedDistance;
+    }
+
+    internal static float ComputeWheelSurfaceVfxIntensity(
+        SurfaceType surfaceType,
+        float slipRatio,
+        float slipAngleRadians,
+        float normalLoadScale,
+        float contactScale)
+    {
+        if (contactScale <= 0f || normalLoadScale <= 0f)
+        {
+            return 0f;
+        }
+
+        var absSlipSignal = MathF.Max(MathF.Abs(slipRatio), MathF.Abs(slipAngleRadians) * 1.1f);
+        float surfaceIntensity = surfaceType switch
+        {
+            SurfaceType.Tarmac or SurfaceType.WetTarmac => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: 0.22f, full: 0.90f),
+            SurfaceType.Gravel => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: 0.06f, full: 0.40f),
+            _ => 0f,
+        };
+
+        var clampedLoad = Math.Clamp(normalLoadScale, 0f, 1.25f);
+        var clampedContact = Math.Clamp(contactScale, 0f, 1f);
+        return surfaceIntensity * clampedLoad * clampedContact;
+    }
+
+    private static float ComputeWheelSurfaceVfxSlipRamp(float slipSignal, float start, float full)
+    {
+        var safeRange = MathF.Max(full - start, 1e-4f);
+        return Math.Clamp((slipSignal - start) / safeRange, 0f, 1f);
+    }
+
+    private void InitializeWheelSurfaceVfx()
+    {
+        if (_wheelSurfaceVfxInitialized || CarBody == null)
+        {
+            return;
+        }
+
+        for (var i = 0; i < Wheels.Count && i < VehicleDynamicsSystem.WheelCount; i++)
+        {
+            var wheelSurfaceVfxEntity = new Entity($"WheelSurfaceVfx_{i}");
+            var wheelSurfaceVfxSystem = CreateWheelSurfaceParticleSystem(out var wheelSurfaceVfxSpawner);
+            wheelSurfaceVfxEntity.Add(wheelSurfaceVfxSystem);
+            CarBody.AddChild(wheelSurfaceVfxEntity);
+            _wheelSurfaceVfxEntities[i] = wheelSurfaceVfxEntity;
+            _wheelSurfaceVfxComponents[i] = wheelSurfaceVfxSystem;
+            _wheelSurfaceVfxSpawners[i] = wheelSurfaceVfxSpawner;
+        }
+
+        _wheelSurfaceVfxInitialized = true;
+    }
+
+    private static ParticleSystemComponent CreateWheelSurfaceParticleSystem(out SpawnerPerSecond spawner)
+    {
+        var particleSystemComponent = new ParticleSystemComponent();
+        var particleSystem = particleSystemComponent.ParticleSystem;
+        var emitter = new ParticleEmitter
+        {
+            EmitterName = "WheelSurfaceVfx",
+            MaxParticlesOverride = 180,
+            ParticleLifetime = new Vector2(0.35f, 0.95f),
+            SimulationSpace = EmitterSimulationSpace.World,
+            ShapeBuilder = new ShapeBuilderBillboard(),
+            Material = new ParticleMaterialComputeColor(),
+        };
+
+        spawner = new SpawnerPerSecond { SpawnCount = 0f };
+        emitter.Spawners.Add(spawner);
+        emitter.Initializers.Add(new InitialPositionSeed
+        {
+            PositionMin = new Vector3(-0.10f, -0.02f, -0.10f),
+            PositionMax = new Vector3(0.10f, 0.08f, 0.10f),
+        });
+        emitter.Initializers.Add(new InitialVelocitySeed
+        {
+            VelocityMin = new Vector3(-0.8f, 0.2f, -0.8f),
+            VelocityMax = new Vector3(0.8f, 1.3f, 0.8f),
+        });
+        emitter.Initializers.Add(new InitialSizeSeed
+        {
+            RandomSize = new Vector2(0.18f, 0.42f),
+        });
+        emitter.Updaters.Add(new UpdaterSpeedToDirection());
+        emitter.Updaters.Add(new UpdaterGravity
+        {
+            GravitationalAcceleration = new Vector3(0f, -0.25f, 0f),
+        });
+        particleSystem.Emitters.Add(emitter);
+        particleSystemComponent.Speed = 1f;
+        particleSystemComponent.Color = TransparentColor;
+        return particleSystemComponent;
+    }
+
+    private void UpdateWheelSurfaceVfx(float dt, in Matrix chassisWorld)
+    {
+        if (!_wheelSurfaceVfxInitialized)
+        {
+            return;
+        }
+
+        var dynamics = Dynamics;
+        var inverseChassisWorld = Matrix.Invert(chassisWorld);
+
+        for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
+        {
+            var wheelSurfaceVfxEntity = _wheelSurfaceVfxEntities[i];
+            var wheelSurfaceVfxComponent = _wheelSurfaceVfxComponents[i];
+            var wheelSurfaceVfxSpawner = _wheelSurfaceVfxSpawners[i];
+            if (wheelSurfaceVfxEntity == null || wheelSurfaceVfxComponent == null || wheelSurfaceVfxSpawner == null)
+            {
+                continue;
+            }
+
+            var targetIntensity = 0f;
+            var wheelSurface = SurfaceType.Tarmac;
+            if (dynamics != null && i < Wheels.Count)
+            {
+                var wheel = Wheels[i];
+                var wheelSettings = wheel.Get<WheelSettings>();
+                wheelSurface = wheelSettings?.CurrentSurface ?? SurfaceType.Tarmac;
+                var dynamicsIndex = wheelSettings?.DynamicsIndex >= 0 ? wheelSettings.DynamicsIndex : i;
+                if (dynamicsIndex >= 0 &&
+                    dynamicsIndex < dynamics.WheelStates.Length &&
+                    dynamicsIndex < dynamics.CurrentNormalLoads.Length &&
+                    dynamicsIndex < dynamics.StaticNormalLoads.Length &&
+                    dynamics.WheelGrounded[dynamicsIndex])
+                {
+                    var wheelState = dynamics.WheelStates[dynamicsIndex];
+                    var staticLoad = MathF.Max(dynamics.StaticNormalLoads[dynamicsIndex], 1f);
+                    var normalLoadScale = dynamics.CurrentNormalLoads[dynamicsIndex] / staticLoad;
+                    targetIntensity = ComputeWheelSurfaceVfxIntensity(
+                        wheelSurface,
+                        wheelState.SlipRatio,
+                        wheelState.SlipAngle,
+                        normalLoadScale,
+                        _wheelContactScales[i]);
+                }
+
+                var tyreRadius = wheelSettings?.TyreModel?.Radius ?? WheelRadius;
+                var wheelUp = _wheelOrientations[i].Up;
+                var wheelSurfacePosition = _wheelPositions[i] - wheelUp * MathF.Max(tyreRadius * 0.82f, 0.12f);
+                wheelSurfaceVfxEntity.Transform.Position = Vector3.TransformCoordinate(wheelSurfacePosition, inverseChassisWorld);
+            }
+
+            var responseRate = targetIntensity > _wheelSurfaceVfxIntensity[i]
+                ? WheelSurfaceVfxRiseRate
+                : WheelSurfaceVfxFallRate;
+            _wheelSurfaceVfxIntensity[i] = AdvanceControllerScale(_wheelSurfaceVfxIntensity[i], targetIntensity, responseRate, dt);
+            wheelSurfaceVfxSpawner.SpawnCount = _wheelSurfaceVfxIntensity[i] * WheelSurfaceVfxMaxSpawnRate;
+            wheelSurfaceVfxComponent.Color = ResolveWheelSurfaceVfxColor(wheelSurface, _wheelSurfaceVfxIntensity[i]);
+        }
+    }
+
+    private static Color4 ResolveWheelSurfaceVfxColor(SurfaceType surfaceType, float intensity)
+    {
+        var clampedIntensity = Math.Clamp(intensity, 0f, 1f);
+        if (clampedIntensity <= 0f)
+        {
+            return TransparentColor;
+        }
+
+        return surfaceType switch
+        {
+            SurfaceType.Gravel => new Color4(0.74f, 0.62f, 0.47f, 0.20f + clampedIntensity * 0.45f),
+            SurfaceType.Tarmac or SurfaceType.WetTarmac => new Color4(0.42f, 0.42f, 0.42f, 0.16f + clampedIntensity * 0.38f),
+            _ => TransparentColor,
+        };
     }
 
     private static float MeasureSuspensionCompression(
