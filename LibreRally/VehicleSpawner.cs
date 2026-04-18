@@ -282,10 +282,27 @@ public class VehicleSpawner : SyncScript
         return idIndex >= 0 ? idIndex : 0;
     }
 
+    internal static bool IsVehicleMenuToggleRequested(bool keyboardTogglePressed, bool controllerStartPressed) =>
+        keyboardTogglePressed || controllerStartPressed;
+
+    internal static bool IsVehicleMenuMoveUpRequested(bool keyboardUpPressed, bool controllerUpPressed) =>
+        keyboardUpPressed || controllerUpPressed;
+
+    internal static bool IsVehicleMenuMoveDownRequested(bool keyboardDownPressed, bool controllerDownPressed) =>
+        keyboardDownPressed || controllerDownPressed;
+
+    internal static bool IsVehicleMenuConfirmRequested(bool keyboardConfirmPressed, bool controllerConfirmPressed) =>
+        keyboardConfirmPressed || controllerConfirmPressed;
+
+    internal static bool IsVehicleMenuCancelRequested(bool keyboardCancelPressed, bool controllerCancelPressed) =>
+        keyboardCancelPressed || controllerCancelPressed;
+
     private void HandleVehicleSelectionInput()
     {
         var pad = Input.GamePads.FirstOrDefault();
-        var toggleVehicleMenuRequested = Input.IsKeyPressed(Keys.F2) || (pad?.IsButtonPressed(GamePadButton.Start) ?? false);
+        var toggleVehicleMenuRequested = IsVehicleMenuToggleRequested(
+            Input.IsKeyPressed(Keys.F2),
+            pad?.IsButtonPressed(GamePadButton.Start) ?? false);
 
         if (toggleVehicleMenuRequested)
         {
@@ -304,7 +321,9 @@ public class VehicleSpawner : SyncScript
 
         if (_availableVehicles.Count == 0)
         {
-            var closeEmptyMenuRequested = Input.IsKeyPressed(Keys.Escape) || (pad?.IsButtonPressed(GamePadButton.B) ?? false);
+            var closeEmptyMenuRequested = IsVehicleMenuCancelRequested(
+                Input.IsKeyPressed(Keys.Escape),
+                pad?.IsButtonPressed(GamePadButton.B) ?? false);
             if (closeEmptyMenuRequested)
             {
                 _showVehicleMenu = false;
@@ -318,17 +337,23 @@ public class VehicleSpawner : SyncScript
             _selectedVehicleIndex = 0;
         }
 
-        if (Input.IsKeyPressed(Keys.Up) || (pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
+        if (IsVehicleMenuMoveUpRequested(
+                Input.IsKeyPressed(Keys.Up),
+                pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
         {
             _selectedVehicleIndex = (_selectedVehicleIndex - 1 + _availableVehicles.Count) % _availableVehicles.Count;
         }
 
-        if (Input.IsKeyPressed(Keys.Down) || (pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
+        if (IsVehicleMenuMoveDownRequested(
+                Input.IsKeyPressed(Keys.Down),
+                pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
         {
             _selectedVehicleIndex = (_selectedVehicleIndex + 1) % _availableVehicles.Count;
         }
 
-        if (Input.IsKeyPressed(Keys.Enter) || (pad?.IsButtonPressed(GamePadButton.A) ?? false))
+        if (IsVehicleMenuConfirmRequested(
+                Input.IsKeyPressed(Keys.Enter),
+                pad?.IsButtonPressed(GamePadButton.A) ?? false))
         {
             var selectedVehicle = _availableVehicles[_selectedVehicleIndex];
             _showVehicleMenu = false;
@@ -336,7 +361,9 @@ public class VehicleSpawner : SyncScript
             return;
         }
 
-        if (Input.IsKeyPressed(Keys.Escape) || (pad?.IsButtonPressed(GamePadButton.B) ?? false))
+        if (IsVehicleMenuCancelRequested(
+                Input.IsKeyPressed(Keys.Escape),
+                pad?.IsButtonPressed(GamePadButton.B) ?? false))
         {
             _showVehicleMenu = false;
         }
