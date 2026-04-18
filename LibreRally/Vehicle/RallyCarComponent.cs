@@ -41,6 +41,34 @@ public class RallyCarComponent : SyncScript
     private const float WheelSurfaceVfxRiseRate = 12f;
     private const float WheelSurfaceVfxFallRate = 4f;
     private const float WheelSurfaceVfxMaxSpawnRate = 90f;
+    private const float WheelSurfaceVfxSlipAngleWeight = 1.1f;
+    private const float WheelSurfaceVfxMinSlipRampRange = 1e-4f;
+    private const float WheelSurfaceVfxContactPatchRadiusScale = 0.82f;
+    private const float WheelSurfaceVfxMinVerticalOffset = 0.12f;
+    private const float WheelSurfaceVfxPositionMinX = -0.10f;
+    private const float WheelSurfaceVfxPositionMinY = -0.02f;
+    private const float WheelSurfaceVfxPositionMinZ = -0.10f;
+    private const float WheelSurfaceVfxPositionMaxX = 0.10f;
+    private const float WheelSurfaceVfxPositionMaxY = 0.08f;
+    private const float WheelSurfaceVfxPositionMaxZ = 0.10f;
+    private const float WheelSurfaceVfxVelocityMinX = -0.8f;
+    private const float WheelSurfaceVfxVelocityMinY = 0.2f;
+    private const float WheelSurfaceVfxVelocityMinZ = -0.8f;
+    private const float WheelSurfaceVfxVelocityMaxX = 0.8f;
+    private const float WheelSurfaceVfxVelocityMaxY = 1.3f;
+    private const float WheelSurfaceVfxVelocityMaxZ = 0.8f;
+    private const float WheelSurfaceVfxSizeMin = 0.18f;
+    private const float WheelSurfaceVfxSizeMax = 0.42f;
+    private const float GravelVfxRed = 0.74f;
+    private const float GravelVfxGreen = 0.62f;
+    private const float GravelVfxBlue = 0.47f;
+    private const float GravelVfxBaseAlpha = 0.20f;
+    private const float GravelVfxIntensityAlphaScale = 0.45f;
+    private const float TarmacVfxRed = 0.42f;
+    private const float TarmacVfxGreen = 0.42f;
+    private const float TarmacVfxBlue = 0.42f;
+    private const float TarmacVfxBaseAlpha = 0.16f;
+    private const float TarmacVfxIntensityAlphaScale = 0.38f;
     private static readonly Color4 TransparentColor = new(0f, 0f, 0f, 0f);
     /// <summary>Fraction of heat generated at idle (no throttle).</summary>
     private const float IdleHeatFraction = 0.15f;
@@ -1635,7 +1663,7 @@ public class RallyCarComponent : SyncScript
             return 0f;
         }
 
-        var absSlipSignal = MathF.Max(MathF.Abs(slipRatio), MathF.Abs(slipAngleRadians) * 1.1f);
+        var absSlipSignal = MathF.Max(MathF.Abs(slipRatio), MathF.Abs(slipAngleRadians) * WheelSurfaceVfxSlipAngleWeight);
         float surfaceIntensity = surfaceType switch
         {
             SurfaceType.Tarmac or SurfaceType.WetTarmac => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: 0.22f, full: 0.90f),
@@ -1650,7 +1678,7 @@ public class RallyCarComponent : SyncScript
 
     private static float ComputeWheelSurfaceVfxSlipRamp(float slipSignal, float start, float full)
     {
-        var safeRange = MathF.Max(full - start, 1e-4f);
+        var safeRange = MathF.Max(full - start, WheelSurfaceVfxMinSlipRampRange);
         return Math.Clamp((slipSignal - start) / safeRange, 0f, 1f);
     }
 
@@ -1693,17 +1721,17 @@ public class RallyCarComponent : SyncScript
         emitter.Spawners.Add(spawner);
         emitter.Initializers.Add(new InitialPositionSeed
         {
-            PositionMin = new Vector3(-0.10f, -0.02f, -0.10f),
-            PositionMax = new Vector3(0.10f, 0.08f, 0.10f),
+            PositionMin = new Vector3(WheelSurfaceVfxPositionMinX, WheelSurfaceVfxPositionMinY, WheelSurfaceVfxPositionMinZ),
+            PositionMax = new Vector3(WheelSurfaceVfxPositionMaxX, WheelSurfaceVfxPositionMaxY, WheelSurfaceVfxPositionMaxZ),
         });
         emitter.Initializers.Add(new InitialVelocitySeed
         {
-            VelocityMin = new Vector3(-0.8f, 0.2f, -0.8f),
-            VelocityMax = new Vector3(0.8f, 1.3f, 0.8f),
+            VelocityMin = new Vector3(WheelSurfaceVfxVelocityMinX, WheelSurfaceVfxVelocityMinY, WheelSurfaceVfxVelocityMinZ),
+            VelocityMax = new Vector3(WheelSurfaceVfxVelocityMaxX, WheelSurfaceVfxVelocityMaxY, WheelSurfaceVfxVelocityMaxZ),
         });
         emitter.Initializers.Add(new InitialSizeSeed
         {
-            RandomSize = new Vector2(0.18f, 0.42f),
+            RandomSize = new Vector2(WheelSurfaceVfxSizeMin, WheelSurfaceVfxSizeMax),
         });
         emitter.Updaters.Add(new UpdaterSpeedToDirection());
         emitter.Updaters.Add(new UpdaterGravity
@@ -1744,10 +1772,7 @@ public class RallyCarComponent : SyncScript
                 var wheelSettings = wheel.Get<WheelSettings>();
                 wheelSurface = wheelSettings?.CurrentSurface ?? SurfaceType.Tarmac;
                 var dynamicsIndex = wheelSettings?.DynamicsIndex >= 0 ? wheelSettings.DynamicsIndex : i;
-                if (dynamicsIndex >= 0 &&
-                    dynamicsIndex < dynamics.WheelStates.Length &&
-                    dynamicsIndex < dynamics.CurrentNormalLoads.Length &&
-                    dynamicsIndex < dynamics.StaticNormalLoads.Length &&
+                if (IsValidWheelDynamicsIndex(dynamicsIndex, dynamics) &&
                     dynamics.WheelGrounded[dynamicsIndex])
                 {
                     var wheelState = dynamics.WheelStates[dynamicsIndex];
@@ -1762,8 +1787,7 @@ public class RallyCarComponent : SyncScript
                 }
 
                 var tyreRadius = wheelSettings?.TyreModel?.Radius ?? WheelRadius;
-                var wheelUp = _wheelOrientations[i].Up;
-                var wheelSurfacePosition = _wheelPositions[i] - wheelUp * MathF.Max(tyreRadius * 0.82f, 0.12f);
+                var wheelSurfacePosition = ComputeWheelSurfaceVfxPosition(i, tyreRadius);
                 wheelSurfaceVfxEntity.Transform.Position = Vector3.TransformCoordinate(wheelSurfacePosition, inverseChassisWorld);
             }
 
@@ -1786,10 +1810,26 @@ public class RallyCarComponent : SyncScript
 
         return surfaceType switch
         {
-            SurfaceType.Gravel => new Color4(0.74f, 0.62f, 0.47f, 0.20f + clampedIntensity * 0.45f),
-            SurfaceType.Tarmac or SurfaceType.WetTarmac => new Color4(0.42f, 0.42f, 0.42f, 0.16f + clampedIntensity * 0.38f),
+            SurfaceType.Gravel => new Color4(GravelVfxRed, GravelVfxGreen, GravelVfxBlue, GravelVfxBaseAlpha + clampedIntensity * GravelVfxIntensityAlphaScale),
+            SurfaceType.Tarmac or SurfaceType.WetTarmac => new Color4(TarmacVfxRed, TarmacVfxGreen, TarmacVfxBlue, TarmacVfxBaseAlpha + clampedIntensity * TarmacVfxIntensityAlphaScale),
             _ => TransparentColor,
         };
+    }
+
+    private static bool IsValidWheelDynamicsIndex(int dynamicsIndex, VehicleDynamicsSystem dynamics)
+    {
+        return dynamicsIndex >= 0 &&
+               dynamicsIndex < dynamics.WheelStates.Length &&
+               dynamicsIndex < dynamics.CurrentNormalLoads.Length &&
+               dynamicsIndex < dynamics.StaticNormalLoads.Length &&
+               dynamicsIndex < dynamics.WheelGrounded.Length;
+    }
+
+    private Vector3 ComputeWheelSurfaceVfxPosition(int wheelIndex, float tyreRadius)
+    {
+        var wheelUp = _wheelOrientations[wheelIndex].Up;
+        var verticalOffset = MathF.Max(tyreRadius * WheelSurfaceVfxContactPatchRadiusScale, WheelSurfaceVfxMinVerticalOffset);
+        return _wheelPositions[wheelIndex] - wheelUp * verticalOffset;
     }
 
     private static float MeasureSuspensionCompression(
