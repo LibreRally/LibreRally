@@ -15,7 +15,7 @@ public static class CodeFirstSceneFactory
         var ground = new Entity("Ground");
         ground.Add(new VehicleSpawner
         {
-            VehicleFolderPath = @"Resources\BeamNG Vehicles\basic_car",
+            VehicleFolderPath = "Resources/BeamNG Vehicles/basic_car",
             ConfigFileName = "basic_car.pc",
             SpawnPosition = new Vector3(0f, 2f, 0f),
         });
