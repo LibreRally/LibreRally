@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Stride.Core.Mathematics;
 using Stride.Engine;
@@ -57,10 +58,11 @@ public sealed class LibreRallyGame : Game
     {
         await base.LoadContent();
 
-        var sceneSystem = Services.GetService<SceneSystem>();
-        if (sceneSystem?.SceneInstance == null)
+        var sceneSystem = Services.GetService<SceneSystem>()
+            ?? throw new InvalidOperationException("Stride SceneSystem service is unavailable during startup.");
+        if (sceneSystem.SceneInstance == null)
         {
-            return;
+            throw new InvalidOperationException("Stride SceneInstance is unavailable during startup.");
         }
 
         sceneSystem.SceneInstance.RootScene = CodeFirstSceneFactory.CreateMainScene();
