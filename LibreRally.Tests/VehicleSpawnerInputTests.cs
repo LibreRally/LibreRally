@@ -1,3 +1,5 @@
+using LibreRally;
+
 namespace LibreRally.Tests;
 
 public class VehicleSpawnerInputTests
