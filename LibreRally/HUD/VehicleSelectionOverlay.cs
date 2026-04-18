@@ -88,8 +88,8 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         DrawRect(new RectangleF(PanelX, PanelY, PanelWidth, panelHeight), new Color(10, 14, 20, 216));
         DrawRect(new RectangleF(PanelX + 2f, PanelY + 2f, PanelWidth - 4f, panelHeight - 4f), new Color(20, 26, 34, 170));
 
-        DrawText("Vehicle Select (F2)", PanelX + 14f, PanelY + 12f, new Color(236, 240, 247, 255));
-        DrawText("Up/Down choose, Enter load, Esc close", PanelX + 14f, PanelY + 28f, new Color(184, 192, 203, 255));
+        DrawText("Vehicle Select (F2 / Start)", PanelX + 14f, PanelY + 12f, new Color(236, 240, 247, 255));
+        DrawText("Up/Down or D-pad, Enter/A load, Esc/B close", PanelX + 14f, PanelY + 28f, new Color(184, 192, 203, 255));
 
         var listY = PanelY + HeaderHeight;
         if (Vehicles.Count == 0)
