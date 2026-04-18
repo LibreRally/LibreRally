@@ -1,4 +1,5 @@
 using LibreRally.Vehicle;
+using LibreRally.Vehicle.Physics;
 using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests;
@@ -261,6 +262,45 @@ public class RallyCarComponentControlTests
             probeMargin: 0.05f);
 
         Assert.Equal(0f, contactScale, 3);
+    }
+
+    [Fact]
+    public void ComputeWheelSurfaceVfxIntensity_StaysOffForLowTarmacSlip()
+    {
+        float intensity = RallyCarComponent.ComputeWheelSurfaceVfxIntensity(
+            surfaceType: SurfaceType.Tarmac,
+            slipRatio: 0.08f,
+            slipAngleRadians: 0.03f,
+            normalLoadScale: 1f,
+            contactScale: 1f);
+
+        Assert.Equal(0f, intensity, 3);
+    }
+
+    [Fact]
+    public void ComputeWheelSurfaceVfxIntensity_ActivatesForBurnoutOnTarmac()
+    {
+        float intensity = RallyCarComponent.ComputeWheelSurfaceVfxIntensity(
+            surfaceType: SurfaceType.Tarmac,
+            slipRatio: 0.95f,
+            slipAngleRadians: 0.12f,
+            normalLoadScale: 1f,
+            contactScale: 1f);
+
+        Assert.True(intensity > 0.9f);
+    }
+
+    [Fact]
+    public void ComputeWheelSurfaceVfxIntensity_ActivatesEarlierOnGravel()
+    {
+        float intensity = RallyCarComponent.ComputeWheelSurfaceVfxIntensity(
+            surfaceType: SurfaceType.Gravel,
+            slipRatio: 0.18f,
+            slipAngleRadians: 0.04f,
+            normalLoadScale: 1f,
+            contactScale: 1f);
+
+        Assert.True(intensity > 0.2f);
     }
 
     [Fact]
