@@ -19,10 +19,13 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}  # to check out the PR head commit when available
           fetch-depth: 0  # a full history is required for pull request analysis
+      - name: 'Pull Qodana Docker Image'
+        run: docker pull jetbrains/qodana-cdnet:latest
       - name: 'Qodana Scan'
         uses: JetBrains/qodana-action@v2025.3
         with:
           pr-mode: false
+          args: --image,jetbrains/qodana-cdnet:latest
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
           QODANA_ENDPOINT: 'https://qodana.cloud'
