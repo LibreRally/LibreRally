@@ -25,7 +25,7 @@ jobs:
         uses: JetBrains/qodana-action@v2025.3
         with:
           pr-mode: false
-          args: --image jetbrains/qodana-cdnet:2026.1-eap
+          args: --image jetbrains/qodana-cdnet:2026.1-eap --project LibreRally.Linux/LibreRally.Linux.csproj
         env:
           QODANA_TOKEN: ${{ secrets.QODANA_TOKEN }}
           QODANA_ENDPOINT: 'https://qodana.cloud'
