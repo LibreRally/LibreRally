@@ -786,15 +786,15 @@ public class VehicleSpawner : SyncScript
         }
         catch (SocketException ex)
         {
-            HandleOutSimSendFailure(ex);
+            HandleOutSimTelemetryFailure(ex);
         }
         catch (ObjectDisposedException ex)
         {
-            HandleOutSimSendFailure(ex);
+            HandleOutSimTelemetryFailure(ex);
         }
         catch (InvalidOperationException ex)
         {
-            HandleOutSimSendFailure(ex);
+            HandleOutSimTelemetryFailure(ex);
         }
     }
 
@@ -825,13 +825,7 @@ public class VehicleSpawner : SyncScript
         }
         catch (SocketException ex)
         {
-            HandleOutSimSendFailure(ex);
-            DisposeOutSimClient();
-            return;
-        }
-        catch (ObjectDisposedException ex)
-        {
-            HandleOutSimSendFailure(ex);
+            HandleOutSimTelemetryFailure(ex);
             DisposeOutSimClient();
             return;
         }
@@ -850,12 +844,12 @@ public class VehicleSpawner : SyncScript
         _outSimHasPreviousLinearVelocity = false;
     }
 
-    private void HandleOutSimSendFailure(Exception ex)
+    private void HandleOutSimTelemetryFailure(Exception ex)
     {
         var sessionSeconds = Math.Max(0d, Game.UpdateTime.Total.TotalSeconds);
         if (!_outSimSendFailed || sessionSeconds >= _outSimNextFailureLogTimeSeconds)
         {
-            Log.Warning($"OutSim send failed ({_outSimTargetHost}:{_outSimTargetPort}): {ex.Message}");
+            Log.Warning($"OutSim telemetry failed ({_outSimTargetHost}:{_outSimTargetPort}): {ex.Message}");
             _outSimNextFailureLogTimeSeconds = sessionSeconds + FailureLogIntervalSeconds;
         }
 
