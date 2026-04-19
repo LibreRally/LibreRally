@@ -4,6 +4,7 @@ profile:
   name: qodana.recommended
 bootstrap: |
   if command -v apt-get >/dev/null 2>&1; then
+    mkdir -p /var/lib/apt/lists/partial
     apt-get update
     apt-get install -y --no-install-recommends libfreetype6 libfontconfig1
     rm -rf /var/lib/apt/lists/*
