@@ -39,6 +39,11 @@ public class VehicleSpawner : SyncScript
     public string OutGaugeIp { get; set; } = "127.0.0.1";
     public int OutGaugePort { get; set; } = 4444;
     public int OutGaugeId { get; set; }
+    public bool OutSimEnabled { get; set; }
+    public int OutSimDelayCentiseconds { get; set; } = 1;
+    public string OutSimIp { get; set; } = "127.0.0.1";
+    public int OutSimPort { get; set; } = 4123;
+    public int OutSimId { get; set; }
 
     private string _status = "Loading...";
     private bool _showDebug = true;
@@ -56,6 +61,14 @@ public class VehicleSpawner : SyncScript
     private bool _outGaugeSendFailed;
     private double _outGaugeNextFailureLogTimeSeconds;
     private float _outGaugeElapsed;
+    private UdpClient? _outSimClient;
+    private string? _outSimTargetHost;
+    private int _outSimTargetPort;
+    private bool _outSimSendFailed;
+    private double _outSimNextFailureLogTimeSeconds;
+    private float _outSimElapsed;
+    private bool _outSimHasPreviousLinearVelocity;
+    private Vector3 _outSimPreviousLinearVelocity;
     private const float MinTrackUvScale = 0.25f;
     private const float TrackMeshBoundsHalfHeight = 0.02f;
     private const float BankedSectionRollAngleRadians = -0.35f;
@@ -169,6 +182,8 @@ public class VehicleSpawner : SyncScript
         _loadedVehicle = null;
         _car = null;
         _outGaugeElapsed = 0f;
+        _outSimElapsed = 0f;
+        _outSimHasPreviousLinearVelocity = false;
     }
 
     private SpeedoGauge? _speedoGauge;
@@ -595,6 +610,7 @@ public class VehicleSpawner : SyncScript
         }
 
         SendOutGaugeTelemetry(dt);
+        SendOutSimTelemetry(dt);
 
         // Toggle debug info with F3
         if (Input.IsKeyPressed(Keys.F3))
@@ -716,5 +732,117 @@ public class VehicleSpawner : SyncScript
         }
 
         _outGaugeSendFailed = true;
+    }
+
+    private void SendOutSimTelemetry(float deltaTime)
+    {
+        if (!OutSimEnabled || _car == null)
+        {
+            _outSimElapsed = 0f;
+            _outSimHasPreviousLinearVelocity = false;
+            if (!OutSimEnabled)
+            {
+                DisposeOutSimClient();
+            }
+            return;
+        }
+
+        var sendIntervalSeconds = Math.Max(0, OutSimDelayCentiseconds) * 0.01f;
+        _outSimElapsed += Math.Max(0f, deltaTime);
+        if (sendIntervalSeconds > 0f && _outSimElapsed < sendIntervalSeconds)
+        {
+            return;
+        }
+
+        var sampleDelta = Math.Max(_outSimElapsed, 1e-4f);
+        _outSimElapsed = 0f;
+        EnsureOutSimClient();
+        if (_outSimClient == null || string.IsNullOrWhiteSpace(_outSimTargetHost))
+        {
+            return;
+        }
+
+        var chassisBody = _car.CarBody.Get<BodyComponent>();
+        if (chassisBody == null)
+        {
+            _outSimHasPreviousLinearVelocity = false;
+            return;
+        }
+
+        var linearVelocity = chassisBody.LinearVelocity;
+        var acceleration = _outSimHasPreviousLinearVelocity
+            ? (linearVelocity - _outSimPreviousLinearVelocity) / sampleDelta
+            : Vector3.Zero;
+        _outSimPreviousLinearVelocity = linearVelocity;
+        _outSimHasPreviousLinearVelocity = true;
+
+        try
+        {
+            var sessionMilliseconds = Math.Max(0d, Game.UpdateTime.Total.TotalMilliseconds);
+            var snapshot = OutSimProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds), acceleration);
+            var payload = OutSimProtocol.Encode(snapshot, OutSimId);
+            _outSimClient.Send(payload, payload.Length, _outSimTargetHost, _outSimTargetPort);
+            _outSimSendFailed = false;
+        }
+        catch (SocketException ex)
+        {
+            HandleOutSimSendFailure(ex);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            HandleOutSimSendFailure(ex);
+        }
+        catch (InvalidOperationException ex)
+        {
+            HandleOutSimSendFailure(ex);
+        }
+    }
+
+    private void EnsureOutSimClient()
+    {
+        var targetHost = OutSimIp?.Trim();
+        var targetPort = OutSimPort;
+        if (string.IsNullOrWhiteSpace(targetHost) || targetPort is < 1 or > 65535)
+        {
+            DisposeOutSimClient();
+            return;
+        }
+
+        if (_outSimClient != null &&
+            string.Equals(_outSimTargetHost, targetHost, StringComparison.OrdinalIgnoreCase) &&
+            _outSimTargetPort == targetPort)
+        {
+            return;
+        }
+
+        DisposeOutSimClient();
+        _outSimClient = new UdpClient();
+        _outSimTargetHost = targetHost;
+        _outSimTargetPort = targetPort;
+        _outSimSendFailed = false;
+        _outSimNextFailureLogTimeSeconds = 0d;
+    }
+
+    private void DisposeOutSimClient()
+    {
+        _outSimClient?.Dispose();
+        _outSimClient = null;
+        _outSimTargetHost = null;
+        _outSimTargetPort = 0;
+        _outSimSendFailed = false;
+        _outSimNextFailureLogTimeSeconds = 0d;
+        _outSimHasPreviousLinearVelocity = false;
+    }
+
+    private void HandleOutSimSendFailure(Exception ex)
+    {
+        var sessionSeconds = Math.Max(0d, Game.UpdateTime.Total.TotalSeconds);
+        if (!_outSimSendFailed || sessionSeconds >= _outSimNextFailureLogTimeSeconds)
+        {
+            Log.Warning($"OutSim send failed ({_outSimTargetHost}:{_outSimTargetPort}): {ex.Message}");
+            _outSimNextFailureLogTimeSeconds = sessionSeconds + FailureLogIntervalSeconds;
+        }
+
+        _outSimSendFailed = true;
     }
 }
