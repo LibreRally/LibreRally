@@ -22,7 +22,7 @@ jobs:
       - name: 'Pull Qodana Docker Image'
         run: docker pull jetbrains/qodana-cdnet:2026.1-eap
       - name: 'Qodana Scan'
-        uses: JetBrains/qodana-action@v2026.1-eap
+        uses: JetBrains/qodana-action@v2025.3
         with:
           pr-mode: false
           args: --image jetbrains/qodana-cdnet:2026.1-eap
