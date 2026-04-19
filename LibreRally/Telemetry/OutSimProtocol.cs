@@ -32,11 +32,12 @@ internal static class OutSimProtocol
         var world = transform.WorldMatrix;
 
         var forward = world.Backward;
+        var right = world.Right;
         var up = world.Up;
 
         var heading = MathF.Atan2(forward.X, forward.Z);
         var pitch = MathF.Asin(Math.Clamp(forward.Y, -1f, 1f));
-        var roll = MathF.Atan2(up.X, up.Y);
+        var roll = MathF.Atan2(right.Y, up.Y);
         var position = world.TranslationVector;
 
         return new OutSimSnapshot

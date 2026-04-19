@@ -781,7 +781,7 @@ public class VehicleSpawner : SyncScript
             var sessionMilliseconds = Math.Max(0d, Game.UpdateTime.Total.TotalMilliseconds);
             var snapshot = OutSimProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds), acceleration);
             var payload = OutSimProtocol.Encode(snapshot, OutSimId);
-            _outSimClient.Send(payload, payload.Length, _outSimTargetHost, _outSimTargetPort);
+            _outSimClient.Send(payload, payload.Length);
             _outSimSendFailed = false;
         }
         catch (SocketException ex)
@@ -819,6 +819,22 @@ public class VehicleSpawner : SyncScript
         _outSimClient = new UdpClient();
         _outSimTargetHost = targetHost;
         _outSimTargetPort = targetPort;
+        try
+        {
+            _outSimClient.Connect(targetHost, targetPort);
+        }
+        catch (SocketException ex)
+        {
+            HandleOutSimSendFailure(ex);
+            DisposeOutSimClient();
+            return;
+        }
+        catch (ObjectDisposedException ex)
+        {
+            HandleOutSimSendFailure(ex);
+            DisposeOutSimClient();
+            return;
+        }
         _outSimSendFailed = false;
         _outSimNextFailureLogTimeSeconds = 0d;
     }
