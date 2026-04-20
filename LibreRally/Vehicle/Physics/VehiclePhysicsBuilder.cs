@@ -500,10 +500,13 @@ public static class VehiclePhysicsBuilder
         var frontTyreSpec = VehicleTyreSpecResolver.Resolve(def, front: true);
         var rearTyreSpec = VehicleTyreSpecResolver.Resolve(def, front: false);
 
-        var staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
+        float staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
         float ComputeStaticSag(float springRate) => staticNormalLoad / Math.Max(springRate, 1f);
-        float ComputeBumpTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 6f, 0.08f, 0.18f);
-        float ComputeReboundTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 4f, 0.06f, 0.16f);
+
+        // Rally suspension typically has ~100-130mm bump and ~80-100mm rebound.
+        // Use 2× and 1.5× static sag as a starting estimate, clamped to realistic limits.
+        float ComputeBumpTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 2.0f, 0.06f, 0.13f);
+        float ComputeReboundTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 1.5f, 0.04f, 0.10f);
 
         var bumpTravelF = ComputeBumpTravel(springF);
         var reboundTravelF = ComputeReboundTravel(springF);

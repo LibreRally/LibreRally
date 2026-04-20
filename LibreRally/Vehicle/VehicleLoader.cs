@@ -33,16 +33,16 @@ public class VehicleLoader
         _graphicsDevice = game.GraphicsDevice;
     }
 
-    /// <summary>
-    /// Loads the vehicle at <paramref name="vehicleFolderPath"/>, builds physics and mesh entities,
-    /// and returns the assembled <see cref="LoadedVehicle"/>.
-    /// </summary>
-    /// <param name="vehicleFolderPath">Absolute path to the vehicle folder containing .jbeam files.</param>
-    /// <param name="configFileName">
-    /// Optional .pc config file name (e.g. "rally_pro_asphalt.pc") or base name without extension.
-    /// If null, auto-detects: prefers rally_pro_asphalt.pc, then first .pc file found.
-    /// </param>
-    public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
+	/// <summary>
+	/// Loads the vehicle at <paramref name="vehicleFolderPath"/>, builds physics and mesh entities,
+	/// and returns the assembled <see cref="LoadedVehicle"/>.
+	/// </summary>
+	/// <param name="vehicleFolderPath">Absolute path to the vehicle folder containing .jbeam files.</param>
+	/// <param name="configFileName">
+	/// Optional .pc config file name (e.g. "rally_pro_asphalt.pc") or base name without extension.
+	/// If <see langword="null" />, auto-detects: prefers rally_pro_asphalt.pc, then first .pc file found.
+	/// </param>
+	public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
     {
         var vehiclesRoot = Path.GetDirectoryName(vehicleFolderPath) ?? vehicleFolderPath;
         return LoadInternal(
@@ -115,6 +115,7 @@ public class VehicleLoader
         // 1. Parse + assemble jbeam (with pc config for parts selection + variable substitution)
         var definition = JBeamAssembler.Assemble(jbeamSearchFolders, vehicleFolderPath, pcConfig);
         ApplySetupOverridesToDefinition(definition, setupOverrides);
+        var defaultPaintPalette = BeamNgPaintPaletteResolver.LoadDefaultPalette(vehicleFolderPath, pcPath);
 
         // 2. Build physics entity hierarchy
         var result = VehiclePhysicsBuilder.Build(definition);
@@ -129,7 +130,8 @@ public class VehicleLoader
             materialSearchFolders,
             vehiclesRootDirectories,
             virtualAssetResolver,
-            resolvedVehicle);
+            resolvedVehicle,
+            defaultPaintPalette);
 
         // 4. Wire up the rally car driving component
         float V(string name, float fallback) =>
@@ -194,12 +196,14 @@ public class VehicleLoader
         var cgHeight = V("cg_height", 0.45f);
         var springRateFront = GetVarWithFallbacks(30000f, "spring_F_asphalt", "spring_F");
         var springRateRear = GetVarWithFallbacks(25000f, "spring_R_asphalt", "spring_R");
-        var antiRollRateFront = GetVarWithFallbacks(8000f, "antiroll_front", "arb_spring_F");
-        var antiRollRateRear = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R");
-        var averageDamperFront = (GetVarWithFallbacks(2500f, "damp_bump_F_asphalt", "damp_bump_F")
-                                + GetVarWithFallbacks(6000f, "damp_rebound_F_asphalt", "damp_rebound_F")) * 0.5f;
-        var averageDamperRear = (GetVarWithFallbacks(2200f, "damp_bump_R_asphalt", "damp_bump_R")
-                               + GetVarWithFallbacks(5200f, "damp_rebound_R_asphalt", "damp_rebound_R")) * 0.5f;
+        var antiRollRateFront = GetVarWithFallbacks(8000f, "arb_spring_F", "antiroll_front");
+        var antiRollRateRear = GetVarWithFallbacks(5000f, "arb_spring_R", "antiroll_rear");
+        var dampBumpFront = GetVarWithFallbacks(2500f, "damp_bump_F_asphalt", "damp_bump_F");
+        var dampReboundFront = GetVarWithFallbacks(6000f, "damp_rebound_F_asphalt", "damp_rebound_F");
+        var dampBumpRear = GetVarWithFallbacks(2200f, "damp_bump_R_asphalt", "damp_bump_R");
+        var dampReboundRear = GetVarWithFallbacks(5200f, "damp_rebound_R_asphalt", "damp_rebound_R");
+        var averageDamperFront = (dampBumpFront + dampReboundFront) * 0.5f;
+        var averageDamperRear = (dampBumpRear + dampReboundRear) * 0.5f;
         var halfTrack = MathF.Max(trackWidth * 0.5f, 0.45f);
         var halfWheelbase = MathF.Max(wheelbase * 0.5f, 0.75f);
         var derivedFrontRollStiffness = MathF.Max((springRateFront + antiRollRateFront) * halfTrack * 0.6f, 0f);
@@ -221,8 +225,8 @@ public class VehicleLoader
             CgHeight = cgHeight,
             Wheelbase = wheelbase,
             TrackWidth = trackWidth,
-            FrontAntiRollStiffness = GetVarWithFallbacks(8000f, "antiroll_front", "arb_spring_F"),
-            RearAntiRollStiffness = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R"),
+            FrontAntiRollStiffness = antiRollRateFront,
+            RearAntiRollStiffness = antiRollRateRear,
             BodyRoll = new ChassisBodyRollSystem
             {
                 FrontRollStiffness = frontRollStiffness,
@@ -259,6 +263,12 @@ public class VehicleLoader
             var tyreModel = CreateTyreModel(wheelTyreSpecs[i]);
             dynamics.TyreModels[i] = tyreModel;
             dynamics.StaticNormalLoads[i] = quarterLoad;
+
+            // Asymmetric damping: store per-wheel bump/rebound/average coefficients
+            var isFront = i < 2;
+            dynamics.BumpDamping[i] = isFront ? dampBumpFront : dampBumpRear;
+            dynamics.ReboundDamping[i] = isFront ? dampReboundFront : dampReboundRear;
+            dynamics.BepuAverageDamping[i] = isFront ? averageDamperFront : averageDamperRear;
 
             var ws = wheelEntities[i].Get<WheelSettings>();
             if (ws != null)
@@ -413,7 +423,8 @@ public class VehicleLoader
         IReadOnlyList<string> materialSearchFolders,
         IReadOnlyList<string> vehiclesRootDirectories,
         Func<string, string?>? virtualAssetResolver,
-        BeamNgResolvedVehicle? resolvedVehicle)
+        BeamNgResolvedVehicle? resolvedVehicle,
+        BeamNgPaintPalette? defaultPaintPalette)
     {
         try
         {
@@ -427,10 +438,11 @@ public class VehicleLoader
                 return;
             }
 
-            var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextures(
+            var jsonMaterials = BeamNGMaterialLoader.LoadMaterialTextureSets(
                 materialSearchFolders.Concat(GetSupplementalMaterialSearchFolders(supplementalModelSources.Select(source => source.Source.SourcePath))),
                 vehiclesRootDirectories,
-                virtualAssetResolver);
+                virtualAssetResolver,
+                definition.ActiveMaterialSkinSelections);
             var wheelEntities = new Dictionary<string, Entity>(StringComparer.OrdinalIgnoreCase)
             {
                 ["wheel_FL"] = result.WheelFL,
@@ -456,7 +468,8 @@ public class VehicleLoader
                 tireLikeAttachments,
                 jsonMaterials,
                 folder,
-                missingWheelMeshes);
+                missingWheelMeshes,
+                defaultPaintPalette);
 
             if (missingWheelMeshes.Count > 0)
             {
@@ -477,7 +490,7 @@ public class VehicleLoader
                     chassisFlexBodyMeshNames,
                     wheelMeshNames);
 
-                if (TryAttachChassisMeshes(result.ChassisEntity, definition.VehicleName, folder, jsonMaterials, mainSource, chassisMeshes))
+                if (TryAttachChassisMeshes(result.ChassisEntity, definition.VehicleName, folder, jsonMaterials, mainSource, chassisMeshes, defaultPaintPalette))
                 {
                     chassisVisualCount++;
                 }
@@ -503,7 +516,8 @@ public class VehicleLoader
                         folder,
                         jsonMaterials,
                         supplementalModelSource.Source,
-                        chassisMeshes))
+                        chassisMeshes,
+                        defaultPaintPalette))
                 {
                     chassisVisualCount++;
                 }
@@ -724,9 +738,10 @@ public class VehicleLoader
         Entity chassisEntity,
         string vehicleName,
         string vehicleFolder,
-        Dictionary<string, string> jsonMaterials,
+        Dictionary<string, BeamNgMaterialTextureSet> jsonMaterials,
         ModelSource source,
-        List<ColladaMesh> chassisMeshes)
+        List<ColladaMesh> chassisMeshes,
+        BeamNgPaintPalette? defaultPaintPalette)
     {
         var sourceName = Path.GetFileNameWithoutExtension(source.SourcePath);
         var meshEntity = BuildMeshEntity(
@@ -734,7 +749,8 @@ public class VehicleLoader
             string.IsNullOrWhiteSpace(sourceName) ? vehicleName : $"{vehicleName}_{sourceName}",
             Path.GetDirectoryName(source.SourcePath) ?? vehicleFolder,
             jsonMaterials,
-            source.TextureMap);
+            source.TextureMap,
+            defaultPaintPalette);
 
         if (meshEntity == null)
         {
@@ -755,9 +771,10 @@ public class VehicleLoader
         Dictionary<string, Entity> wheelEntities,
         HashSet<string> wheelMeshNames,
         Dictionary<string, int> tireLikeAttachments,
-        Dictionary<string, string> jsonMaterials,
+        Dictionary<string, BeamNgMaterialTextureSet> jsonMaterials,
         string vehicleFolder,
-        HashSet<string> missingWheelMeshes)
+        HashSet<string> missingWheelMeshes,
+        BeamNgPaintPalette? defaultPaintPalette)
     {
         var attached = 0;
         foreach (var flexBody in GetWheelVisualFlexBodies(definition))
@@ -780,7 +797,8 @@ public class VehicleLoader
                 $"{flexBody.MeshName}_{wheelKey}",
                 Path.GetDirectoryName(source.SourcePath) ?? vehicleFolder,
                 jsonMaterials,
-                source.TextureMap);
+                source.TextureMap,
+                defaultPaintPalette);
 
             if (meshEntity == null)
             {
@@ -1311,8 +1329,9 @@ public class VehicleLoader
         List<ColladaMesh> colladaMeshes,
         string vehicleName,
         string textureSearchFolder,
-        Dictionary<string, string> jsonMaterials,
-        Dictionary<string, string> colladaTextureMap)
+        Dictionary<string, BeamNgMaterialTextureSet> jsonMaterials,
+        Dictionary<string, string> colladaTextureMap,
+        BeamNgPaintPalette? defaultPaintPalette)
     {
         if (colladaMeshes.Count == 0)
         {
@@ -1373,21 +1392,22 @@ public class VehicleLoader
             // ── Three-level texture lookup ────────────────────────────────────
             // 1. BeamNG JSON: strip "-material" suffix → exact material name
             var matName = StripMaterialSuffix(symbol);
+            Material? material = null;
             Texture? texture = null;
 
-            if (jsonMaterials.TryGetValue(matName, out var absolutePath))
+            if (jsonMaterials.TryGetValue(matName, out var materialTextureSet))
             {
-	            texture = TryLoadTextureFromPath(absolutePath);
+	            material = TryBuildMaterialFromMaterialTextureSet(materialTextureSet, defaultPaintPalette);
             }
 
             // 2. Collada library_images chain (filename only, look in Textures/)
-            if (texture == null && colladaTextureMap.TryGetValue(symbol, out var colladaFile))
+            if (material == null && colladaTextureMap.TryGetValue(symbol, out var colladaFile))
             {
 	            texture = TryLoadTexture(textureSearchFolder, colladaFile);
             }
 
             // 3. Grey placeholder — covers sunburst base-car materials and anything else missing
-            var material = BuildMaterial(texture);
+            material ??= BuildMaterial(texture);
 
             var subEntity = new Entity(symbol);
             subEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
@@ -1414,12 +1434,8 @@ public class VehicleLoader
         return s;
     }
 
-    private Material BuildMaterial(Texture? texture, Color4? fallbackColor = null)
+    private Material BuildMaterial(IComputeColor diffuse)
     {
-        IComputeColor diffuse = texture != null
-            ? new ComputeTextureColor(texture)
-            : new ComputeColor(fallbackColor ?? new Color4(0.55f, 0.55f, 0.55f, 1f));
-
         return Material.New(_graphicsDevice, new MaterialDescriptor
         {
             Attributes = new MaterialAttributes
@@ -1428,6 +1444,118 @@ public class VehicleLoader
                 DiffuseModel = new MaterialDiffuseLambertModelFeature(),
             }
         });
+    }
+
+    private Material BuildMaterial(Texture? texture, Color4? fallbackColor = null)
+    {
+        IComputeColor diffuse = texture != null
+            ? new ComputeTextureColor(texture)
+            : new ComputeColor(fallbackColor ?? new Color4(0.55f, 0.55f, 0.55f, 1f));
+
+        return BuildMaterial(diffuse);
+    }
+
+    private Material? TryBuildMaterialFromMaterialTextureSet(
+        BeamNgMaterialTextureSet materialTextureSet,
+        BeamNgPaintPalette? paintPalette)
+    {
+        var baseTexture = TryLoadTextureFromPath(materialTextureSet.BaseColorPath);
+        if (baseTexture == null)
+        {
+            return null;
+        }
+
+        if (materialTextureSet.UsesInstanceDiffuse &&
+            paintPalette.HasValue &&
+            !string.IsNullOrWhiteSpace(materialTextureSet.ColorPalettePath))
+        {
+            var paletteTexture = TryLoadTextureFromPath(materialTextureSet.ColorPalettePath);
+            if (paletteTexture != null)
+            {
+                return BuildMaterial(BuildInstanceDiffuseCompute(baseTexture, paletteTexture, paintPalette.Value));
+            }
+        }
+
+        return BuildMaterial(baseTexture);
+    }
+
+    private static IComputeColor BuildInstanceDiffuseCompute(
+        Texture baseTexture,
+        Texture paletteTexture,
+        BeamNgPaintPalette paintPalette)
+    {
+        var baseColor = new ComputeTextureColor(baseTexture);
+        var paletteR = BuildPaletteChannelCompute(paletteTexture, "rrrr");
+        var paletteG = BuildPaletteChannelCompute(paletteTexture, "gggg");
+        var paletteB = BuildPaletteChannelCompute(paletteTexture, "bbbb");
+        var paint1 = Multiply(new ComputeColor(paintPalette.Paint1.BaseColor), paletteR);
+        var paint2 = Multiply(new ComputeColor(paintPalette.Paint2.BaseColor), paletteG);
+        var paint3 = Multiply(new ComputeColor(paintPalette.Paint3.BaseColor), paletteB);
+        var combinedMask = Add(Add(paletteR, paletteG), paletteB);
+        var unpainted = Subtract(new ComputeColor(Color4.White), combinedMask);
+        var tint = Add(Add(Add(unpainted, paint1), paint2), paint3);
+        return Multiply(baseColor, tint);
+    }
+
+    private static ComputeTextureColor BuildPaletteChannelCompute(Texture paletteTexture, string swizzle)
+    {
+        return new ComputeTextureColor(paletteTexture)
+        {
+            Swizzle = swizzle,
+        };
+    }
+
+    private static IComputeColor Add(IComputeColor left, IComputeColor right)
+    {
+        return new ComputeBinaryColor(left, right, BinaryOperator.Add);
+    }
+
+    private static IComputeColor Multiply(IComputeColor left, IComputeColor right)
+    {
+        return new ComputeBinaryColor(left, right, BinaryOperator.Multiply);
+    }
+
+    private static IComputeColor Subtract(IComputeColor left, IComputeColor right)
+    {
+        return new ComputeBinaryColor(left, right, BinaryOperator.Subtract);
+    }
+
+    internal static Color ComposeInstanceDiffuseColor(Color baseColor, Color paletteMask, BeamNgPaintPalette paintPalette)
+    {
+        var baseRgb = new Vector3(
+            baseColor.R / 255f,
+            baseColor.G / 255f,
+            baseColor.B / 255f);
+        var weight1 = paletteMask.R / 255f;
+        var weight2 = paletteMask.G / 255f;
+        var weight3 = paletteMask.B / 255f;
+        var combinedWeight = MathF.Min(1f, weight1 + weight2 + weight3);
+        var unpaintedWeight = MathF.Max(0f, 1f - combinedWeight);
+        var tint =
+            (Vector3.One * unpaintedWeight) +
+            (ToRgb(paintPalette.Paint1.BaseColor) * weight1) +
+            (ToRgb(paintPalette.Paint2.BaseColor) * weight2) +
+            (ToRgb(paintPalette.Paint3.BaseColor) * weight3);
+        var composed = new Vector3(
+            baseRgb.X * tint.X,
+            baseRgb.Y * tint.Y,
+            baseRgb.Z * tint.Z);
+
+        return new Color(
+            ToByte(composed.X),
+            ToByte(composed.Y),
+            ToByte(composed.Z),
+            baseColor.A);
+    }
+
+    private static Vector3 ToRgb(Color4 color)
+    {
+        return new Vector3(color.R, color.G, color.B);
+    }
+
+    private static byte ToByte(float value)
+    {
+        return (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
     }
 
     /// <summary>Loads a texture from an absolute file path.</summary>
@@ -1756,9 +1884,26 @@ public class VehicleLoader
     }
 }
 
-/// <summary>A loaded vehicle with its root entity and assembled definition.</summary>
+/// <summary>
+/// Diagnostics information for a vehicle load operation.
+/// </summary>
+/// <param name="VehicleFolderPath">The path to the vehicle folder.</param>
+/// <param name="ConfigPath">The path to the .pc config file used, if any.</param>
+/// <param name="EstimatedMassKg">The estimated total mass of the vehicle in kilograms.</param>
 public record VehicleLoadDiagnostics(string VehicleFolderPath, string? ConfigPath, float EstimatedMassKg);
 
+/// <summary>
+/// Represents a fully loaded vehicle ready for simulation.
+/// </summary>
+/// <param name="Definition">The assembled vehicle definition.</param>
+/// <param name="RootEntity">The root entity of the vehicle hierarchy.</param>
+/// <param name="CarComponent">The main rally car script component.</param>
+/// <param name="ChassisEntity">The entity representing the main chassis.</param>
+/// <param name="WheelFL">The front-left wheel entity.</param>
+/// <param name="WheelFR">The front-right wheel entity.</param>
+/// <param name="WheelRL">The rear-left wheel entity.</param>
+/// <param name="WheelRR">The rear-right wheel entity.</param>
+/// <param name="Diagnostics">Load diagnostics information.</param>
 public record LoadedVehicle(
     VehicleDefinition Definition,
     Entity RootEntity,

@@ -107,6 +107,23 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Whether each wheel currently has ground contact.</summary>
     public readonly bool[] WheelGrounded = new bool[WheelCount];
 
+    // ── Asymmetric damping (bump/rebound) ─────────────────────────────────────
+
+    /// <summary>Per-wheel bump (compression) damping coefficient (N·s/m). Loaded from BeamNG damp_bump_* vars.</summary>
+    public readonly float[] BumpDamping = new float[WheelCount];
+
+    /// <summary>Per-wheel rebound (extension) damping coefficient (N·s/m). Loaded from BeamNG damp_rebound_* vars.</summary>
+    public readonly float[] ReboundDamping = new float[WheelCount];
+
+    /// <summary>
+    /// Per-wheel average damping coefficient (N·s/m) that BEPU's LinearAxisServo constraint uses.
+    /// The correction impulse compensates for the difference between this and the direction-aware value.
+    /// </summary>
+    public readonly float[] BepuAverageDamping = new float[WheelCount];
+
+    /// <summary>Previous frame's suspension compression per wheel, used to compute suspension velocity.</summary>
+    private readonly float[] _previousSuspensionCompression = new float[WheelCount];
+
     // ── Cached per-frame outputs ─────────────────────────────────────────────
 
     /// <summary>Longitudinal force per wheel (N). Read by telemetry.</summary>
@@ -207,6 +224,13 @@ public sealed class VehicleDynamicsSystem
             rollAccelerationTorque,
             pitchAccelerationTorque,
             dt);
+
+        // ── 3c. Asymmetric damping correction ─────────────────────────────────
+        // BEPU's LinearAxisServo applies an averaged damping ratio. Real suspension has
+        // different bump (compression) and rebound (extension) damping — often 2-3× apart.
+        // We compute the correction force = (direction-aware damping − average) × velocity
+        // and apply it as an additional impulse at each wheel position.
+        ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, suspensionCompressions, dt);
 
         // ── 4. Split engine torque through drivetrain ────────────────────────
         ComputeDrivetrainTorque(engineTorqueAtWheels);
@@ -327,6 +351,79 @@ public sealed class VehicleDynamicsSystem
         // Re-clamp after anti-roll adjustments
         for (var i = 0; i < WheelCount; i++)
             CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f);
+    }
+
+    /// <summary>
+    /// Applies corrective impulses for asymmetric (bump vs rebound) suspension damping.
+    ///
+    /// <para>BEPU's LinearAxisServo uses a single SpringDampingRatio computed from the
+    /// average of bump and rebound damping coefficients. Real rally suspension has
+    /// significantly different bump (compression) and rebound (extension) damping —
+    /// typically rebound is 2-3× stiffer than bump.</para>
+    ///
+    /// <para>For each wheel, this method:
+    /// <list type="number">
+    ///   <item>Computes suspension velocity from compression change: v = (C_now − C_prev) / dt</item>
+    ///   <item>Selects the direction-appropriate coefficient: bump if compressing, rebound if extending</item>
+    ///   <item>Computes correction force: F = (C_selected − C_average) × v</item>
+    ///   <item>Applies the correction as an impulse along the suspension axis at the wheel position</item>
+    /// </list></para>
+    ///
+    /// <para>Reference: Milliken, RCVD §17.2 — Damper characteristics (digressive/progressive).</para>
+    /// </summary>
+    private void ApplyAsymmetricDampingCorrection(
+        BodyComponent chassisBody,
+        in Matrix chassisWorld,
+        ReadOnlySpan<Vector3> wheelPositions,
+        ReadOnlySpan<Matrix> wheelOrientations,
+        ReadOnlySpan<float> suspensionCompressions,
+        float dt)
+    {
+        var chassisPosition = chassisWorld.TranslationVector;
+
+        for (var i = 0; i < WheelCount; i++)
+        {
+            if (!WheelGrounded[i])
+            {
+                _previousSuspensionCompression[i] = i < suspensionCompressions.Length
+                    ? suspensionCompressions[i]
+                    : 0f;
+                continue;
+            }
+
+            var currentCompression = i < suspensionCompressions.Length ? suspensionCompressions[i] : 0f;
+            var suspensionVelocity = (currentCompression - _previousSuspensionCompression[i]) / dt;
+            _previousSuspensionCompression[i] = currentCompression;
+
+            var averageDamping = BepuAverageDamping[i];
+            if (averageDamping <= 0f)
+                continue;
+
+            // Positive velocity = compressing (bump), negative = extending (rebound)
+            var directionDamping = suspensionVelocity >= 0f
+                ? BumpDamping[i]
+                : ReboundDamping[i];
+
+            if (directionDamping <= 0f)
+                continue;
+
+            var correctionForce = (directionDamping - averageDamping) * suspensionVelocity;
+
+            // Clamp correction to avoid extreme transients (e.g. first frame or teleport)
+            const float maxCorrectionForce = 8000f;
+            correctionForce = Math.Clamp(correctionForce, -maxCorrectionForce, maxCorrectionForce);
+
+            if (MathF.Abs(correctionForce) < 1f)
+                continue;
+
+            // Apply along the suspension axis (approximately wheel up direction)
+            var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
+            var impulse = wheelUp * (correctionForce * dt);
+            var contactOffset = wheelPositions[i] - chassisPosition;
+
+            chassisBody.Awake = true;
+            chassisBody.ApplyImpulse(impulse, contactOffset);
+        }
     }
 
     /// <summary>
