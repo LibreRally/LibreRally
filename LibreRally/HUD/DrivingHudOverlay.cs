@@ -97,7 +97,9 @@ public sealed class DrivingHudOverlay : GameSystemBase
         UpdateOrder = 9989;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the driving HUD widgets and desktop root.
+    /// </summary>
     public override void Initialize()
     {
         base.Initialize();
@@ -122,7 +124,10 @@ public sealed class DrivingHudOverlay : GameSystemBase
         base.Destroy();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Refreshes HUD widget values for the current frame.
+    /// </summary>
+    /// <param name="gameTime">Stride timing data for the current frame.</param>
     public override void Update(GameTime gameTime)
     {
         if (_desktop == null)
@@ -133,7 +138,10 @@ public sealed class DrivingHudOverlay : GameSystemBase
         UpdateWidgets();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Draws the driving HUD when the overlay is active.
+    /// </summary>
+    /// <param name="gameTime">Stride timing data for the current frame.</param>
     public override void Draw(GameTime gameTime)
     {
         if (_game == null || _desktop == null)

@@ -131,7 +131,10 @@ public static class CodeFirstSceneFactory
 /// </summary>
 public sealed class LibreRallyGame : Game
 {
-    /// <inheritdoc/>
+    /// <summary>
+    /// Loads the initial scene content and wires up the startup game state.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when required Stride scene services are unavailable during startup.</exception>
     protected override async Task LoadContent()
     {
         await base.LoadContent();

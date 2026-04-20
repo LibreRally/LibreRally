@@ -28,6 +28,8 @@ public class VehicleLoader
     private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
 
+    /// <summary>Creates a vehicle loader that uses the given Stride game services and graphics device.</summary>
+    /// <param name="game">Stride game instance that provides rendering services.</param>
     public VehicleLoader(Game game)
     {
         _graphicsDevice = game.GraphicsDevice;
@@ -42,6 +44,8 @@ public class VehicleLoader
 	/// Optional .pc config file name (e.g. "rally_pro_asphalt.pc") or base name without extension.
 	/// If <see langword="null" />, auto-detects: prefers rally_pro_asphalt.pc, then first .pc file found.
 	/// </param>
+	/// <param name="setupOverrides">Optional live setup overrides applied after loading the base vehicle.</param>
+	/// <returns>The fully loaded vehicle and its assembled metadata.</returns>
 	public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
     {
         var vehiclesRoot = Path.GetDirectoryName(vehicleFolderPath) ?? vehicleFolderPath;
@@ -56,6 +60,11 @@ public class VehicleLoader
             setupOverrides);
     }
 
+    /// <summary>Loads a vehicle from a resolved BeamNG source and builds its runtime entities.</summary>
+    /// <param name="vehicleSource">Resolved BeamNG source that supplies vehicle content and lookup paths.</param>
+    /// <param name="configFileName">Optional PC configuration name to load.</param>
+    /// <param name="setupOverrides">Optional live setup overrides applied after loading the base vehicle.</param>
+    /// <returns>The fully loaded vehicle and its assembled metadata.</returns>
     public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
     {
         return LoadInternal(

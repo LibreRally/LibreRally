@@ -8,23 +8,33 @@ using System.Text;
 
 namespace LibreRally.Vehicle.Content;
 
+/// <summary>Identifies where a BeamNG vehicle package was discovered.</summary>
 public enum BeamNgVehicleSourceKind
 {
+    /// <summary>Vehicle content stored as a directory on disk.</summary>
     Folder,
+    /// <summary>Vehicle content stored inside a BeamNG zip archive.</summary>
     ZipArchive,
 }
 
+/// <summary>Describes a discovered BeamNG vehicle package.</summary>
+/// <param name="VehicleId">Resolved BeamNG vehicle identifier.</param>
+/// <param name="SourcePath">Directory or archive path that contains the vehicle.</param>
+/// <param name="SourceKind">Origin of the discovered package.</param>
+/// <param name="SourceLabel">Short human-readable source label.</param>
 public sealed record BeamNgVehicleDescriptor(
     string VehicleId,
     string SourcePath,
     BeamNgVehicleSourceKind SourceKind,
     string SourceLabel)
 {
+    /// <summary>Gets a user-facing display name for the discovered vehicle package.</summary>
     public string DisplayName => SourceKind == BeamNgVehicleSourceKind.ZipArchive
         ? $"{VehicleId} [zip]"
         : VehicleId;
 }
 
+/// <summary>Represents a resolved BeamNG vehicle together with its asset lookup context.</summary>
 public sealed class BeamNgResolvedVehicle
 {
     private readonly BeamNgVehicleCatalog _catalog;
@@ -45,23 +55,35 @@ public sealed class BeamNgResolvedVehicle
         SourceDescription = sourceDescription;
     }
 
+    /// <summary>Gets the BeamNG vehicle identifier.</summary>
     public string VehicleId { get; }
+    /// <summary>Gets the extracted or source folder that contains the active vehicle files.</summary>
     public string VehicleFolderPath { get; }
+    /// <summary>Gets the folders searched for JBeam and related vehicle content.</summary>
     public IReadOnlyList<string> JBeamSearchFolders { get; }
+    /// <summary>Gets the root directories used to resolve BeamNG virtual vehicle paths.</summary>
     public IReadOnlyList<string> VehiclesRootDirectories { get; }
+    /// <summary>Gets a human-readable description of the source package.</summary>
     public string SourceDescription { get; }
 
+    /// <summary>Resolves a BeamNG virtual vehicle asset path to a concrete file on disk.</summary>
+    /// <param name="vehiclePath">Virtual BeamNG asset path.</param>
+    /// <returns>The resolved absolute file path when found; otherwise <see langword="null"/>.</returns>
     public string? ResolveVehicleAssetPath(string vehiclePath)
     {
         return _catalog.ResolveVehicleAssetPath(vehiclePath, VehiclesRootDirectories);
     }
 
+    /// <summary>Finds Collada mesh files that contain the requested mesh names.</summary>
+    /// <param name="meshNames">Mesh names to look up.</param>
+    /// <returns>Absolute file paths for matching Collada files.</returns>
     public IReadOnlyList<string> ResolveColladaFilesForMeshes(IEnumerable<string> meshNames)
     {
         return _catalog.ResolveColladaFilesForMeshes(VehicleId, meshNames);
     }
 }
 
+/// <summary>Discovers bundled BeamNG vehicle content and resolves files from folders or archives.</summary>
 public sealed class BeamNgVehicleCatalog
 {
     private static readonly string[] PngFallbackExtensions = [".png", ".jpg", ".jpeg", ".tga"];
@@ -73,6 +95,10 @@ public sealed class BeamNgVehicleCatalog
     private readonly Dictionary<string, IReadOnlyList<string>> _colladaFilesByPackageAndMeshSet = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<BeamNgVehicleDescriptor>? _discoveredVehicles;
 
+    /// <summary>Initializes a new vehicle catalog rooted at the given bundled and BeamNG content directories.</summary>
+    /// <param name="bundledVehiclesRoot">Root directory that contains bundled vehicle folders or archives.</param>
+    /// <param name="beamNgContentVehiclesRoot">Optional BeamNG installation content directory.</param>
+    /// <param name="cacheRoot">Optional cache directory used for extracted archive content.</param>
     public BeamNgVehicleCatalog(string bundledVehiclesRoot, string? beamNgContentVehiclesRoot = null, string? cacheRoot = null)
     {
         _bundledVehiclesRoot = bundledVehiclesRoot;
@@ -83,6 +109,8 @@ public sealed class BeamNgVehicleCatalog
             "BeamNGCache");
     }
 
+    /// <summary>Attempts to locate BeamNG's installed <c>content/vehicles</c> directory on Windows.</summary>
+    /// <returns>The detected vehicles directory when present; otherwise <see langword="null"/>.</returns>
     public static string? DetectBeamNgContentVehiclesRoot()
     {
         string[] candidates =
@@ -94,6 +122,8 @@ public sealed class BeamNgVehicleCatalog
         return Array.Find(candidates, Directory.Exists);
     }
 
+    /// <summary>Discovers all bundled vehicles that can be loaded by LibreRally.</summary>
+    /// <returns>Cached descriptors for every discovered folder or archive vehicle.</returns>
     public IReadOnlyList<BeamNgVehicleDescriptor> DiscoverBundledVehicles()
     {
         if (_discoveredVehicles != null)
@@ -142,6 +172,11 @@ public sealed class BeamNgVehicleCatalog
         return _discoveredVehicles;
     }
 
+    /// <summary>Resolves a requested vehicle identifier or path into a loadable BeamNG vehicle source.</summary>
+    /// <param name="requestedPathOrId">Vehicle id, folder path, or zip path supplied by the caller.</param>
+    /// <returns>A resolved vehicle source that can be consumed by the loader.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="requestedPathOrId" /> is empty or whitespace.</exception>
+    /// <exception cref="FileNotFoundException">Thrown when the requested vehicle cannot be resolved from the configured sources.</exception>
     public BeamNgResolvedVehicle ResolveVehicle(string requestedPathOrId)
     {
         if (string.IsNullOrWhiteSpace(requestedPathOrId))

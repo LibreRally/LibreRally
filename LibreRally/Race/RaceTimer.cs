@@ -51,10 +51,14 @@ public class RaceTimer : SyncScript
         return $"{mins:D2}:{secs:D2}.{cs:D2}";
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the timer component before the race begins.
+    /// </summary>
     public override void Start() { }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Advances the elapsed race time while the timer is running.
+    /// </summary>
     public override void Update()
     {
         if (_running)

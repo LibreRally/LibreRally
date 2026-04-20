@@ -4,6 +4,12 @@ using System.Numerics;
 namespace LibreRally.Vehicle.JBeam;
 
 /// <summary>Raw per-node properties accumulated from preceding property-setter objects.</summary>
+/// <param name="Weight">Node mass in kilograms.</param>
+/// <param name="Collision">Whether the node participates in collision tests.</param>
+/// <param name="SelfCollision">Whether the node can collide with other nodes on the same vehicle.</param>
+/// <param name="Material">BeamNG material token applied to the node.</param>
+/// <param name="FrictionCoef">Per-node friction coefficient override.</param>
+/// <param name="Groups">Node groups assigned to the node.</param>
 public record NodeProperties(
     float Weight,
     bool Collision,
@@ -26,12 +32,23 @@ public static class NodeDefaults
 }
 
 /// <summary>A single node (point mass) in the jbeam graph.</summary>
+/// <param name="Id">Unique node identifier.</param>
+/// <param name="Position">Node position in BeamNG space.</param>
+/// <param name="Properties">Resolved per-node properties.</param>
 public record JBeamNode(
     string Id,
     Vector3 Position,
     NodeProperties Properties);
 
 /// <summary>Raw per-beam properties accumulated from preceding property-setter objects.</summary>
+/// <param name="Spring">Beam spring stiffness.</param>
+/// <param name="Damp">Beam damping coefficient.</param>
+/// <param name="Deform">Beam deformation threshold.</param>
+/// <param name="Strength">Beam break strength.</param>
+/// <param name="BeamType">BeamNG beam behaviour token.</param>
+/// <param name="DeformGroup">Deformation group name when one is supplied.</param>
+/// <param name="DeformationTriggerRatio">Damage ratio that triggers deformation events.</param>
+/// <param name="Optional">Whether the beam may be omitted when references are missing.</param>
 public record BeamProperties(
     float Spring,
     float Damp,
@@ -58,12 +75,20 @@ public static class BeamDefaults
 }
 
 /// <summary>A beam (spring/damper) connecting two nodes.</summary>
+/// <param name="Id1">Identifier of the first node.</param>
+/// <param name="Id2">Identifier of the second node.</param>
+/// <param name="Properties">Resolved beam properties.</param>
 public record JBeamBeam(
     string Id1,
     string Id2,
     BeamProperties Properties);
 
-/// <summary>Maps a <paramref name="Mesh" /> object name to one or more node <paramref name="Groups" /> that drive it.</summary>
+/// <summary>Associates a rendered object with the driving node collections.</summary>
+/// <param name="Mesh">Mesh object name from the source model.</param>
+/// <param name="Groups">Node groups that drive the flexbody.</param>
+/// <param name="Position">Optional flexbody position offset in BeamNG space.</param>
+/// <param name="Rotation">Optional flexbody rotation offset in BeamNG space.</param>
+/// <param name="Scale">Optional flexbody scale override.</param>
 public record JBeamFlexBody(
     string Mesh,
     List<string> Groups,
@@ -71,7 +96,12 @@ public record JBeamFlexBody(
     System.Numerics.Vector3? Rotation = null,
     System.Numerics.Vector3? Scale = null);
 
-/// <summary>A slot definition: <paramref name="Type" />, <paramref name="Default" /> filler, <paramref name="Description" />.</summary>
+/// <summary>Describes a BeamNG slot, its filler part, and its display text.</summary>
+/// <param name="Type">Slot type identifier.</param>
+/// <param name="Default">Default part name that fills the slot.</param>
+/// <param name="Description">Human-readable slot description.</param>
+/// <param name="CoreSlot">Whether the slot must be filled for the vehicle to function.</param>
+/// <param name="NodeOffset">Optional node offset applied to the installed part.</param>
 public record JBeamSlot(
     string Type,
     string Default,
@@ -79,6 +109,17 @@ public record JBeamSlot(
     bool CoreSlot,
     System.Numerics.Vector3? NodeOffset = null);
 
+/// <summary>Represents a parsed BeamNG powertrain device and its upstream connection metadata.</summary>
+/// <param name="Type">BeamNG powertrain device type.</param>
+/// <param name="Name">Device name used for graph lookups.</param>
+/// <param name="InputName">Upstream device identifier feeding this one.</param>
+/// <param name="InputIndex">Input slot index used by the device.</param>
+/// <param name="ConnectedWheel">Wheel code connected to the device, when applicable.</param>
+/// <param name="GearRatio">Optional gear ratio contributed by the device.</param>
+/// <param name="DiffType">Differential subtype token reported by BeamNG.</param>
+/// <param name="LsdPreload">Optional LSD preload torque.</param>
+/// <param name="LsdLockCoef">Optional locking coefficient under power.</param>
+/// <param name="LsdRevLockCoef">Optional locking coefficient on coast.</param>
 public record JBeamPowertrainDevice(
     string Type,
     string Name,
@@ -263,7 +304,9 @@ public class JBeamEngineDefinition
     public JBeamTurboDefinition? Turbo { get; init; }
 }
 
-/// <summary>Burn efficiency point: throttle fraction → thermal efficiency.</summary>
+/// <summary>Represents one point on the engine burn curve.</summary>
+/// <param name="Throttle">Throttle fraction in the range 0-1.</param>
+/// <param name="Efficiency">Resulting thermal conversion value for the point.</param>
 public record JBeamBurnEfficiencyPoint(float Throttle, float Efficiency);
 
 /// <summary>Turbocharger definition parsed from a turbocharger section.</summary>

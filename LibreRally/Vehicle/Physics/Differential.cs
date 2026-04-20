@@ -66,6 +66,7 @@ public struct DifferentialConfig
     public float PreloadTorque;
 
     /// <summary>Creates a default open differential.</summary>
+    /// <returns>An open differential configuration.</returns>
     public static DifferentialConfig CreateOpen() => new()
     {
         Type = DifferentialType.Open,
@@ -76,6 +77,11 @@ public struct DifferentialConfig
     };
 
     /// <summary>Creates a default limited-slip differential with typical rally bias.</summary>
+    /// <param name="biasRatio">Maximum torque bias ratio between the two outputs.</param>
+    /// <param name="lockingCoeff">Locking coefficient under power.</param>
+    /// <param name="coastLockingCoeff">Locking coefficient while coasting or engine braking.</param>
+    /// <param name="preloadTorque">Preload torque applied before torque biasing.</param>
+    /// <returns>A limited-slip differential configuration.</returns>
     public static DifferentialConfig CreateLimitedSlip(float biasRatio = 2.5f, float lockingCoeff = 0.3f, float coastLockingCoeff = 0f, float preloadTorque = 0f) => new()
     {
         Type = DifferentialType.LimitedSlip,
@@ -86,6 +92,7 @@ public struct DifferentialConfig
     };
 
     /// <summary>Creates a locking differential.</summary>
+    /// <returns>A fully locking differential configuration.</returns>
     public static DifferentialConfig CreateLocking() => new()
     {
         Type = DifferentialType.Locking,

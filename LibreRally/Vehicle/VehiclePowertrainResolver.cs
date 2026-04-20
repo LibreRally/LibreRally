@@ -6,49 +6,81 @@ using LibreRally.Vehicle.Physics;
 
 namespace LibreRally.Vehicle;
 
+/// <summary>Resolved drivetrain, engine, and thermal settings used to initialize vehicle powertrain simulation.</summary>
 public sealed class VehiclePowertrainSetup
 {
+    /// <summary>Gets whether the front axle receives drive torque.</summary>
     public bool DriveFrontAxle { get; init; } = true;
+    /// <summary>Gets whether the rear axle receives drive torque.</summary>
     public bool DriveRearAxle { get; init; } = true;
+    /// <summary>Gets the wheel keys driven by the resolved powertrain graph.</summary>
     public string[] DrivenWheelKeys { get; init; } = { "wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR" };
+    /// <summary>Gets the forward gear ratios used by the gearbox.</summary>
     public float[] GearRatios { get; init; } = { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
+    /// <summary>Gets the final drive ratio applied after the gearbox.</summary>
     public float FinalDrive { get; init; } = 4.55f;
+    /// <summary>Gets the engine torque-curve RPM sample points.</summary>
     public float[] TorqueCurveRpm { get; init; } = { 0f, 500f, 1000f, 1500f, 2000f, 2500f, 3000f, 3500f, 4000f, 4500f, 5000f, 5500f, 6000f, 6500f, 7000f, 7500f };
+    /// <summary>Gets the engine torque values aligned with <see cref="TorqueCurveRpm"/>.</summary>
     public float[] TorqueCurveNm { get; init; } = { 0f, 62f, 105f, 142f, 176f, 198f, 210f, 216f, 221f, 222f, 221f, 218f, 210f, 199f, 186f, 168f };
+    /// <summary>Gets the engine redline in RPM.</summary>
     public float MaxRpm { get; init; } = 7500f;
+    /// <summary>Gets the target idle speed in RPM.</summary>
     public float IdleRpm { get; init; } = 900f;
+    /// <summary>Gets the engine rotational inertia in kg·m².</summary>
     public float EngineInertia { get; init; } = 0.25f;
+    /// <summary>Gets the static engine friction torque in Nm.</summary>
     public float EngineFriction { get; init; } = 11.5f;
+    /// <summary>Gets the dynamic engine friction coefficient.</summary>
     public float EngineDynamicFriction { get; init; } = 0.024f;
+    /// <summary>Gets the additional engine-braking torque in Nm.</summary>
     public float EngineBrakeTorque { get; init; } = 38f;
+    /// <summary>Gets the launch RPM target used by the auto-clutch logic.</summary>
     public float AutoClutchLaunchRpm { get; init; } = 4500f;
+    /// <summary>Gets the automatic upshift threshold in RPM.</summary>
     public float ShiftUpRpm { get; init; } = 6500f;
+    /// <summary>Gets the automatic downshift threshold in RPM.</summary>
     public float ShiftDownRpm { get; init; } = 2200f;
+    /// <summary>Gets the resolved front differential configuration.</summary>
     public DifferentialConfig FrontDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f);
+    /// <summary>Gets the resolved rear differential configuration.</summary>
     public DifferentialConfig RearDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
+    /// <summary>Gets the resolved centre differential configuration.</summary>
     public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
 
-    // Thermal / oil / fuel
+    /// <summary>Gets the engine oil volume in litres.</summary>
     public float OilVolumeLiters { get; init; }
+    /// <summary>Gets the total fuel capacity in litres.</summary>
     public float FuelCapacityLiters { get; init; }
+    /// <summary>Gets the starting fuel load in litres.</summary>
     public float StartingFuelLiters { get; init; }
+    /// <summary>Gets the engine-block damage temperature threshold in °C.</summary>
     public float EngineBlockTempDamageThreshold { get; init; } = 180f;
+    /// <summary>Gets the target air-regulator temperature in °C.</summary>
     public float AirRegulatorTemperature { get; init; } = 85f;
+    /// <summary>Gets the air-cooling efficiency applied to the engine block.</summary>
     public float EngineBlockAirCoolingEfficiency { get; init; }
+    /// <summary>Gets the throttle sample points for the burn-efficiency curve.</summary>
     public float[] BurnEfficiencyThrottle { get; init; } = Array.Empty<float>();
+    /// <summary>Gets the burn-efficiency values aligned with <see cref="BurnEfficiencyThrottle"/>.</summary>
     public float[] BurnEfficiencyValues { get; init; } = Array.Empty<float>();
 
-    // Turbo
+    /// <summary>Gets whether the resolved engine includes a turbocharger.</summary>
     public bool HasTurbo { get; init; }
+    /// <summary>Gets the turbo wastegate pressure in PSI.</summary>
     public float TurboMaxBoostPsi { get; init; }
 }
 
+/// <summary>Builds <see cref="VehiclePowertrainSetup"/> instances from assembled BeamNG vehicle definitions.</summary>
 public static class VehiclePowertrainResolver
 {
     private static readonly string[] DefaultDrivenWheelKeys = { "wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR" };
     private static readonly HashSet<string> FrontWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "FL", "FR" };
     private static readonly HashSet<string> RearWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "RL", "RR" };
 
+    /// <summary>Resolves the powertrain, gearing, and thermal data needed to simulate the given vehicle.</summary>
+    /// <param name="definition">Assembled vehicle definition to inspect.</param>
+    /// <returns>The resolved runtime powertrain setup.</returns>
     public static VehiclePowertrainSetup Resolve(VehicleDefinition definition)
     {
         var deviceMap = definition.PowertrainDevices

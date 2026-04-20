@@ -7,6 +7,10 @@ using LibreRally.Vehicle;
 
 namespace LibreRally.Vehicle.Rendering;
 
+/// <summary>Resolved BeamNG texture set for a material entry.</summary>
+/// <param name="BaseColorPath">Absolute path to the resolved base-color texture.</param>
+/// <param name="ColorPalettePath">Optional palette texture used for instance colour overrides.</param>
+/// <param name="UsesInstanceDiffuse">Whether the material expects instance-driven diffuse colours.</param>
 public readonly record struct BeamNgMaterialTextureSet(
     string BaseColorPath,
     string? ColorPalettePath,
@@ -35,6 +39,7 @@ public static class BeamNGMaterialLoader
     /// </summary>
     /// <param name="vehicleFolder">Folder containing the target vehicle's material definition files.</param>
     /// <param name="vehiclesRootDir">Root vehicles directory used to resolve BeamNG virtual texture paths.</param>
+    /// <param name="activeMaterialSkins">Optional active material-skin selections that override base textures.</param>
     /// <returns>
     /// A dictionary keyed by material name, where each value is the absolute path of the resolved base-color texture.
     /// </returns>
@@ -56,6 +61,7 @@ public static class BeamNGMaterialLoader
     /// <param name="virtualPathResolver">
     /// Optional callback that resolves virtual BeamNG paths when the texture is not found directly on disk.
     /// </param>
+    /// <param name="activeMaterialSkins">Optional active material-skin selections that override base textures.</param>
     /// <returns>
     /// A dictionary keyed by material name, where each value is the first resolved base-color texture path.
     /// When duplicate material names are discovered, the existing mapping is kept and later matches are ignored.
@@ -70,6 +76,11 @@ public static class BeamNGMaterialLoader
             .ToDictionary(entry => entry.Key, entry => entry.Value.BaseColorPath, StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Loads BeamNG material texture sets from a single vehicle folder.</summary>
+    /// <param name="vehicleFolder">Folder containing the target vehicle's material definition files.</param>
+    /// <param name="vehiclesRootDir">Root vehicles directory used to resolve BeamNG virtual texture paths.</param>
+    /// <param name="activeMaterialSkins">Optional active material-skin selections that override base textures.</param>
+    /// <returns>Resolved texture sets keyed by material name.</returns>
     public static Dictionary<string, BeamNgMaterialTextureSet> LoadMaterialTextureSets(
         string vehicleFolder,
         string vehiclesRootDir,
@@ -78,6 +89,12 @@ public static class BeamNGMaterialLoader
         return LoadMaterialTextureSets([vehicleFolder], [vehiclesRootDir], null, activeMaterialSkins);
     }
 
+    /// <summary>Loads BeamNG material texture sets from one or more search folders.</summary>
+    /// <param name="materialSearchFolders">Candidate directories to scan for <c>*.materials.json</c> files.</param>
+    /// <param name="vehiclesRootDirs">BeamNG vehicles root directories used to resolve virtual paths.</param>
+    /// <param name="virtualPathResolver">Optional callback for resolving virtual BeamNG asset paths.</param>
+    /// <param name="activeMaterialSkins">Optional active material-skin selections that override base textures.</param>
+    /// <returns>Resolved texture sets keyed by material name.</returns>
     public static Dictionary<string, BeamNgMaterialTextureSet> LoadMaterialTextureSets(
         IEnumerable<string> materialSearchFolders,
         IEnumerable<string> vehiclesRootDirs,

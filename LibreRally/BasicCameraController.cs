@@ -57,7 +57,9 @@ public class BasicCameraController : SyncScript
     /// </summary>
     public Vector2 TouchRotationSpeed { get; set; } = new Vector2(1.0f, 0.7f);
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the camera controller state and touch gestures.
+    /// </summary>
     public override void Start()
     {
         base.Start();
@@ -73,7 +75,9 @@ public class BasicCameraController : SyncScript
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Processes player input and updates the camera transform for the current frame.
+    /// </summary>
     public override void Update()
     {
         ProcessInput();

@@ -198,7 +198,9 @@ public class VehicleSpawner : SyncScript
         public float FrictionCoefficient { get; } = frictionCoefficient;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the track, overlays, and vehicle catalog at scene startup.
+    /// </summary>
     public override void Start()
     {
         AddGroundPhysics();
@@ -973,7 +975,9 @@ public class VehicleSpawner : SyncScript
         return trackEntity;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Handles per-frame input, telemetry, and debug updates for spawned vehicles.
+    /// </summary>
     public override void Update()
     {
         HandlePauseAndVehicleSelectionInput();
