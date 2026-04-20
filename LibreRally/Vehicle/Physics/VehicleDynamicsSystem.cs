@@ -147,6 +147,7 @@ public sealed class VehicleDynamicsSystem
     // ── Force-derived acceleration state (cached for next step) ──────────────
     private float _forceEstimatedLongitudinalAccel;
     private float _forceEstimatedLateralAccel;
+    private bool _hasForceEstimatedAcceleration;
 
     /// <summary>Initializes a new dynamics system with default tyre state and tarmac surfaces.</summary>
     public VehicleDynamicsSystem()
@@ -197,12 +198,14 @@ public sealed class VehicleDynamicsSystem
         // ── 1. Use force-derived chassis acceleration for load transfer ───────
         // Acceleration is estimated from summed tyre forces at the end of each
         // step and cached for use on the next fixed update.
+        // First step fallback: zero acceleration until the first force estimate
+        // has been produced.
         // Reference: F = m·a (Newton's second law).
         // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
         var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        var longitudinalAccel = _forceEstimatedLongitudinalAccel;
-        var lateralAccel = _forceEstimatedLateralAccel;
+        var longitudinalAccel = _hasForceEstimatedAcceleration ? _forceEstimatedLongitudinalAccel : 0f;
+        var lateralAccel = _hasForceEstimatedAcceleration ? _forceEstimatedLateralAccel : 0f;
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
@@ -609,12 +612,20 @@ public sealed class VehicleDynamicsSystem
 
         _forceEstimatedLongitudinalAccel = planarAcceleration.X;
         _forceEstimatedLateralAccel = planarAcceleration.Y;
+        _hasForceEstimatedAcceleration = true;
     }
 
     /// <summary>
     /// Converts net world-space force to chassis-local planar acceleration
     /// components (longitudinal, lateral).
+    /// Internal visibility is intentional so deterministic math can be unit-tested
+    /// from LibreRally.Tests via InternalsVisibleTo.
     /// </summary>
+    /// <param name="netForceWorld">Summed world-space force acting on the chassis (N).</param>
+    /// <param name="chassisForward">Normalized chassis forward axis in world space.</param>
+    /// <param name="chassisRight">Normalized chassis right axis in world space.</param>
+    /// <param name="vehicleMass">Vehicle mass in kilograms.</param>
+    /// <returns>Planar acceleration where X = longitudinal and Y = lateral (m/s²).</returns>
     internal static Vector2 EstimatePlanarAccelerationFromNetForce(
         Vector3 netForceWorld,
         Vector3 chassisForward,
