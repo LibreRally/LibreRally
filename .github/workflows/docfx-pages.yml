@@ -19,11 +19,6 @@ on:
       - LibreRally/**/*.cs
       - LibreRally/LibreRally.csproj
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,6 +26,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
@@ -43,8 +40,34 @@ jobs:
           cache: true
           cache-dependency-path: LibreRally/LibreRally.csproj
 
-      - name: Set up Pages
-        uses: actions/configure-pages@v5
+      - name: Install DocFX
+        run: dotnet tool install --global docfx --version 2.78.5
+
+      - name: Build documentation site
+        run: docfx docfx.json
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: LibreRally/LibreRally.csproj
 
       - name: Install DocFX
         run: dotnet tool install --global docfx --version 2.78.5
@@ -52,20 +75,14 @@ jobs:
       - name: Build documentation site
         run: docfx docfx.json
 
+      - name: Set up Pages
+        uses: actions/configure-pages@v5
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ github.workspace }}/_site
 
-  deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
