@@ -22,6 +22,10 @@ public sealed class PauseMenuOverlay : GameSystemBase
     private static readonly Color TitleColor = new(240, 243, 247, 255);
     private static readonly Color CopyColor = new(183, 193, 205, 255);
     private static readonly Color ValueColor = new(255, 230, 204, 255);
+    private static readonly SolidBrush BackdropBrush = new(BackdropColor);
+    private static readonly SolidBrush ShellBrush = new(ShellColor);
+    private static readonly SolidBrush SelectedItemBrush = new(AccentColor);
+    private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
 
     private readonly List<(Button Button, Label Title, Label Description)> _buttons = [];
     private IReadOnlyList<PauseMenuItem> _items = Array.Empty<PauseMenuItem>();
@@ -131,9 +135,6 @@ public sealed class PauseMenuOverlay : GameSystemBase
             return;
         }
 
-        UpdateSelectionStyles();
-        UpdateLabels();
-
         var context = _game.GraphicsContext;
         context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
         _desktop.Render();
@@ -145,7 +146,7 @@ public sealed class PauseMenuOverlay : GameSystemBase
 
         var root = new Panel
         {
-            Background = Brush(BackdropColor),
+            Background = BackdropBrush,
         };
 
         var shellFrame = new Panel
@@ -154,7 +155,7 @@ public sealed class PauseMenuOverlay : GameSystemBase
             Height = 560,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = Brush(ShellColor),
+            Background = ShellBrush,
         };
 
         var shell = new VerticalStackPanel
@@ -267,7 +268,7 @@ public sealed class PauseMenuOverlay : GameSystemBase
         {
             var (button, title, description) = _buttons[i];
             var isSelected = i == clampedIndex;
-            button.Background = Brush(isSelected ? AccentColor : PanelColor);
+            button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
             title.TextColor = isSelected ? ValueColor : TitleColor;
             description.TextColor = isSelected ? new Color(255, 239, 220, 220) : CopyColor;
         }
@@ -302,5 +303,4 @@ public sealed class PauseMenuOverlay : GameSystemBase
         Height = height,
     };
 
-    private static SolidBrush Brush(Color color) => new(color);
 }

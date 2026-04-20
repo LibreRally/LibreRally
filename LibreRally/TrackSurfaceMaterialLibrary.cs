@@ -57,10 +57,10 @@ internal sealed class TrackSurfaceMaterialLibrary
         var folder = Path.Combine(_materialsRoot, descriptor.FolderName);
         var textureSet = new TrackSurfaceTextureSet(
             TryLoadTexture(Path.Combine(folder, descriptor.ColorFileName)),
-            TryLoadTexture(Path.Combine(folder, descriptor.NormalFileName)),
-            TryLoadTexture(Path.Combine(folder, descriptor.RoughnessFileName)),
-            TryLoadTexture(Path.Combine(folder, descriptor.AmbientOcclusionFileName)),
-            TryLoadTexture(Path.Combine(folder, descriptor.DisplacementFileName)));
+            null,
+            null,
+            null,
+            null);
 
         _textureSets[surfaceType] = textureSet;
         return textureSet;

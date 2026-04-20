@@ -92,7 +92,6 @@ public class VehicleSpawner : SyncScript
     private const float InclineSectionPitchAngleRadians = 0.22f;
     private const float TrackSurfaceGlossiness = 0.2f;
     private const float TrackSurfaceMetalness = 0f;
-    private const string TrackMaterialsRelativePath = @"Resources\Track Materials";
     private const float PsiToKpa = 6.894757f;
     private const int PauseMenuResumeIndex = 0;
     private const int PauseMenuResetVehicleIndex = 1;
@@ -767,7 +766,7 @@ public class VehicleSpawner : SyncScript
             var gd = ((Game)Game).GraphicsDevice;
             _trackSurfaceMaterialLibrary ??= new TrackSurfaceMaterialLibrary(
                 gd,
-                Path.Combine(AppContext.BaseDirectory, TrackMaterialsRelativePath));
+                Path.Combine(AppContext.BaseDirectory, "Resources", "Track Materials"));
             var segments = new[]
             {
                 new TrackSegmentDefinition(
