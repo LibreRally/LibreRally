@@ -828,19 +828,57 @@ public static class VehiclePhysicsBuilder
             return Vector3.UnitY;
         }
 
+        if (TryResolveNodeAxis(def, pressureWheel.SteerAxisDown, pressureWheel.SteerAxisUp, out var steerAxis) &&
+            IsPlausibleSuspensionAxis(steerAxis))
+        {
+            return steerAxis;
+        }
+
         if (!def.Nodes.TryGetValue(pressureWheel.NodeArm, out var armNode))
         {
             return Vector3.UnitY;
         }
 
         var armPositionStride = BeamNGToStride(armNode.Position);
-        var axisStride = wheelCenterStride - armPositionStride;
-        if (axisStride.LengthSquared() < VectorLengthSquaredEpsilon)
+        var axisStride = armPositionStride - wheelCenterStride;
+        if (!IsPlausibleSuspensionAxis(axisStride))
         {
             return Vector3.UnitY;
         }
 
         return Vector3.Normalize(axisStride);
+    }
+
+    private static bool TryResolveNodeAxis(
+        VehicleDefinition def,
+        string fromNodeId,
+        string toNodeId,
+        out Vector3 axisStride)
+    {
+        axisStride = Vector3.Zero;
+
+        if (string.IsNullOrWhiteSpace(fromNodeId) ||
+            string.IsNullOrWhiteSpace(toNodeId) ||
+            !def.Nodes.TryGetValue(fromNodeId, out var fromNode) ||
+            !def.Nodes.TryGetValue(toNodeId, out var toNode))
+        {
+            return false;
+        }
+
+        axisStride = BeamNGToStride(toNode.Position - fromNode.Position);
+        return axisStride.LengthSquared() >= VectorLengthSquaredEpsilon;
+    }
+
+    private static bool IsPlausibleSuspensionAxis(Vector3 axisStride)
+    {
+        var lengthSquared = axisStride.LengthSquared();
+        if (lengthSquared < VectorLengthSquaredEpsilon)
+        {
+            return false;
+        }
+
+        var normalized = axisStride / MathF.Sqrt(lengthSquared);
+        return MathF.Abs(Vector3.Dot(normalized, Vector3.UnitY)) >= 0.35f;
     }
 
     private static Dictionary<string, List<AssembledNode>> EstimateWheelPositions(VehicleDefinition def)

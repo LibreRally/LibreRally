@@ -4,6 +4,7 @@ using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Graphics;
 using Stride.Rendering;
+using Stride.Rendering.Compositing;
 using Stride.Rendering.Lights;
 using Stride.Rendering.Skyboxes;
 
@@ -11,9 +12,13 @@ namespace LibreRally;
 
 public static class CodeFirstSceneFactory
 {
-    public static Scene CreateMainScene() => CreateMainScene(null);
+    public static Scene CreateMainScene() => CreateMainSceneSetup().Scene;
 
-    public static Scene CreateMainScene(Game? game)
+    public static Scene CreateMainScene(Game? game) => CreateMainSceneSetup(game).Scene;
+
+    public static CodeFirstSceneSetup CreateMainSceneSetup() => CreateMainSceneSetup(null);
+
+    public static CodeFirstSceneSetup CreateMainSceneSetup(Game? game)
     {
         var groundModel = LoadAsset<Model>(game, "Ground");
         var skyboxTexture = LoadAsset<Texture>(game, "Skybox texture");
@@ -25,8 +30,8 @@ public static class CodeFirstSceneFactory
         ground.Add(new ModelComponent { Model = groundModel });
         ground.Add(new VehicleSpawner
         {
-            VehicleFolderPath = "Resources/BeamNG Vehicles/basic_car",
-            ConfigFileName = "basic_car.pc",
+            VehicleFolderPath = "Resources/BeamNG Vehicles/sunburst2",
+            ConfigFileName = "rally_pro_gravel.pc",
             SpawnPosition = new Vector3(0f, 2f, 0f),
         });
         scene.Entities.Add(ground);
@@ -34,7 +39,8 @@ public static class CodeFirstSceneFactory
         var camera = new Entity("Camera");
         camera.Transform.Position = new Vector3(2.6f, 0.6f, -1f);
         camera.Transform.Rotation = new Quaternion(0f, 0.82903755f, 0f, 0.5591929f);
-        camera.Add(new CameraComponent());
+        var cameraComponent = new CameraComponent();
+        camera.Add(cameraComponent);
         camera.Add(new BasicCameraController
         {
             Gamepad = false,
@@ -77,7 +83,19 @@ public static class CodeFirstSceneFactory
         skyboxEntity.Add(new LightComponent { Type = skyboxLight });
         scene.Entities.Add(skyboxEntity);
 
-        return scene;
+        var graphicsCompositor = LoadAsset<GraphicsCompositor>(game, "GraphicsCompositor") ??
+                                 GraphicsCompositorHelper.CreateDefault(
+                                     enablePostEffects: true,
+                                     camera: cameraComponent,
+                                     graphicsProfile: GraphicsProfile.Level_11_2);
+
+        if (graphicsCompositor.Cameras.Count > 0)
+        {
+            graphicsCompositor.Cameras[0].Name = "Main";
+            cameraComponent.Slot = graphicsCompositor.Cameras[0].ToSlotId();
+        }
+
+        return new CodeFirstSceneSetup(scene, cameraComponent, graphicsCompositor);
     }
 
     private static T? LoadAsset<T>(Game? game, string assetName)
@@ -100,6 +118,13 @@ public sealed class LibreRallyGame : Game
             throw new InvalidOperationException("Stride SceneInstance is unavailable during startup.");
         }
 
-        sceneSystem.SceneInstance.RootScene = CodeFirstSceneFactory.CreateMainScene(this);
+        var sceneSetup = CodeFirstSceneFactory.CreateMainSceneSetup(this);
+        sceneSystem.GraphicsCompositor = sceneSetup.GraphicsCompositor;
+        sceneSystem.SceneInstance.RootScene = sceneSetup.Scene;
     }
 }
+
+public sealed record CodeFirstSceneSetup(
+    Scene Scene,
+    CameraComponent MainCamera,
+    GraphicsCompositor GraphicsCompositor);

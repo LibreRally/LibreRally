@@ -21,6 +21,16 @@ using Stride.Rendering.Materials.ComputeColors;
 
 namespace LibreRally;
 
+public enum PauseMenuAction
+{
+    ResumeDriving,
+    ResetVehicle,
+    GarageSetup,
+    VehicleSelect,
+}
+
+public readonly record struct PauseMenuEntry(PauseMenuItem Item, PauseMenuAction Action);
+
 [ComponentCategory("LibreRally")]
 public class VehicleSpawner : SyncScript
 {
@@ -47,12 +57,17 @@ public class VehicleSpawner : SyncScript
 
     private string _status = "Loading...";
     private bool _showDebug = true;
-    private VehicleTelemetryOverlay? _telemetryOverlay;
+    private DrivingHudOverlay? _drivingHudOverlay;
+    private PauseMenuOverlay? _pauseMenuOverlay;
+    private SetupUiShellOverlay? _setupUiShellOverlay;
     private VehicleSelectionOverlay? _vehicleSelectionOverlay;
     private BeamNgVehicleCatalog? _vehicleCatalog;
     private List<BeamNgVehicleDescriptor> _availableVehicles = [];
+    private readonly VehicleSetupOverrides _setupOverrides = new();
     private int _selectedVehicleIndex;
-    private bool _showVehicleMenu;
+    private int _pauseMenuSelectedIndex;
+    private bool _vehicleSelectionOpenedFromPauseMenu;
+    private MenuScreen _activeMenuScreen;
     private LoadedVehicle? _loadedVehicle;
     private UdpClient? _outGaugeClient;
     private string? _outGaugeTargetHost;
@@ -69,12 +84,36 @@ public class VehicleSpawner : SyncScript
     private float _outSimElapsed;
     private bool _outSimHasPreviousLinearVelocity;
     private Vector3 _outSimPreviousLinearVelocity;
+    private TrackSurfaceMaterialLibrary? _trackSurfaceMaterialLibrary;
     private const float MinTrackUvScale = 0.25f;
     private const float TrackMeshBoundsHalfHeight = 0.02f;
+    private const float TrackSurfaceLift = 0.01f;
     private const float BankedSectionRollAngleRadians = -0.35f;
     private const float InclineSectionPitchAngleRadians = 0.22f;
     private const float TrackSurfaceGlossiness = 0.2f;
     private const float TrackSurfaceMetalness = 0f;
+    private const string TrackMaterialsRelativePath = @"Resources\Track Materials";
+    private const float PsiToKpa = 6.894757f;
+    private const int PauseMenuResumeIndex = 0;
+    private const int PauseMenuResetVehicleIndex = 1;
+    private const int PauseMenuGarageSetupIndex = 2;
+    private const int PauseMenuVehicleSelectIndex = 3;
+    private const int PauseMenuItemCount = 4;
+    private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
+    [
+        new(new PauseMenuItem("Resume Driving", "Return to the stage and hand control back to the driver."), PauseMenuAction.ResumeDriving),
+        new(new PauseMenuItem("Reset Vehicle", "Respawn the current car back at the spawn point."), PauseMenuAction.ResetVehicle),
+        new(new PauseMenuItem("Garage Setup", "Open the restored Myra tuning shell for stage prep changes."), PauseMenuAction.GarageSetup),
+        new(new PauseMenuItem("Vehicle Select", "Load a different bundled vehicle from the current catalog."), PauseMenuAction.VehicleSelect),
+    ];
+
+    internal enum MenuScreen
+    {
+        None,
+        Pause,
+        GarageSetup,
+        VehicleSelection,
+    }
 
     /// <summary>
     /// Lightweight configuration for one procedural test-track section.
@@ -102,8 +141,10 @@ public class VehicleSpawner : SyncScript
     public override void Start()
     {
         AddGroundPhysics();
-        EnsureTelemetryOverlay();
+        EnsureDrivingHudOverlay();
         InitializeVehicleCatalog();
+        EnsurePauseMenuOverlay();
+        EnsureSetupUiShellOverlay();
         EnsureVehicleSelectionOverlay();
 
         try
@@ -114,9 +155,9 @@ public class VehicleSpawner : SyncScript
         {
             Log.Error($"Failed to load vehicle: {ex}");
             _status = $"Load error: {ex.Message}";
-            if (_telemetryOverlay != null)
+            if (_drivingHudOverlay != null)
             {
-	            _telemetryOverlay.StatusText = _status;
+	            _drivingHudOverlay.StatusText = _status;
             }
         }
     }
@@ -125,6 +166,12 @@ public class VehicleSpawner : SyncScript
     {
         var requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
         var requestedSource = selectedVehicle?.SourcePath ?? VehicleFolderPath;
+        if (selectedVehicle != null &&
+            !selectedVehicle.SourcePath.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase))
+        {
+            _setupOverrides.Clear();
+        }
+
         BeamNgResolvedVehicle? resolvedVehicle = null;
         if (_vehicleCatalog != null)
         {
@@ -138,8 +185,8 @@ public class VehicleSpawner : SyncScript
 
         var loader = new VehicleLoader((Game)Game);
         var vehicle = resolvedVehicle != null
-            ? loader.Load(resolvedVehicle, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName)
-            : loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName);
+            ? loader.Load(resolvedVehicle, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName, _setupOverrides)
+            : loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName, _setupOverrides);
 
         if (selectedVehicle != null)
         {
@@ -167,9 +214,8 @@ public class VehicleSpawner : SyncScript
         Log.Info($"[VehicleSpawner] {_status} folder='{vehicle.Diagnostics.VehicleFolderPath}'");
 
         AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
-        AttachHud(vehicle.CarComponent);
-        AttachSpeedoGauge(vehicle.CarComponent);
-        AttachTelemetryOverlay(vehicle.CarComponent);
+        AttachDrivingHud(vehicle.CarComponent);
+        BindGarageSetupOverlay();
     }
 
     private void UnloadVehicle()
@@ -186,64 +232,37 @@ public class VehicleSpawner : SyncScript
         _outSimHasPreviousLinearVelocity = false;
     }
 
-    private SpeedoGauge? _speedoGauge;
-    private EngineGaugeStrip? _engineGaugeStrip;
+    private RallyCarComponent? _car;
 
-    private void AttachSpeedoGauge(RallyCarComponent car)
+    private void AttachDrivingHud(RallyCarComponent car)
     {
-        // Remove old instance if respawning
-        if (_speedoGauge != null)
+        EnsureDrivingHudOverlay();
+        if (_drivingHudOverlay == null)
         {
-            ((Game)Game).GameSystems.Remove(_speedoGauge);
-            _speedoGauge.Dispose();
+	        return;
         }
-        _speedoGauge = new SpeedoGauge(Services);
-        ((Game)Game).GameSystems.Add(_speedoGauge);
 
-        // Attach the engine auxiliary gauge strip below the speedo cluster
-        if (_engineGaugeStrip != null)
-        {
-            ((Game)Game).GameSystems.Remove(_engineGaugeStrip);
-            _engineGaugeStrip.Dispose();
-        }
-        _engineGaugeStrip = new EngineGaugeStrip(Services);
-        ((Game)Game).GameSystems.Add(_engineGaugeStrip);
-
-        // The gauge reads from _speedoGauge/_engineGaugeStrip properties we update in Update()
-        // Store reference so Update() can push telemetry
+        _drivingHudOverlay.Car = car;
+        _drivingHudOverlay.StatusText = _status;
+        _drivingHudOverlay.DebugOverlayVisible = _showDebug;
         _car = car;
     }
 
-    private RallyCarComponent? _car;
-
-    private void AttachTelemetryOverlay(RallyCarComponent car)
+    private void EnsureDrivingHudOverlay()
     {
-        EnsureTelemetryOverlay();
-        if (_telemetryOverlay == null)
+        if (_drivingHudOverlay != null)
         {
 	        return;
         }
 
-        _telemetryOverlay.Car = car;
-        _telemetryOverlay.StatusText = _status;
-        _telemetryOverlay.OverlayVisible = _showDebug;
-    }
-
-    private void EnsureTelemetryOverlay()
-    {
-        if (_telemetryOverlay != null)
-        {
-	        return;
-        }
-
-        _telemetryOverlay = new VehicleTelemetryOverlay(Services)
+        _drivingHudOverlay = new DrivingHudOverlay(Services)
         {
             Car = _car,
             StatusText = _status,
-            OverlayVisible = _showDebug,
+            DebugOverlayVisible = _showDebug,
         };
 
-        ((Game)Game).GameSystems.Add(_telemetryOverlay);
+        ((Game)Game).GameSystems.Add(_drivingHudOverlay);
     }
 
     private void EnsureVehicleSelectionOverlay()
@@ -257,11 +276,76 @@ public class VehicleSpawner : SyncScript
         {
             Vehicles = _availableVehicles,
             SelectedIndex = _selectedVehicleIndex,
-            OverlayVisible = _showVehicleMenu,
+            OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection,
             StatusText = _status,
+        };
+        _vehicleSelectionOverlay.ItemActivated = selectedIndex =>
+        {
+            if (selectedIndex < 0 || selectedIndex >= _availableVehicles.Count)
+            {
+                return;
+            }
+
+            _selectedVehicleIndex = selectedIndex;
+            _activeMenuScreen = MenuScreen.None;
+            _vehicleSelectionOpenedFromPauseMenu = false;
+            LoadVehicle(_availableVehicles[selectedIndex]);
         };
 
         ((Game)Game).GameSystems.Add(_vehicleSelectionOverlay);
+    }
+
+    private void EnsurePauseMenuOverlay()
+    {
+        if (_pauseMenuOverlay != null)
+        {
+            return;
+        }
+
+        _pauseMenuOverlay = new PauseMenuOverlay(Services)
+        {
+            Items = PauseMenuEntries.Select(entry => entry.Item).ToArray(),
+            SelectedIndex = _pauseMenuSelectedIndex,
+            OverlayVisible = _activeMenuScreen == MenuScreen.Pause,
+            VehicleName = GetCurrentVehicleName(),
+            StatusText = _status,
+        };
+        _pauseMenuOverlay.ItemActivated = selectedIndex =>
+        {
+            _pauseMenuSelectedIndex = selectedIndex;
+            ExecutePauseMenuAction(ResolvePauseMenuAction(selectedIndex));
+        };
+
+        ((Game)Game).GameSystems.Add(_pauseMenuOverlay);
+    }
+
+    private void EnsureSetupUiShellOverlay()
+    {
+        if (_setupUiShellOverlay != null)
+        {
+            return;
+        }
+
+        _setupUiShellOverlay = new SetupUiShellOverlay(Services)
+        {
+            OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup,
+            VehicleName = GetCurrentVehicleName(),
+            StatusText = _status,
+        };
+        _setupUiShellOverlay.ApplyRequested = ApplyGarageSetupChanges;
+        _setupUiShellOverlay.CloseRequested = CloseGarageSetup;
+
+        ((Game)Game).GameSystems.Add(_setupUiShellOverlay);
+    }
+
+    private void BindGarageSetupOverlay()
+    {
+        if (_setupUiShellOverlay == null)
+        {
+            return;
+        }
+
+        _setupUiShellOverlay.BindVehicle(_loadedVehicle, _setupOverrides, _status);
     }
 
     private void InitializeVehicleCatalog()
@@ -297,8 +381,22 @@ public class VehicleSpawner : SyncScript
         return idIndex >= 0 ? idIndex : 0;
     }
 
-    internal static bool IsVehicleMenuToggleRequested(bool keyboardTogglePressed, bool controllerStartPressed) =>
-        keyboardTogglePressed || controllerStartPressed;
+    internal static bool IsPauseMenuToggleRequested(bool keyboardPausePressed, bool controllerStartPressed) =>
+        keyboardPausePressed || controllerStartPressed;
+
+    internal static bool IsVehicleMenuShortcutRequested(bool keyboardTogglePressed) =>
+        keyboardTogglePressed;
+
+    internal static IReadOnlyList<PauseMenuEntry> GetPauseMenuEntries() => PauseMenuEntries;
+
+    internal static PauseMenuAction ResolvePauseMenuAction(int selectedIndex) =>
+        PauseMenuEntries[Math.Clamp(selectedIndex, 0, PauseMenuEntries.Count - 1)].Action;
+
+    internal static MenuScreen ResolvePauseMenuToggle(MenuScreen currentScreen) =>
+        currentScreen == MenuScreen.Pause ? MenuScreen.None : MenuScreen.Pause;
+
+    internal static MenuScreen ResolveVehicleSelectionCloseTarget(bool openedFromPauseMenu) =>
+        openedFromPauseMenu ? MenuScreen.Pause : MenuScreen.None;
 
     internal static bool IsVehicleMenuMoveUpRequested(bool keyboardUpPressed, bool controllerUpPressed) =>
         keyboardUpPressed || controllerUpPressed;
@@ -312,28 +410,70 @@ public class VehicleSpawner : SyncScript
     internal static bool IsVehicleMenuCancelRequested(bool keyboardCancelPressed, bool controllerCancelPressed) =>
         keyboardCancelPressed || controllerCancelPressed;
 
-    private void HandleVehicleSelectionInput()
+    private void HandlePauseAndVehicleSelectionInput()
     {
         var pad = Input.GamePads.FirstOrDefault();
-        var toggleVehicleMenuRequested = IsVehicleMenuToggleRequested(
-            Input.IsKeyPressed(Keys.F2),
+        var pauseMenuToggleRequested = IsPauseMenuToggleRequested(
+            Input.IsKeyPressed(Keys.Escape),
             pad?.IsButtonPressed(GamePadButton.Start) ?? false);
+        var vehicleMenuShortcutRequested = IsVehicleMenuShortcutRequested(Input.IsKeyPressed(Keys.F2));
 
-        if (toggleVehicleMenuRequested)
+        if (_activeMenuScreen == MenuScreen.GarageSetup)
         {
-            _showVehicleMenu = !_showVehicleMenu;
+            if (_car != null)
+            {
+                _car.PlayerInputEnabled = false;
+            }
+
+            return;
+        }
+
+        if (_activeMenuScreen == MenuScreen.VehicleSelection)
+        {
+            if (vehicleMenuShortcutRequested)
+            {
+                CloseVehicleSelection();
+            }
+            else if (pauseMenuToggleRequested)
+            {
+                _activeMenuScreen = MenuScreen.Pause;
+                _vehicleSelectionOpenedFromPauseMenu = false;
+                _pauseMenuSelectedIndex = PauseMenuResumeIndex;
+            }
+            else
+            {
+                HandleVehicleSelectionInput(pad);
+            }
+        }
+        else
+        {
+            if (vehicleMenuShortcutRequested)
+            {
+                OpenVehicleSelection(fromPauseMenu: _activeMenuScreen == MenuScreen.Pause);
+            }
+            else if (pauseMenuToggleRequested)
+            {
+                _activeMenuScreen = ResolvePauseMenuToggle(_activeMenuScreen);
+                if (_activeMenuScreen == MenuScreen.Pause)
+                {
+                    _pauseMenuSelectedIndex = PauseMenuResumeIndex;
+                }
+            }
+
+            if (_activeMenuScreen == MenuScreen.Pause)
+            {
+                HandlePauseMenuInput(pad);
+            }
         }
 
         if (_car != null)
         {
-            _car.PlayerInputEnabled = !_showVehicleMenu;
+            _car.PlayerInputEnabled = _activeMenuScreen == MenuScreen.None;
         }
+    }
 
-        if (!_showVehicleMenu)
-        {
-            return;
-        }
-
+    private void HandleVehicleSelectionInput(IGamePadDevice? pad)
+    {
         if (_availableVehicles.Count == 0)
         {
             var closeEmptyMenuRequested = IsVehicleMenuCancelRequested(
@@ -341,7 +481,7 @@ public class VehicleSpawner : SyncScript
                 pad?.IsButtonPressed(GamePadButton.B) ?? false);
             if (closeEmptyMenuRequested)
             {
-                _showVehicleMenu = false;
+                CloseVehicleSelection();
             }
 
             return;
@@ -371,7 +511,8 @@ public class VehicleSpawner : SyncScript
                 pad?.IsButtonPressed(GamePadButton.A) ?? false))
         {
             var selectedVehicle = _availableVehicles[_selectedVehicleIndex];
-            _showVehicleMenu = false;
+            _activeMenuScreen = MenuScreen.None;
+            _vehicleSelectionOpenedFromPauseMenu = false;
             LoadVehicle(selectedVehicle);
             return;
         }
@@ -380,25 +521,209 @@ public class VehicleSpawner : SyncScript
                 Input.IsKeyPressed(Keys.Escape),
                 pad?.IsButtonPressed(GamePadButton.B) ?? false))
         {
-            _showVehicleMenu = false;
+            CloseVehicleSelection();
         }
     }
 
-    private void AttachHud(RallyCarComponent car)
+    private void HandlePauseMenuInput(IGamePadDevice? pad)
     {
-        // Find an existing HUD entity or create one
-        var hudEntity = SceneSystem.SceneInstance.RootScene.Entities
-            .FirstOrDefault(e => e.Name == "HUD");
-        if (hudEntity == null)
+        if (IsVehicleMenuMoveUpRequested(
+                Input.IsKeyPressed(Keys.Up),
+                pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
         {
-            hudEntity = new Entity("HUD");
-            SceneSystem.SceneInstance.RootScene.Entities.Add(hudEntity);
+            _pauseMenuSelectedIndex = (_pauseMenuSelectedIndex - 1 + PauseMenuItemCount) % PauseMenuItemCount;
         }
 
-        // Remove any existing RallyHud component then re-add with the current car
-        foreach (var h in hudEntity.GetAll<LibreRally.HUD.RallyHud>().ToList())
-            hudEntity.Remove(h);
-        hudEntity.Add(new LibreRally.HUD.RallyHud { Car = car });
+        if (IsVehicleMenuMoveDownRequested(
+                Input.IsKeyPressed(Keys.Down),
+                pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
+        {
+            _pauseMenuSelectedIndex = (_pauseMenuSelectedIndex + 1) % PauseMenuItemCount;
+        }
+
+        if (!IsVehicleMenuConfirmRequested(
+                Input.IsKeyPressed(Keys.Enter),
+                pad?.IsButtonPressed(GamePadButton.A) ?? false))
+        {
+            return;
+        }
+
+        switch (_pauseMenuSelectedIndex)
+        {
+            case PauseMenuResumeIndex:
+                ExecutePauseMenuAction(PauseMenuAction.ResumeDriving);
+                break;
+            case PauseMenuResetVehicleIndex:
+                ExecutePauseMenuAction(PauseMenuAction.ResetVehicle);
+                break;
+            case PauseMenuGarageSetupIndex:
+                ExecutePauseMenuAction(PauseMenuAction.GarageSetup);
+                break;
+            case PauseMenuVehicleSelectIndex:
+                ExecutePauseMenuAction(PauseMenuAction.VehicleSelect);
+                break;
+        }
+    }
+
+    private void ExecutePauseMenuAction(PauseMenuAction action)
+    {
+        switch (action)
+        {
+            case PauseMenuAction.ResumeDriving:
+                _activeMenuScreen = MenuScreen.None;
+                break;
+            case PauseMenuAction.ResetVehicle:
+                RespawnCurrentVehicle();
+                break;
+            case PauseMenuAction.GarageSetup:
+                OpenGarageSetup();
+                break;
+            case PauseMenuAction.VehicleSelect:
+                OpenVehicleSelection(fromPauseMenu: true);
+                break;
+        }
+    }
+
+    private void RespawnCurrentVehicle()
+    {
+        _activeMenuScreen = MenuScreen.None;
+        var selectedVehicle = ResolveSelectedVehicleDescriptor();
+        if (selectedVehicle != null)
+        {
+            LoadVehicle(selectedVehicle);
+            return;
+        }
+
+        LoadVehicle();
+    }
+
+    private void OpenVehicleSelection(bool fromPauseMenu)
+    {
+        _vehicleSelectionOpenedFromPauseMenu = fromPauseMenu;
+        _activeMenuScreen = MenuScreen.VehicleSelection;
+    }
+
+    private void CloseVehicleSelection()
+    {
+        _activeMenuScreen = ResolveVehicleSelectionCloseTarget(_vehicleSelectionOpenedFromPauseMenu);
+        _vehicleSelectionOpenedFromPauseMenu = false;
+        if (_activeMenuScreen == MenuScreen.Pause)
+        {
+            _pauseMenuSelectedIndex = PauseMenuVehicleSelectIndex;
+        }
+    }
+
+    private void OpenGarageSetup()
+    {
+        BindGarageSetupOverlay();
+        _activeMenuScreen = MenuScreen.GarageSetup;
+    }
+
+    private void CloseGarageSetup()
+    {
+        _activeMenuScreen = MenuScreen.Pause;
+        _pauseMenuSelectedIndex = PauseMenuGarageSetupIndex;
+    }
+
+    private void ApplyGarageSetupChanges(SetupUiApplyPayload payload)
+    {
+        if (!payload.HasChanges)
+        {
+            return;
+        }
+
+        foreach (var kv in payload.VariableOverrides)
+        {
+            _setupOverrides.VariableOverrides[kv.Key] = kv.Value;
+        }
+
+        foreach (var kv in payload.PressureOverrides)
+        {
+            if (!_setupOverrides.PressureWheelOverrides.TryGetValue(kv.Key, out var pressureOverride))
+            {
+                pressureOverride = new VehiclePressureWheelOverrides();
+                _setupOverrides.PressureWheelOverrides[kv.Key] = pressureOverride;
+            }
+
+            pressureOverride.PressurePsi = kv.Value;
+        }
+
+        ApplyLivePressureOverrides(payload.PressureOverrides);
+        _status = $"Applied garage setup for {GetCurrentVehicleName()}: {payload.SummaryText}";
+
+        if (!payload.RequiresReload)
+        {
+            BindGarageSetupOverlay();
+            return;
+        }
+
+        var selectedVehicle = ResolveSelectedVehicleDescriptor();
+        LoadVehicle(selectedVehicle);
+    }
+
+    private void ApplyLivePressureOverrides(IReadOnlyDictionary<VehicleSetupAxle, float> pressureOverrides)
+    {
+        if (_loadedVehicle == null || pressureOverrides.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var (axle, pressurePsi) in pressureOverrides)
+        {
+            if (!float.IsFinite(pressurePsi))
+            {
+                continue;
+            }
+
+            foreach (var wheel in EnumerateAxleWheels(axle))
+            {
+                var wheelSettings = wheel.Get<WheelSettings>();
+                if (wheelSettings?.TyreModel == null)
+                {
+                    continue;
+                }
+
+                wheelSettings.TyreModel.TyrePressure = pressurePsi * PsiToKpa;
+            }
+        }
+    }
+
+    private IEnumerable<Entity> EnumerateAxleWheels(VehicleSetupAxle axle)
+    {
+        if (_loadedVehicle == null)
+        {
+            yield break;
+        }
+
+        if (axle == VehicleSetupAxle.Front)
+        {
+            yield return _loadedVehicle.WheelFL;
+            yield return _loadedVehicle.WheelFR;
+            yield break;
+        }
+
+        if (axle == VehicleSetupAxle.Rear)
+        {
+            yield return _loadedVehicle.WheelRL;
+            yield return _loadedVehicle.WheelRR;
+        }
+    }
+
+    private BeamNgVehicleDescriptor? ResolveSelectedVehicleDescriptor()
+    {
+        return _selectedVehicleIndex >= 0 && _selectedVehicleIndex < _availableVehicles.Count
+            ? _availableVehicles[_selectedVehicleIndex]
+            : null;
+    }
+
+    private string GetCurrentVehicleName()
+    {
+        if (!string.IsNullOrWhiteSpace(_loadedVehicle?.Definition.VehicleName))
+        {
+            return _loadedVehicle.Definition.VehicleName;
+        }
+
+        return Path.GetFileName(VehicleFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
     }
 
     private void AttachCamera(Entity chassis, RallyCarComponent car)
@@ -440,6 +765,9 @@ public class VehicleSpawner : SyncScript
         try
         {
             var gd = ((Game)Game).GraphicsDevice;
+            _trackSurfaceMaterialLibrary ??= new TrackSurfaceMaterialLibrary(
+                gd,
+                Path.Combine(AppContext.BaseDirectory, TrackMaterialsRelativePath));
             var segments = new[]
             {
                 new TrackSegmentDefinition(
@@ -510,11 +838,15 @@ public class VehicleSpawner : SyncScript
         var vertices = new VertexPositionNormalTexture[]
         {
             new(new Vector3(-halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(0f, 0f)),
-            new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(uvScale, 0f)),
-            new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(uvScale, uvScale)),
-            new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, uvScale)),
+            new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(1f, 0f)),
+            new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(1f, 1f)),
+            new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, 1f)),
+            new(new Vector3(-halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(0f, 0f)),
+            new(new Vector3(halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(1f, 0f)),
+            new(new Vector3(halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(1f, 1f)),
+            new(new Vector3(-halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(0f, 1f)),
         };
-        var indices = new[] { 0, 1, 2, 0, 2, 3 };
+        var indices = new[] { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6 };
 
         var mesh = new Mesh
         {
@@ -539,19 +871,25 @@ public class VehicleSpawner : SyncScript
             },
         };
 
-        var material = Material.New(graphicsDevice, new MaterialDescriptor
-        {
-            Attributes = new MaterialAttributes
+        var material = _trackSurfaceMaterialLibrary?.CreateMaterial(
+                segment.SurfaceType,
+                uvScale,
+                segment.Albedo,
+                TrackSurfaceGlossiness,
+                TrackSurfaceMetalness)
+            ?? Material.New(graphicsDevice, new MaterialDescriptor
             {
-                Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }),
-                DiffuseModel = new MaterialDiffuseLambertModelFeature(),
-                MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }),
-                Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
-            },
-        });
+                Attributes = new MaterialAttributes
+                {
+                    Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }),
+                    DiffuseModel = new MaterialDiffuseLambertModelFeature(),
+                    MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }),
+                    Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
+                },
+            });
 
         var trackEntity = new Entity(segment.Name);
-        trackEntity.Transform.Position = segment.LocalPosition;
+        trackEntity.Transform.Position = segment.LocalPosition + new Vector3(0f, TrackSurfaceLift, 0f);
         trackEntity.Transform.Rotation = segment.LocalRotation;
         trackEntity.Add(new StaticComponent
         {
@@ -576,38 +914,8 @@ public class VehicleSpawner : SyncScript
 
     public override void Update()
     {
-        HandleVehicleSelectionInput();
+        HandlePauseAndVehicleSelectionInput();
         var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-
-        // Push telemetry to gauge each frame
-        if (_speedoGauge != null && _car != null)
-        {
-            _speedoGauge.SpeedKmh      = _car.SpeedKmh;
-            _speedoGauge.EngineRpm     = _car.EngineRpm;
-            _speedoGauge.MaxRpm        = _car.MaxRpm;
-            _speedoGauge.CurrentGear   = _car.CurrentGear;
-            _speedoGauge.ThrottleInput = _car.ThrottleInput;
-            _speedoGauge.BrakeInput    = _car.BrakeInput;
-            _speedoGauge.HandbrakeEngaged = _car.HandbrakeEngaged;
-            _speedoGauge.TractionLossDetected = _car.TractionLossDetected;
-            _speedoGauge.TractionControlActive = _car.TractionControlActive;
-            _speedoGauge.DrivenWheelSlipRatio = _car.DrivenWheelSlipRatio;
-        }
-
-        // Push engine auxiliary telemetry to the gauge strip
-        if (_engineGaugeStrip != null && _car != null)
-        {
-            _engineGaugeStrip.TurboBoostBar      = _car.TurboBoostBar;
-            _engineGaugeStrip.TurboMaxBoostBar    = _car.TurboMaxBoostPsi * RallyCarComponent.PsiToBar;
-            _engineGaugeStrip.HasTurbo            = _car.HasTurbo;
-            _engineGaugeStrip.EngineTempC          = _car.EngineTemp;
-            _engineGaugeStrip.EngineTempDamageC    = _car.EngineBlockTempDamageThreshold;
-            _engineGaugeStrip.FuelLiters           = _car.FuelLiters;
-            _engineGaugeStrip.FuelCapacityLiters   = _car.FuelCapacityLiters;
-            _engineGaugeStrip.HasFuel              = _car.FuelCapacityLiters > 0f;
-            _engineGaugeStrip.OilPressureBar       = _car.OilPressure;
-            _engineGaugeStrip.HasOil               = _car.OilVolumeLiters > 0f;
-        }
 
         SendOutGaugeTelemetry(dt);
         SendOutSimTelemetry(dt);
@@ -618,19 +926,34 @@ public class VehicleSpawner : SyncScript
 	        _showDebug = !_showDebug;
         }
 
-        if (_telemetryOverlay != null)
+        if (_drivingHudOverlay != null)
         {
-            _telemetryOverlay.Car = _car;
-            _telemetryOverlay.StatusText = _status;
-            _telemetryOverlay.OverlayVisible = _showDebug;
+            _drivingHudOverlay.Car = _car;
+            _drivingHudOverlay.StatusText = _status;
+            _drivingHudOverlay.DebugOverlayVisible = _showDebug;
         }
 
         if (_vehicleSelectionOverlay != null)
         {
             _vehicleSelectionOverlay.Vehicles = _availableVehicles;
             _vehicleSelectionOverlay.SelectedIndex = _selectedVehicleIndex;
-            _vehicleSelectionOverlay.OverlayVisible = _showVehicleMenu;
+            _vehicleSelectionOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection;
             _vehicleSelectionOverlay.StatusText = _status;
+        }
+
+        if (_pauseMenuOverlay != null)
+        {
+            _pauseMenuOverlay.SelectedIndex = _pauseMenuSelectedIndex;
+            _pauseMenuOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.Pause;
+            _pauseMenuOverlay.VehicleName = GetCurrentVehicleName();
+            _pauseMenuOverlay.StatusText = _status;
+        }
+
+        if (_setupUiShellOverlay != null)
+        {
+            _setupUiShellOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup;
+            _setupUiShellOverlay.VehicleName = GetCurrentVehicleName();
+            _setupUiShellOverlay.StatusText = _status;
         }
 
         if (_car == null)

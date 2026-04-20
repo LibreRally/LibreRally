@@ -184,6 +184,7 @@ public static class JBeamAssembler
         var allPowertrainDevices = new List<JBeamPowertrainDevice>();
         var allPressureWheels = new List<JBeamPressureWheel>();
         var allPressureWheelOptions = new List<AssembledPressureWheelOptions>();
+        var allSetupVariables = new Dictionary<string, JBeamVariableDefinition>(StringComparer.OrdinalIgnoreCase);
         var allPartGearRatios = new List<AssembledPartGearRatio>();
         JBeamEngineDefinition? engine = null;
         JBeamGearboxDefinition? gearbox = null;
@@ -245,6 +246,10 @@ public static class JBeamAssembler
 
             allPowertrainDevices.AddRange(part.PowertrainDevices);
             allPressureWheels.AddRange(part.PressureWheels);
+            foreach (var variableDefinition in part.VariableDefinitions)
+            {
+                allSetupVariables.TryAdd(variableDefinition.Name, variableDefinition);
+            }
             if (part.PressureWheelOptions != null)
             {
                 allPressureWheelOptions.Add(new AssembledPressureWheelOptions(
@@ -286,6 +291,7 @@ public static class JBeamAssembler
             Parts = logicalParts,
             FolderPath = folderPath,
             RefNodes = refNodes,
+            SetupVariables = allSetupVariables.Values.ToList(),
             PowertrainDevices = allPowertrainDevices,
             PressureWheels = allPressureWheels,
             PressureWheelOptions = allPressureWheelOptions,

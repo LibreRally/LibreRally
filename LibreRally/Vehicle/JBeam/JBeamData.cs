@@ -95,7 +95,9 @@ public record JBeamPressureWheel(
     string Node1,
     string Node2,
     string NodeArm,
-    float WheelDir);
+    float WheelDir,
+    string SteerAxisUp = "",
+    string SteerAxisDown = "");
 
 public class JBeamPressureWheelOptions
 {
@@ -113,6 +115,23 @@ public class JBeamPressureWheelOptions
     public float? HubRadius { get; init; }
     public float? HubWidth { get; init; }
     public float? WheelOffset { get; init; }
+}
+
+public sealed class JBeamVariableDefinition
+{
+    public string Name { get; init; } = "";
+    public string Type { get; init; } = "";
+    public string Unit { get; init; } = "";
+    public string Category { get; init; } = "";
+    public float DefaultValue { get; init; }
+    public float MinValue { get; init; }
+    public float MaxValue { get; init; }
+    public string Title { get; init; } = "";
+    public string Description { get; init; } = "";
+    public string SubCategory { get; init; } = "";
+    public float? MinDisplayValue { get; init; }
+    public float? MaxDisplayValue { get; init; }
+    public float? StepDisplayValue { get; init; }
 }
 
 public record JBeamTorquePoint(float Rpm, float Torque);
@@ -210,6 +229,7 @@ public class JBeamPart
     public List<JBeamBeam> Beams { get; init; } = new();
     public List<JBeamFlexBody> FlexBodies { get; init; } = new();
     public Dictionary<string, float> Variables { get; init; } = new(System.StringComparer.OrdinalIgnoreCase);
+    public List<JBeamVariableDefinition> VariableDefinitions { get; init; } = new();
     public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
     public List<JBeamPressureWheel> PressureWheels { get; init; } = new();
     public JBeamPressureWheelOptions? PressureWheelOptions { get; init; }
