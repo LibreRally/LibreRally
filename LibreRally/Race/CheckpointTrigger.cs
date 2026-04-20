@@ -7,15 +7,30 @@ using Stride.Engine;
 
 namespace LibreRally.Race;
 
+/// <summary>
+/// A trigger component that detects when a vehicle passes through a checkpoint.
+/// </summary>
 [ComponentCategory("LibreRally")]
 public class CheckpointTrigger : StartupScript
 {
+    /// <summary>
+    /// Gets or sets the index of this checkpoint in the race.
+    /// </summary>
     public int CheckpointIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the physical size of the checkpoint trigger volume.
+    /// </summary>
     public Vector3 Size { get; set; } = new Vector3(10f, 4f, 2f);
+
+    /// <summary>
+    /// Occurs when a vehicle body enters the checkpoint volume. Provides the checkpoint index.
+    /// </summary>
     public event Action<int>? Triggered;
 
     private bool _triggered;
 
+    /// <inheritdoc/>
     public override void Start()
     {
         var trigger = new Trigger();

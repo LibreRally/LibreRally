@@ -42,7 +42,7 @@ public class VehicleLoader
     /// Optional .pc config file name (e.g. "rally_pro_asphalt.pc") or base name without extension.
     /// If null, auto-detects: prefers rally_pro_asphalt.pc, then first .pc file found.
     /// </param>
-    public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null)
+    public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
     {
         var vehiclesRoot = Path.GetDirectoryName(vehicleFolderPath) ?? vehicleFolderPath;
         return LoadInternal(
@@ -52,10 +52,11 @@ public class VehicleLoader
             [vehicleFolderPath],
             [vehiclesRoot],
             null,
-            null);
+            null,
+            setupOverrides);
     }
 
-    public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null)
+    public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
     {
         return LoadInternal(
             vehicleSource.VehicleFolderPath,
@@ -64,7 +65,8 @@ public class VehicleLoader
             vehicleSource.JBeamSearchFolders,
             vehicleSource.VehiclesRootDirectories,
             vehicleSource.ResolveVehicleAssetPath,
-            vehicleSource);
+            vehicleSource,
+            setupOverrides);
     }
 
     private LoadedVehicle LoadInternal(
@@ -74,7 +76,8 @@ public class VehicleLoader
         IReadOnlyList<string> materialSearchFolders,
         IReadOnlyList<string> vehiclesRootDirectories,
         Func<string, string?>? virtualAssetResolver,
-        BeamNgResolvedVehicle? resolvedVehicle)
+        BeamNgResolvedVehicle? resolvedVehicle,
+        VehicleSetupOverrides? setupOverrides)
     {
         if (!Directory.Exists(vehicleFolderPath))
         {
@@ -102,8 +105,16 @@ public class VehicleLoader
             Log.Warning("[VehicleLoader] No .pc config file found — using jbeam defaults.");
         }
 
+        if (pcConfig == null && setupOverrides?.VariableOverrides.Count > 0)
+        {
+            pcConfig = new PcConfig();
+        }
+
+        ApplyVariableOverridesToConfig(pcConfig, setupOverrides);
+
         // 1. Parse + assemble jbeam (with pc config for parts selection + variable substitution)
         var definition = JBeamAssembler.Assemble(jbeamSearchFolders, vehicleFolderPath, pcConfig);
+        ApplySetupOverridesToDefinition(definition, setupOverrides);
 
         // 2. Build physics entity hierarchy
         var result = VehiclePhysicsBuilder.Build(definition);
@@ -147,6 +158,18 @@ public class VehicleLoader
 
             return fallback;
         }
+        float? TryGetNumericVar(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (definition.Vars.TryGetValue(name, out var v) && float.IsFinite(v))
+                {
+                    return v;
+                }
+            }
+
+            return null;
+        }
         float ResolveCamberRadians(string axleSuffix)
         {
             var camberPrecompression = GetNumericVarOrFallback(1f, $"camber_{axleSuffix}_asphalt", $"camber_{axleSuffix}");
@@ -169,6 +192,26 @@ public class VehicleLoader
         var trackWidth = EstimateTrackWidth(result);
         var vehicleMass = EstimateVehicleMass(definition);
         var cgHeight = V("cg_height", 0.45f);
+        var springRateFront = GetVarWithFallbacks(30000f, "spring_F_asphalt", "spring_F");
+        var springRateRear = GetVarWithFallbacks(25000f, "spring_R_asphalt", "spring_R");
+        var antiRollRateFront = GetVarWithFallbacks(8000f, "antiroll_front", "arb_spring_F");
+        var antiRollRateRear = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R");
+        var averageDamperFront = (GetVarWithFallbacks(2500f, "damp_bump_F_asphalt", "damp_bump_F")
+                                + GetVarWithFallbacks(6000f, "damp_rebound_F_asphalt", "damp_rebound_F")) * 0.5f;
+        var averageDamperRear = (GetVarWithFallbacks(2200f, "damp_bump_R_asphalt", "damp_bump_R")
+                               + GetVarWithFallbacks(5200f, "damp_rebound_R_asphalt", "damp_rebound_R")) * 0.5f;
+        var halfTrack = MathF.Max(trackWidth * 0.5f, 0.45f);
+        var halfWheelbase = MathF.Max(wheelbase * 0.5f, 0.75f);
+        var derivedFrontRollStiffness = MathF.Max((springRateFront + antiRollRateFront) * halfTrack * 0.6f, 0f);
+        var derivedRearRollStiffness = MathF.Max((springRateRear + antiRollRateRear) * halfTrack * 0.6f, 0f);
+        var derivedPitchStiffness = MathF.Max(((springRateFront + springRateRear) * 0.5f) * halfWheelbase * 0.45f, 0f);
+        var derivedRollDamping = MathF.Max(((averageDamperFront + averageDamperRear) * 0.5f) * halfTrack * 0.7f, 0f);
+        var derivedPitchDamping = MathF.Max(((averageDamperFront + averageDamperRear) * 0.5f) * halfWheelbase * 0.8f, 0f);
+        var frontRollStiffness = TryGetNumericVar("roll_stiffness_front", "spring_roll_F") ?? derivedFrontRollStiffness;
+        var rearRollStiffness = TryGetNumericVar("roll_stiffness_rear", "spring_roll_R") ?? derivedRearRollStiffness;
+        var rollDamping = TryGetNumericVar("roll_damping") ?? derivedRollDamping;
+        var pitchStiffness = TryGetNumericVar("pitch_stiffness", "pitch_stiffness_body") ?? derivedPitchStiffness;
+        var pitchDamping = TryGetNumericVar("pitch_damping", "pitch_damping_body") ?? derivedPitchDamping;
         var quarterLoad = vehicleMass * 9.81f / 4f;
         var diagnostics = new VehicleLoadDiagnostics(vehicleFolderPath, pcPath, vehicleMass);
 
@@ -182,9 +225,11 @@ public class VehicleLoader
             RearAntiRollStiffness = GetVarWithFallbacks(5000f, "antiroll_rear", "arb_spring_R"),
             BodyRoll = new ChassisBodyRollSystem
             {
-                FrontRollStiffness = GetNumericVarOrFallback(5000f, "roll_stiffness_front", "spring_roll_F"),
-                RearRollStiffness = GetNumericVarOrFallback(4000f, "roll_stiffness_rear", "spring_roll_R"),
-                RollDampingCoefficient = GetNumericVarOrFallback(800f, "roll_damping"),
+                FrontRollStiffness = frontRollStiffness,
+                RearRollStiffness = rearRollStiffness,
+                RollDampingCoefficient = rollDamping,
+                PitchStiffness = pitchStiffness,
+                PitchDampingCoefficient = pitchDamping,
             },
             FrontDiff = powertrain.FrontDiff,
             RearDiff = powertrain.RearDiff,
@@ -288,6 +333,7 @@ public class VehicleLoader
         Log.Info($"[VehicleLoader] Tyres: F r={frontTyreSpec.Radius:F3}m w={frontTyreSpec.Width:F3}m p={frontTyreSpec.PressureKpa:F0}kPa " +
                  $"| R r={rearTyreSpec.Radius:F3}m w={rearTyreSpec.Width:F3}m p={rearTyreSpec.PressureKpa:F0}kPa");
         Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
+        Log.Info($"[VehicleLoader] Attitude: rollF={frontRollStiffness:F0} rollR={rearRollStiffness:F0} rollDamp={rollDamping:F0} pitch={pitchStiffness:F0} pitchDamp={pitchDamping:F0}");
         Log.Info($"[VehicleLoader] Engine: fuel={powertrain.FuelCapacityLiters:F1}L start={powertrain.StartingFuelLiters:F1}L " +
                  $"oil={powertrain.OilVolumeLiters:F1}L thermostat={powertrain.AirRegulatorTemperature:F0}°C " +
                  $"turbo={powertrain.HasTurbo} maxBoost={powertrain.TurboMaxBoostPsi:F1}psi");
@@ -782,36 +828,62 @@ public class VehicleLoader
     {
         foreach (var group in flexBody.NodeGroups)
         {
-            if (group.Equals("wheel_FL", StringComparison.OrdinalIgnoreCase) ||
-                group.Equals("wheelhub_FL", StringComparison.OrdinalIgnoreCase))
+            if (TryResolveWheelKey(group, out wheelKey))
             {
-                wheelKey = "wheel_FL";
-                return true;
-            }
-
-            if (group.Equals("wheel_FR", StringComparison.OrdinalIgnoreCase) ||
-                group.Equals("wheelhub_FR", StringComparison.OrdinalIgnoreCase))
-            {
-                wheelKey = "wheel_FR";
-                return true;
-            }
-
-            if (group.Equals("wheel_RL", StringComparison.OrdinalIgnoreCase) ||
-                group.Equals("wheelhub_RL", StringComparison.OrdinalIgnoreCase))
-            {
-                wheelKey = "wheel_RL";
-                return true;
-            }
-
-            if (group.Equals("wheel_RR", StringComparison.OrdinalIgnoreCase) ||
-                group.Equals("wheelhub_RR", StringComparison.OrdinalIgnoreCase))
-            {
-                wheelKey = "wheel_RR";
                 return true;
             }
         }
 
         wheelKey = null;
+        return false;
+    }
+
+    private static bool TryResolveWheelKey(string group, out string? wheelKey)
+    {
+        wheelKey = null;
+        if (string.IsNullOrWhiteSpace(group))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeColladaMeshLookupName(group);
+        if (!ContainsWheelSideGroupToken(normalized))
+        {
+            return false;
+        }
+
+        if (normalized.EndsWith("_fl", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheel_fl", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheelhub_fl", StringComparison.OrdinalIgnoreCase))
+        {
+            wheelKey = "wheel_FL";
+            return true;
+        }
+
+        if (normalized.EndsWith("_fr", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheel_fr", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheelhub_fr", StringComparison.OrdinalIgnoreCase))
+        {
+            wheelKey = "wheel_FR";
+            return true;
+        }
+
+        if (normalized.EndsWith("_rl", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheel_rl", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheelhub_rl", StringComparison.OrdinalIgnoreCase))
+        {
+            wheelKey = "wheel_RL";
+            return true;
+        }
+
+        if (normalized.EndsWith("_rr", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheel_rr", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("wheelhub_rr", StringComparison.OrdinalIgnoreCase))
+        {
+            wheelKey = "wheel_RR";
+            return true;
+        }
+
         return false;
     }
 
@@ -897,11 +969,33 @@ public class VehicleLoader
         return value.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("hub", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("strut", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("upright", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("knuckle", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("spindle", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("hubcap", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("rim", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("brake", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("caliper", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("disc", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ContainsWheelSideGroupToken(string value)
+    {
+        return value.Contains("wheel", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("hub", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("strut", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("upright", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("knuckle", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("spindle", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("brake", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("caliper", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("disc", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("rotor", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("tire", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("tyre", StringComparison.OrdinalIgnoreCase) ||
+               value.Contains("rim", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsTireLikeFlexBody(AssembledFlexBody flexBody)
@@ -1586,6 +1680,79 @@ public class VehicleLoader
         foreach (var node in definition.Nodes.Values)
             totalMass += node.Weight;
         return totalMass > 100f ? totalMass : 1200f; // fallback
+    }
+
+    private static void ApplyVariableOverridesToConfig(PcConfig? config, VehicleSetupOverrides? setupOverrides)
+    {
+        if (config == null || setupOverrides == null)
+        {
+            return;
+        }
+
+        foreach (var kv in setupOverrides.VariableOverrides)
+        {
+            config.Vars[kv.Key] = kv.Value;
+        }
+    }
+
+    private static void ApplySetupOverridesToDefinition(VehicleDefinition definition, VehicleSetupOverrides? setupOverrides)
+    {
+        if (setupOverrides == null)
+        {
+            return;
+        }
+
+        foreach (var kv in setupOverrides.VariableOverrides)
+        {
+            definition.Vars[kv.Key] = kv.Value;
+        }
+
+        if (definition.PressureWheelOptions.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = 0; i < definition.PressureWheelOptions.Count; i++)
+        {
+            var option = definition.PressureWheelOptions[i];
+            if (VehicleSetupCatalogBuilder.MatchesAxle(option.SourceSlotType, option.SourcePartName, VehicleSetupAxle.Front) &&
+                setupOverrides.PressureWheelOverrides.TryGetValue(VehicleSetupAxle.Front, out var frontOverride) &&
+                frontOverride.PressurePsi is { } frontPressure &&
+                float.IsFinite(frontPressure))
+            {
+                definition.PressureWheelOptions[i] = option with { Options = ClonePressureWheelOptions(option.Options, frontPressure) };
+                continue;
+            }
+
+            if (VehicleSetupCatalogBuilder.MatchesAxle(option.SourceSlotType, option.SourcePartName, VehicleSetupAxle.Rear) &&
+                setupOverrides.PressureWheelOverrides.TryGetValue(VehicleSetupAxle.Rear, out var rearOverride) &&
+                rearOverride.PressurePsi is { } rearPressure &&
+                float.IsFinite(rearPressure))
+            {
+                definition.PressureWheelOptions[i] = option with { Options = ClonePressureWheelOptions(option.Options, rearPressure) };
+            }
+        }
+    }
+
+    private static JBeamPressureWheelOptions ClonePressureWheelOptions(JBeamPressureWheelOptions options, float pressurePsi)
+    {
+        return new JBeamPressureWheelOptions
+        {
+            HasTire = options.HasTire,
+            Radius = options.Radius,
+            TireWidth = options.TireWidth,
+            PressurePsi = pressurePsi,
+            FrictionCoef = options.FrictionCoef,
+            SlidingFrictionCoef = options.SlidingFrictionCoef,
+            TreadCoef = options.TreadCoef,
+            NoLoadCoef = options.NoLoadCoef,
+            LoadSensitivitySlope = options.LoadSensitivitySlope,
+            FullLoadCoef = options.FullLoadCoef,
+            SoftnessCoef = options.SoftnessCoef,
+            HubRadius = options.HubRadius,
+            HubWidth = options.HubWidth,
+            WheelOffset = options.WheelOffset,
+        };
     }
 }
 

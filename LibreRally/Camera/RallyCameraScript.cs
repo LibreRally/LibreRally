@@ -7,14 +7,30 @@ using Stride.Input;
 
 namespace LibreRally.Camera;
 
+/// <summary>
+/// Controls the rally car camera behavior, supporting various views such as follow, bonnet, and bumper camera modes.
+/// </summary>
 [ComponentCategory("LibreRally")]
 public class RallyCameraScript : SyncScript
 {
+    /// <summary>
+    /// Gets or sets the target entity the camera should follow (typically the car).
+    /// </summary>
     public Entity? Target { get; set; }
+
+    /// <summary>
+    /// Gets or sets the car component to extract physics information from.
+    /// </summary>
     public RallyCarComponent? CarComponent { get; set; }
 
-    // Car nose faces Stride +Z (BeamNG -Y → Stride +Z). Camera must be at -Z (behind the tail).
+    /// <summary>
+    /// Base offset for the follow camera behind the car.
+    /// </summary>
     public Vector3 FollowOffset { get; set; } = new Vector3(0, 3f, -12f);
+
+    /// <summary>
+    /// Speed at which the follow camera catches up with the target.
+    /// </summary>
     public float FollowLerpSpeed { get; set; } = 5f;
 
     /// <summary>Bonnet/hood camera offset in car-local space (+Z = nose).</summary>

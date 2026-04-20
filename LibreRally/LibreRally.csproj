@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="CommentSense" Version="1.0.0" />
     <PackageReference Include="Microsoft.Build.Tasks.Core" Version="18.4.0" />
+    <PackageReference Include="Myra.Stride" Version="1.5.11" />
     <PackageReference Include="Stride.Engine" Version="4.3.0.2507" />
     <PackageReference Include="Stride.Video" Version="4.3.0.2507" />
     <PackageReference Include="Stride.BepuPhysics" Version="4.3.0.2507" />

@@ -261,6 +261,57 @@ public class ChassisBodyRollSystemTests
         Assert.Equal(undampedTorque, dampedTorque, precision: 4);
     }
 
+    [Fact]
+    public void EqualFrontRearCompression_ProducesNoPitchTorque()
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            PitchStiffness = 12000f,
+            PitchDampingCoefficient = 0f,
+        };
+
+        float[] compressions = { 0.02f, 0.02f, 0.02f, 0.02f };
+
+        var torque = ComputePitchTorque(system, compressions);
+
+        Assert.Equal(0f, torque, precision: 4);
+    }
+
+    [Theory]
+    [InlineData(0.05f, 0.05f, 0.01f, 0.01f, 1f)]
+    [InlineData(0.01f, 0.01f, 0.05f, 0.05f, -1f)]
+    public void FrontRearCompressionBias_ProducesCorrectPitchSign(float fl, float fr, float rl, float rr, float expectedSign)
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            PitchStiffness = 12000f,
+            PitchDampingCoefficient = 0f,
+        };
+
+        float[] compressions = { fl, fr, rl, rr };
+        var torque = ComputePitchTorque(system, compressions);
+
+        Assert.True(MathF.Sign(torque) == MathF.Sign(expectedSign), $"Expected pitch sign {expectedSign}, got {torque}");
+    }
+
+    [Fact]
+    public void PitchDamping_OpposesPositivePitchRate()
+    {
+        var system = new ChassisBodyRollSystem
+        {
+            PitchStiffness = 12000f,
+            PitchDampingCoefficient = 1500f,
+        };
+
+        float[] compressions = { 0.04f, 0.04f, 0.01f, 0.01f };
+
+        var undampedTorque = ComputePitchTorque(system, compressions);
+        var dampedTorque = ComputePitchTorqueWithDamping(system, compressions, pitchRate: 2f);
+
+        Assert.True(dampedTorque < undampedTorque,
+            $"Positive pitch rate should reduce torque: damped {dampedTorque}, undamped {undampedTorque}");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -302,5 +353,18 @@ public class ChassisBodyRollSystemTests
         }
 
         return ComputeRollTorque(system, compressions);
+    }
+
+    private static float ComputePitchTorque(ChassisBodyRollSystem system, float[] compressions)
+    {
+        var frontAverage = (compressions[VehicleDynamicsSystem.FL] + compressions[VehicleDynamicsSystem.FR]) * 0.5f;
+        var rearAverage = (compressions[VehicleDynamicsSystem.RL] + compressions[VehicleDynamicsSystem.RR]) * 0.5f;
+        return (frontAverage - rearAverage) * system.PitchStiffness;
+    }
+
+    private static float ComputePitchTorqueWithDamping(ChassisBodyRollSystem system, float[] compressions, float pitchRate)
+    {
+        var baseTorque = ComputePitchTorque(system, compressions);
+        return baseTorque - pitchRate * system.PitchDampingCoefficient;
     }
 }

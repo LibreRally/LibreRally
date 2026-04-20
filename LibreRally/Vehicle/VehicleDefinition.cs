@@ -115,6 +115,9 @@ public class VehicleDefinition
     /// </summary>
     public Dictionary<string, float> Vars { get; } = new(System.StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Setup-variable metadata from the active BeamNG parts.</summary>
+    public List<JBeamVariableDefinition> SetupVariables { get; init; } = new();
+
     /// <summary>Powertrain device graph assembled from active parts.</summary>
     public List<JBeamPowertrainDevice> PowertrainDevices { get; init; } = new();
 

@@ -56,6 +56,27 @@ public class BeamNgTyreAndTractionMetadataTests
     }
 
     [Fact]
+    public void ParsePressureWheels_ParsesSteerAxisMetadata()
+    {
+        const string jbeam = """
+{
+  "test_suspension": {
+    "pressureWheels": [
+      ["name", "hubGroup", "group", "node1:", "node2:", "nodeS", "nodeArm:", "wheelDir"],
+      ["FL", "hub", "group", "n1", "n2", "nS", "arm", 1, { "steerAxisUp:": "upNode", "steerAxisDown:": "downNode" }]
+    ]
+  }
+}
+""";
+
+        var part = Assert.Single(JBeamParser.Parse(jbeam));
+        var pressureWheel = Assert.Single(part.PressureWheels);
+
+        Assert.Equal("upNode", pressureWheel.SteerAxisUp);
+        Assert.Equal("downNode", pressureWheel.SteerAxisDown);
+    }
+
+    [Fact]
     public void ParsePart_ParsesTopLevelGearRatio()
     {
         const string jbeam = """

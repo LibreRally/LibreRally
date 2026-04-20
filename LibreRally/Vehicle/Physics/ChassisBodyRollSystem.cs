@@ -5,15 +5,21 @@ using Stride.Core.Mathematics;
 namespace LibreRally.Vehicle.Physics;
 
 /// <summary>
-/// Computes chassis body roll torque from left/right suspension compression differences.
+/// Computes chassis body attitude torque from suspension compression differences.
 ///
 /// <para>For each axle the compression delta between left and right wheels generates a
 /// roll moment about the vehicle's longitudinal axis:
 /// <code>
 ///   τ_roll = (compression_left − compression_right) × rollStiffness
 /// </code>
-/// The resulting torque is applied as an angular impulse to the chassis body each
-/// physics step, producing realistic body lean during cornering.</para>
+/// The average front-versus-rear compression difference also generates a pitch moment
+/// about the vehicle's lateral axis:
+/// <code>
+///   τ_pitch = (avgFrontCompression − avgRearCompression) × pitchStiffness
+/// </code>
+/// The resulting torques are applied as angular impulses to the chassis body each
+/// physics step, producing visible body lean and dive/squat from the measured suspension
+/// state rather than from arbitrary visual offsets.</para>
 ///
 /// <para>Design constraints:
 /// <list type="bullet">
@@ -36,6 +42,12 @@ public struct ChassisBodyRollSystem
     /// <summary>Viscous roll damping coefficient (N·m·s/rad). Resists rate of roll change to prevent oscillation.</summary>
     public float RollDampingCoefficient;
 
+    /// <summary>Pitch stiffness (N·m/m). Torque per metre of front-vs-rear average compression difference.</summary>
+    public float PitchStiffness;
+
+    /// <summary>Viscous pitch damping coefficient (N·m·s/rad). Resists dive/squat oscillation.</summary>
+    public float PitchDampingCoefficient;
+
     /// <summary>
     /// Computes and applies chassis body roll torque from suspension compression differences.
     ///
@@ -44,12 +56,18 @@ public struct ChassisBodyRollSystem
     /// </summary>
     /// <param name="chassisBody">BEPU rigid body for the chassis.</param>
     /// <param name="chassisForward">Unit vector along the chassis longitudinal (forward) axis in world space.</param>
+    /// <param name="chassisRight">Unit vector along the chassis lateral (right) axis in world space.</param>
     /// <param name="suspensionCompressions">Per-wheel suspension compression (m). Indexed by <see cref="VehicleDynamicsSystem"/> wheel constants.</param>
+    /// <param name="rollAccelerationTorque">Additional roll moment (N·m) from lateral acceleration/load transfer of the sprung mass.</param>
+    /// <param name="pitchAccelerationTorque">Additional pitch moment (N·m) from longitudinal acceleration/load transfer of the sprung mass.</param>
     /// <param name="dt">Physics timestep in seconds.</param>
     public void Apply(
         BodyComponent chassisBody,
         Vector3 chassisForward,
+        Vector3 chassisRight,
         ReadOnlySpan<float> suspensionCompressions,
+        float rollAccelerationTorque,
+        float pitchAccelerationTorque,
         float dt)
     {
         if (dt < 1e-6f)
@@ -68,7 +86,8 @@ public struct ChassisBodyRollSystem
         // Total roll torque about the longitudinal axis (N·m).
         // Positive delta (left more compressed) → positive torque along +forward (+Z) → chassis rolls left.
         var rollTorque = deltaFront * FrontRollStiffness
-                       + deltaRear * RearRollStiffness;
+                       + deltaRear * RearRollStiffness
+                       + rollAccelerationTorque;
 
         // Viscous damping: oppose the current roll-rate component along the forward axis.
         if (RollDampingCoefficient > 0f)
@@ -78,16 +97,32 @@ public struct ChassisBodyRollSystem
             rollTorque -= rollRate * RollDampingCoefficient;
         }
 
-        if (MathF.Abs(rollTorque) < 1e-4f)
+        var frontAverageCompression = (suspensionCompressions[VehicleDynamicsSystem.FL]
+                                     + suspensionCompressions[VehicleDynamicsSystem.FR]) * 0.5f;
+        var rearAverageCompression = (suspensionCompressions[VehicleDynamicsSystem.RL]
+                                    + suspensionCompressions[VehicleDynamicsSystem.RR]) * 0.5f;
+        var pitchTorque = (frontAverageCompression - rearAverageCompression) * PitchStiffness
+                        + pitchAccelerationTorque;
+
+        if (PitchDampingCoefficient > 0f)
+        {
+            var angularVelocity = chassisBody.AngularVelocity;
+            var pitchRate = Vector3.Dot(angularVelocity, chassisRight);
+            pitchTorque -= pitchRate * PitchDampingCoefficient;
+        }
+
+        if (MathF.Abs(rollTorque) < 1e-4f && MathF.Abs(pitchTorque) < 1e-4f)
         {
             return;
         }
 
-        // Convert torque to angular impulse (L = τ × dt), applied about the forward axis.
-        // The body's inertia tensor determines the resulting angular velocity change.
+        // Convert torque to angular impulse (L = τ × dt). Roll acts about the chassis
+        // forward axis, and positive pitch torque acts about the right axis so that
+        // greater front compression produces a nose-down response.
         var rollImpulse = chassisForward * (rollTorque * dt);
+        var pitchImpulse = chassisRight * (pitchTorque * dt);
 
         chassisBody.Awake = true;
-        chassisBody.ApplyAngularImpulse(rollImpulse);
+        chassisBody.ApplyAngularImpulse(rollImpulse + pitchImpulse);
     }
 }

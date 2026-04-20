@@ -22,20 +22,42 @@ public class BasicCameraController : SyncScript
     private float yaw;
     private float pitch;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether gamepad input is enabled for this camera.
+    /// </summary>
     public bool Gamepad { get; set; } = false;
 
+    /// <summary>
+    /// Gets or sets the base movement speed when using the keyboard.
+    /// </summary>
     public Vector3 KeyboardMovementSpeed { get; set; } = new Vector3(5.0f);
 
+    /// <summary>
+    /// Gets or sets the base movement speed when using touch input.
+    /// </summary>
     public Vector3 TouchMovementSpeed { get; set; } = new Vector3(0.7f, 0.7f, 0.3f);
 
+    /// <summary>
+    /// Gets or sets the multiplier applied to movement speed when the speed boost modifier is active.
+    /// </summary>
     public float SpeedFactor { get; set; } = 5.0f;
 
+    /// <summary>
+    /// Gets or sets the base rotation speed when using the keyboard.
+    /// </summary>
     public Vector2 KeyboardRotationSpeed { get; set; } = new Vector2(3.0f);
 
+    /// <summary>
+    /// Gets or sets the base rotation speed when using the mouse.
+    /// </summary>
     public Vector2 MouseRotationSpeed { get; set; } = new Vector2(1.0f, 1.0f);
 
+    /// <summary>
+    /// Gets or sets the base rotation speed when using touch input.
+    /// </summary>
     public Vector2 TouchRotationSpeed { get; set; } = new Vector2(1.0f, 0.7f);
 
+    /// <inheritdoc/>
     public override void Start()
     {
         base.Start();

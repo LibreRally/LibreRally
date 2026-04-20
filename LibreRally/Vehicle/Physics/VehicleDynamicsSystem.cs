@@ -191,8 +191,22 @@ public sealed class VehicleDynamicsSystem
         // ── 3. Compute anti-roll bar forces ──────────────────────────────────
         ComputeAntiRollForces(suspensionCompressions);
 
-        // ── 3b. Chassis body roll torque from suspension compression difference ─
-        BodyRoll.Apply(chassisBody, forwardDir, suspensionCompressions, dt);
+        // ── 3b. Chassis body attitude torque from suspension compression and sprung-mass acceleration ─
+        // Load transfer creates a body moment M = m * a * h about the chassis axes even before
+        // the compression-delta term becomes large enough to be visually obvious in the suspension.
+        // Feeding that moment into the attitude system makes braking dive and cornering lean show up
+        // earlier and more like a sprung body, while still letting suspension compression and damping
+        // shape the final response.
+        var rollAccelerationTorque = lateralAccel * VehicleMass * CgHeight;
+        var pitchAccelerationTorque = -longitudinalAccel * VehicleMass * CgHeight;
+        BodyRoll.Apply(
+            chassisBody,
+            forwardDir,
+            rightDir,
+            suspensionCompressions,
+            rollAccelerationTorque,
+            pitchAccelerationTorque,
+            dt);
 
         // ── 4. Split engine torque through drivetrain ────────────────────────
         ComputeDrivetrainTorque(engineTorqueAtWheels);
@@ -485,7 +499,9 @@ public sealed class VehicleDynamicsSystem
 
             var forceWorld = wheelForward * fx + wheelRight * fy;
             var impulse = forceWorld * dt;
-            var contactOffset = wheelPositions[i] - chassisPosition;
+            var tyreRadius = TyreModels[i]?.Radius ?? 0.305f;
+            var contactPatchPosition = wheelPositions[i] - wheelUp * MathF.Max(tyreRadius, 0.1f);
+            var contactOffset = contactPatchPosition - chassisPosition;
 
             chassisBody.Awake = true;
             chassisBody.ApplyImpulse(impulse, contactOffset);

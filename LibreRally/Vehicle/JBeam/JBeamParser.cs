@@ -122,7 +122,7 @@ public static class JBeamParser
                     continue;
                 }
 
-                ParseVariables(partProp.Value, vars);
+                ParseVariables(partProp.Value, vars, null);
             }
 
             return vars;
@@ -320,6 +320,7 @@ public static class JBeamParser
             Beams = ParseBeams(obj),
             FlexBodies = ParseFlexBodies(obj),
             Variables = ParseVariables(obj),
+            VariableDefinitions = ParseVariableDefinitions(obj),
             PowertrainDevices = ParsePowertrain(obj),
             PressureWheels = ParsePressureWheels(obj),
             PressureWheelOptions = ParsePressureWheelOptionsDefinition(obj),
@@ -745,11 +746,21 @@ public static class JBeamParser
     private static Dictionary<string, float> ParseVariables(JsonElement obj)
     {
         var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        ParseVariables(obj, variables);
+        ParseVariables(obj, variables, null);
         return variables;
     }
 
-    private static void ParseVariables(JsonElement obj, Dictionary<string, float> variables)
+    private static List<JBeamVariableDefinition> ParseVariableDefinitions(JsonElement obj)
+    {
+        var definitions = new List<JBeamVariableDefinition>();
+        ParseVariables(obj, null, definitions);
+        return definitions;
+    }
+
+    private static void ParseVariables(
+        JsonElement obj,
+        Dictionary<string, float>? variables,
+        List<JBeamVariableDefinition>? definitions)
     {
         if (!obj.TryGetProperty("variables", out var arr) || arr.ValueKind != JsonValueKind.Array)
         {
@@ -760,7 +771,7 @@ public static class JBeamParser
         var previousVars = _vars;
         try
         {
-            _vars = variables;
+            _vars = variables ?? previousVars;
             foreach (var elem in arr.EnumerateArray())
             {
                 if (elem.ValueKind != JsonValueKind.Array)
@@ -787,13 +798,48 @@ public static class JBeamParser
                 }
 
                 var name = rawName.TrimStart('$');
-                variables[name] = GetFloat(items[4]);
+                var defaultValue = GetFloat(items[4]);
+                variables?[name] = defaultValue;
+                if (definitions == null)
+                {
+                    continue;
+                }
+
+                var options = items.Count > 9 && items[9].ValueKind == JsonValueKind.Object ? items[9] : default;
+                definitions.Add(new JBeamVariableDefinition
+                {
+                    Name = name,
+                    Type = items.Count > 1 ? SafeGetString(items[1]) : "",
+                    Unit = items.Count > 2 ? SafeGetString(items[2]) : "",
+                    Category = items.Count > 3 ? SafeGetString(items[3]) : "",
+                    DefaultValue = defaultValue,
+                    MinValue = items.Count > 5 ? GetFloat(items[5]) : defaultValue,
+                    MaxValue = items.Count > 6 ? GetFloat(items[6]) : defaultValue,
+                    Title = items.Count > 7 ? SafeGetString(items[7]) : "",
+                    Description = items.Count > 8 ? SafeGetString(items[8]) : "",
+                    SubCategory = TryGetString(options, "subCategory") ?? string.Empty,
+                    MinDisplayValue = TryGetOptionalFloat(options, "minDis", null),
+                    MaxDisplayValue = TryGetOptionalFloat(options, "maxDis", null),
+                    StepDisplayValue = TryGetOptionalFloat(options, "stepDis", null),
+                });
             }
         }
         finally
         {
             _vars = previousVars;
         }
+    }
+
+    private static string? TryGetString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return property.GetString();
     }
 
     private static List<JBeamPowertrainDevice> ParsePowertrain(JsonElement obj)
@@ -916,6 +962,7 @@ public static class JBeamParser
                 continue;
             }
 
+            var options = items.Count > 8 && items[8].ValueKind == JsonValueKind.Object ? items[8] : default;
             pressureWheels.Add(new JBeamPressureWheel(
                 Name: name,
                 WheelKey: wheelKey,
@@ -925,7 +972,9 @@ public static class JBeamParser
                 Node2: SafeGetString(items[4]),
                 // pressureWheels schema: [name, hubGroup, group, node1, node2, nodeS, nodeArm, wheelDir]
                 NodeArm: SafeGetString(items[6]),
-                WheelDir: GetFloat(items[7])));
+                WheelDir: GetFloat(items[7]),
+                SteerAxisUp: TryGetString(options, "steerAxisUp:") ?? TryGetString(options, "steerAxisUp") ?? string.Empty,
+                SteerAxisDown: TryGetString(options, "steerAxisDown:") ?? TryGetString(options, "steerAxisDown") ?? string.Empty));
         }
 
         return pressureWheels;
@@ -1553,9 +1602,14 @@ public static class JBeamParser
         return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : fallback;
     }
 
-    private static float? TryGetOptionalFloat(JsonElement obj, string propertyName)
+    private static float? TryGetOptionalFloat(JsonElement obj, string propertyName, float? fallback = null)
     {
-        return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : null;
+        if (obj.ValueKind != JsonValueKind.Object)
+        {
+            return fallback;
+        }
+
+        return obj.TryGetProperty(propertyName, out var element) ? GetFloat(element) : fallback;
     }
 
     private static string NormalizeSectionKey(string raw)
