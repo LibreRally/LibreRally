@@ -63,7 +63,7 @@ public record JBeamBeam(
     string Id2,
     BeamProperties Properties);
 
-/// <summary>Maps a mesh object name to one or more node groups that drive it.</summary>
+/// <summary>Maps a <paramref name="Mesh" /> object name to one or more node <paramref name="Groups" /> that drive it.</summary>
 public record JBeamFlexBody(
     string Mesh,
     List<string> Groups,
@@ -71,7 +71,7 @@ public record JBeamFlexBody(
     System.Numerics.Vector3? Rotation = null,
     System.Numerics.Vector3? Scale = null);
 
-/// <summary>A slot definition: type, default filler, description.</summary>
+/// <summary>A slot definition: <paramref name="Type" />, <paramref name="Default" /> filler, <paramref name="Description" />.</summary>
 public record JBeamSlot(
     string Type,
     string Default,
@@ -92,26 +92,26 @@ public record JBeamPowertrainDevice(
     float? LsdRevLockCoef);
 
 /// <summary>Properties for a pressure-based wheel (BeamNG-style wheel/tyre combo).</summary>
+/// <param name="Name">Internal name of the wheel.</param>
+/// <param name="WheelKey">Lookup key for the wheel.</param>
+/// <param name="HubGroup">Node <paramref name="Group" /> for the hub.</param>
+/// <param name="Group">Node group for the tyre.</param>
+/// <param name="Node1">Primary node ID.</param>
+/// <param name="Node2">Secondary node ID.</param>
+/// <param name="NodeArm">Arm node ID.</param>
+/// <param name="WheelDir">Wheel direction (1.0 or -1.0).</param>
+/// <param name="SteerAxisUp">Upper steering axis node ID.</param>
+/// <param name="SteerAxisDown">Lower steering axis node ID.</param>
 public record JBeamPressureWheel(
-    /// <summary>Internal name of the wheel.</summary>
     string Name,
-    /// <summary>Lookup key for the wheel.</summary>
     string WheelKey,
-    /// <summary>Node group for the hub.</summary>
     string HubGroup,
-    /// <summary>Node group for the tyre.</summary>
     string Group,
-    /// <summary>Primary node ID.</summary>
     string Node1,
-    /// <summary>Secondary node ID.</summary>
     string Node2,
-    /// <summary>Arm node ID.</summary>
     string NodeArm,
-    /// <summary>Wheel direction (1.0 or -1.0).</summary>
     float WheelDir,
-    /// <summary>Upper steering axis node ID.</summary>
     string SteerAxisUp = "",
-    /// <summary>Lower steering axis node ID.</summary>
     string SteerAxisDown = "");
 
 /// <summary>Options for pressure-based wheels, influence tyre physics and dimensions.</summary>
@@ -203,7 +203,7 @@ public sealed class JBeamVariableDefinition
     public float? StepDisplayValue { get; init; }
 }
 
-/// <summary>A point on a torque curve.</summary>
+/// <summary>A point on a <paramref name="Torque" /> curve.</summary>
 /// <param name="Rpm">Engine RPM.</param>
 /// <param name="Torque">Torque in Nm.</param>
 public record JBeamTorquePoint(float Rpm, float Torque);

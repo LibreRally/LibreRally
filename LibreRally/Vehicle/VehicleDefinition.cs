@@ -30,7 +30,7 @@ public record AssembledBeam(
 
 /// <summary>
 /// A named group of mesh objects and the node groups they are driven by.
-/// Position is the absolute BeamNG-space origin of the mesh (when provided in the flexbody row).
+/// <paramref name="Position" /> is the absolute BeamNG-space origin of the mesh (when provided in the flexbody row).
 /// </summary>
 public record AssembledFlexBody(
     string MeshName,
@@ -42,7 +42,7 @@ public record AssembledFlexBody(
     string SourceSlotType = "");
 
 /// <summary>
-/// Assembled options for a pressure-based wheel.
+/// Assembled <paramref name="Options" /> for a pressure-based wheel.
 /// </summary>
 /// <param name="SourcePartName">The name of the source JBeam part.</param>
 /// <param name="SourceSlotType">The slot type of the source JBeam part.</param>
@@ -81,8 +81,8 @@ public class VehiclePart
     /// <summary>Gets the name of the part.</summary>
     public string Name { get; init; } = "";
 
-    /// <summary>True when this part should become a separate physics body that can detach.</summary>
-    public bool Detachable { get; set; }
+	/// <summary><see langword="true" /> when this part should become a separate physics body that can detach.</summary>
+	public bool Detachable { get; set; }
 
     /// <summary>Node IDs that belong exclusively to this part (not shared with chassis).</summary>
     public List<string> ExclusiveNodeIds { get; init; } = new();

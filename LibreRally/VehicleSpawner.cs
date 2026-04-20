@@ -37,7 +37,7 @@ public enum PauseMenuAction
 }
 
 /// <summary>
-/// Represents an entry in the pause menu, associating a UI item with an action.
+/// Represents an entry in the pause menu, associating a UI <paramref name="Item" /> with an <paramref name="Action" />.
 /// </summary>
 /// <param name="Item">The UI item descriptor.</param>
 /// <param name="Action">The action to execute when selected.</param>

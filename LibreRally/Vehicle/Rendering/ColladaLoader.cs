@@ -7,7 +7,7 @@ using System.Xml.Linq;
 
 namespace LibreRally.Vehicle.Rendering;
 
-/// <summary>Vertex with position, normal, and UV coordinates.</summary>
+/// <summary>Vertex with <paramref name="Position" />, <paramref name="Normal" />, and UV coordinates.</summary>
 public record ColladaVertex(Vector3 Position, Vector3 Normal, Vector2 TexCoord);
 
 /// <summary>A single mesh sub-object from a Collada file, identified by geometry name.</summary>

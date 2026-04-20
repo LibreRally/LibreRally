@@ -150,11 +150,11 @@ public sealed class LibreRallyGame : Game
 }
 
 /// <summary>
-/// Holds the results of a code-first scene setup.
+/// Holds the results of a code-first <paramref name="Scene" /> setup.
 /// </summary>
 /// <param name="Scene">The created scene.</param>
 /// <param name="MainCamera">The main camera component.</param>
-/// <param name="GraphicsCompositor">The graphics compositor used by the scene.</param>
+/// <param name="GraphicsCompositor">The graphics compositor used by the <paramref name="Scene" />.</param>
 public sealed record CodeFirstSceneSetup(
     Scene Scene,
     CameraComponent MainCamera,
