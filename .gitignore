@@ -12,6 +12,8 @@ _ReSharper*
 [Bb]in/
 obj/
 Cache/
+/_site/
+/api/
 LibreRally/Resources/BeamNG Vehicles/*
 !LibreRally/Resources/BeamNG Vehicles/basic_car/
 !LibreRally/Resources/BeamNG Vehicles/basic_car/**
