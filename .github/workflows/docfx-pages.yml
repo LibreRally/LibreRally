@@ -46,6 +46,12 @@ jobs:
       - name: Build documentation site
         run: docfx docfx.json
 
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docfx-site
+          path: ${{ github.workspace }}/_site
+
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
@@ -59,21 +65,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v4
         with:
-          dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: LibreRally/LibreRally.csproj
-
-      - name: Install DocFX
-        run: dotnet tool install --global docfx --version 2.78.5
-
-      - name: Build documentation site
-        run: docfx docfx.json
+          name: docfx-site
+          path: ${{ github.workspace }}/_site
 
       - name: Set up Pages
         uses: actions/configure-pages@v5
