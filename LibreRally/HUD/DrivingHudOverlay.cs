@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using LibreRally.Race;
 using LibreRally.Vehicle;
@@ -32,7 +33,7 @@ public sealed class DrivingHudOverlay : GameSystemBase
     private static readonly Color InfoColor = new(118, 214, 255, 230);
     private static readonly Color BarTrackColor = new(16, 18, 22, 194);
     private static readonly Color BarInnerColor = new(42, 46, 54, 205);
-    private static readonly Dictionary<Color, SolidBrush> BrushCache = [];
+    private static readonly ConcurrentDictionary<Color, SolidBrush> BrushCache = [];
 
     private sealed class HudBar
     {
@@ -792,13 +793,6 @@ public sealed class DrivingHudOverlay : GameSystemBase
 
     private static SolidBrush Brush(Color color)
     {
-        if (BrushCache.TryGetValue(color, out var brush))
-        {
-            return brush;
-        }
-
-        brush = new SolidBrush(color);
-        BrushCache[color] = brush;
-        return brush;
+        return BrushCache.GetOrAdd(color, static c => new SolidBrush(c));
     }
 }

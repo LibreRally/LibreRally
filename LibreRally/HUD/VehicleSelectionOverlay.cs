@@ -288,14 +288,10 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         for (var i = 0; i < _buttons.Count; i++)
         {
             var isSelected = i == Math.Clamp(_selectedIndex, 0, Math.Max(_buttons.Count - 1, 0));
-            var colors = isSelected
-                ? (Title: ValueColor, Detail: ValueColor)
-                : (Title: TitleColor, Detail: CopyColor);
-
             var (button, title, detail) = _buttons[i];
             button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
-            title.TextColor = colors.Title;
-            detail.TextColor = colors.Detail;
+            title.TextColor = isSelected ? ValueColor : TitleColor;
+            detail.TextColor = isSelected ? ValueColor : CopyColor;
         }
     }
 
