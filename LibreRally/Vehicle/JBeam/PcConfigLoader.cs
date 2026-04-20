@@ -88,6 +88,9 @@ public static class PcConfigLoader
     /// Finds the best .pc file to use from a vehicle folder.
     /// Priority: exact name match → "rally_pro_asphalt" → first .pc file found.
     /// </summary>
+    /// <param name="vehicleFolder">Vehicle folder to scan for <c>.pc</c> files.</param>
+    /// <param name="preferredName">Optional preferred config filename or basename.</param>
+    /// <returns>The selected config path when one is found; otherwise <see langword="null"/>.</returns>
     public static string? FindBestConfig(string vehicleFolder, string? preferredName = null)
     {
         var pcFiles = Directory.GetFiles(vehicleFolder, "*.pc", SearchOption.TopDirectoryOnly);

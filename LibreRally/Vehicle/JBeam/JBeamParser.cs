@@ -16,7 +16,7 @@ namespace LibreRally.Vehicle.JBeam;
 ///   - Optional commas between array/object elements (any adjacent values)
 ///   - Trailing commas before } or ]
 ///
-/// <see cref="PreprocessJBeam"/> normalises the text to valid JSON before parsing.
+/// The private preprocessing stage normalises the text to valid JSON before parsing.
 /// </summary>
 public static class JBeamParser
 {
@@ -34,6 +34,7 @@ public static class JBeamParser
     /// Sets the active variable table for the current thread. Any $varName values
     /// encountered during parsing will be resolved from this dictionary.
     /// </summary>
+    /// <param name="vars">Variable map for the current parse, or <see langword="null"/> to clear it.</param>
     public static void SetVars(Dictionary<string, float>? vars) => _vars = vars;
 
     /// <summary>Parses a .jbeam file from the given path into a list of <see cref="JBeamPart"/> objects.</summary>
@@ -68,6 +69,7 @@ public static class JBeamParser
     /// <summary>Parses jbeam text into a list of <see cref="JBeamPart"/> objects.</summary>
     /// <param name="jbeamText">The raw jbeam string to parse.</param>
     /// <returns>A list of parsed parts.</returns>
+    /// <exception cref="FormatException">Thrown when the preprocessed text cannot be parsed as JSON.</exception>
     public static List<JBeamPart> Parse(string jbeamText)
     {
         // Some jbeam files contain multiple top-level objects — merge them before preprocessing.

@@ -7,18 +7,28 @@ using System.Xml.Linq;
 
 namespace LibreRally.Vehicle.Rendering;
 
-/// <summary>Vertex with <paramref name="Position" />, <paramref name="Normal" />, and UV coordinates.</summary>
+/// <summary>Vertex containing model-space coordinates, orientation, and UV coordinates.</summary>
+/// <param name="Position">Vertex position in model space.</param>
+/// <param name="Normal">Vertex normal in model space.</param>
+/// <param name="TexCoord">Primary texture coordinate.</param>
 public record ColladaVertex(Vector3 Position, Vector3 Normal, Vector2 TexCoord);
 
 /// <summary>A single mesh sub-object from a Collada file, identified by geometry name.</summary>
 public class ColladaMesh
 {
+    /// <summary>Gets the mesh name exposed to the import pipeline.</summary>
     public string Name { get; init; } = "";
+    /// <summary>Gets the source geometry identifier from the Collada file.</summary>
     public string GeometryName { get; init; } = "";
+    /// <summary>Gets the material symbol assigned to the mesh.</summary>
     public string MaterialName { get; init; } = "";
+    /// <summary>Gets the originating scene node name.</summary>
     public string SceneNodeName { get; init; } = "";
+    /// <summary>Gets whether the scene transform is already baked into the vertices.</summary>
     public bool HasBakedTransform { get; init; }
+    /// <summary>Gets the loaded mesh vertices.</summary>
     public List<ColladaVertex> Vertices { get; init; } = new();
+    /// <summary>Gets the loaded triangle indices.</summary>
     public List<int> Indices { get; init; } = new();
 }
 
@@ -32,6 +42,10 @@ public static class ColladaLoader
     private static readonly XNamespace Ns = "http://www.collada.org/2005/11/COLLADASchema";
     private sealed record ColladaGeometry(string Id, string Name, List<ColladaMesh> Meshes);
 
+    /// <summary>Loads Collada meshes from the given <c>.dae</c> file.</summary>
+    /// <param name="daeFilePath">Absolute path to the Collada file to load.</param>
+    /// <returns>The meshes extracted from the file after scene filtering.</returns>
+    /// <exception cref="InvalidDataException">Thrown when the Collada file is missing required root data.</exception>
     public static List<ColladaMesh> Load(string daeFilePath)
     {
         var doc = XDocument.Load(daeFilePath);
@@ -567,6 +581,8 @@ public static class ColladaLoader
     /// The file path stored in the DAE may be absolute from another machine — only the filename
     /// component is returned so callers can do a local lookup.
     /// </summary>
+    /// <param name="daeFilePath">Absolute path to the source Collada file.</param>
+    /// <returns>A dictionary of material symbols to texture filenames.</returns>
     public static Dictionary<string, string> LoadTextureMap(string daeFilePath)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

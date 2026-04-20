@@ -18,7 +18,10 @@ public static class JBeamAssembler
 {
     private sealed record ResolvedPartInstance(JBeamPart Part, Vector3 VisualOffset);
 
-    /// <summary>Loads a vehicle from a folder and all sub-folders (for RLA_Evo Jbeams/ layout).</summary>
+    /// <summary>Loads a vehicle from a single folder and its sub-folders.</summary>
+    /// <param name="vehicleFolder">Primary vehicle folder that contains JBeam files.</param>
+    /// <param name="pcConfig">Optional BeamNG PC configuration to apply while assembling.</param>
+    /// <returns>The assembled vehicle definition.</returns>
     public static VehicleDefinition Assemble(string vehicleFolder, PcConfig? pcConfig = null)
     {
         return Assemble([vehicleFolder], vehicleFolder, pcConfig);
@@ -28,6 +31,11 @@ public static class JBeamAssembler
     /// Loads a vehicle from one or more search folders, using <paramref name="vehicleFolder"/>
     /// as the primary folder for diagnostics and config lookup.
     /// </summary>
+    /// <param name="searchFolders">Candidate folders that may contain JBeam files for the active vehicle.</param>
+    /// <param name="vehicleFolder">Primary vehicle folder used for diagnostics and content resolution.</param>
+    /// <param name="pcConfig">Optional BeamNG PC configuration to apply while assembling.</param>
+    /// <returns>The assembled vehicle definition.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no root <c>main</c> JBeam part can be found.</exception>
     public static VehicleDefinition Assemble(
         IEnumerable<string> searchFolders,
         string vehicleFolder,

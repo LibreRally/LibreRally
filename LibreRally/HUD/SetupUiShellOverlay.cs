@@ -126,7 +126,9 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         UpdateOrder = 9997;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the garage setup overlay and creates its root desktop widgets.
+    /// </summary>
     public override void Initialize()
     {
         base.Initialize();
@@ -172,7 +174,10 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         RebuildRoot();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Processes setup-overlay navigation input for the current frame.
+    /// </summary>
+    /// <param name="gameTime">Stride timing data for the current frame.</param>
     public override void Update(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null)
@@ -183,7 +188,10 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         HandleNavigationInput();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Draws the garage setup overlay when it is visible.
+    /// </summary>
+    /// <param name="gameTime">Stride timing data for the current frame.</param>
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _desktop == null)

@@ -128,7 +128,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
         UpdateOrder = 9995;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes the pause-menu overlay and desktop UI.
+    /// </summary>
     public override void Initialize()
     {
         base.Initialize();
@@ -153,7 +155,10 @@ public sealed class PauseMenuOverlay : GameSystemBase
         base.Destroy();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Draws the pause-menu overlay when it is visible.
+    /// </summary>
+    /// <param name="gameTime">Stride timing data for the current frame.</param>
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _desktop == null)

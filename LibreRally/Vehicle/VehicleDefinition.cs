@@ -6,8 +6,13 @@ namespace LibreRally.Vehicle;
 
 /// <summary>
 /// A single assembled node: a named point-mass in the vehicle graph.
-/// Position is in BeamNG coordinate space (Y-forward, Z-up).
+/// Positions use BeamNG coordinate space (Y-forward, Z-up).
 /// </summary>
+/// <param name="Id">Unique node identifier.</param>
+/// <param name="Position">Node position in BeamNG space.</param>
+/// <param name="Weight">Node mass in kilograms.</param>
+/// <param name="Groups">Node groups assigned to the node.</param>
+/// <param name="Collision">Whether the node participates in collision.</param>
 public record AssembledNode(
     string Id,
     Vector3 Position,
@@ -18,6 +23,14 @@ public record AssembledNode(
 /// <summary>
 /// A single assembled beam connecting two nodes.
 /// </summary>
+/// <param name="Id1">Identifier of the first node.</param>
+/// <param name="Id2">Identifier of the second node.</param>
+/// <param name="Spring">Resolved beam spring stiffness.</param>
+/// <param name="Damp">Resolved beam damping coefficient.</param>
+/// <param name="DeformThreshold">Resolved deformation threshold.</param>
+/// <param name="BreakStrength">Resolved break strength.</param>
+/// <param name="BeamType">BeamNG beam type token.</param>
+/// <param name="DeformGroup">Optional deformation group name.</param>
 public record AssembledBeam(
     string Id1,
     string Id2,
@@ -30,8 +43,15 @@ public record AssembledBeam(
 
 /// <summary>
 /// A named group of mesh objects and the node groups they are driven by.
-/// <paramref name="Position" /> is the absolute BeamNG-space origin of the mesh (when provided in the flexbody row).
+/// When present, the transform offset uses the absolute BeamNG-space origin from the flexbody row.
 /// </summary>
+/// <param name="MeshName">Mesh object name from the imported model.</param>
+/// <param name="NodeGroups">Node groups that drive the mesh.</param>
+/// <param name="Position">Optional mesh origin override in BeamNG space.</param>
+/// <param name="Rotation">Optional mesh rotation override in BeamNG space.</param>
+/// <param name="Scale">Optional mesh scale override.</param>
+/// <param name="SourcePartName">Name of the source JBeam part.</param>
+/// <param name="SourceSlotType">Slot type of the source JBeam part.</param>
 public record AssembledFlexBody(
     string MeshName,
     List<string> NodeGroups,
@@ -81,7 +101,7 @@ public class VehiclePart
     /// <summary>Gets the name of the part.</summary>
     public string Name { get; init; } = "";
 
-	/// <summary><see langword="true" /> when this part should become a separate physics body that can detach.</summary>
+	/// <summary>Gets or sets whether this part should become a detachable secondary physics body.</summary>
 	public bool Detachable { get; set; }
 
     /// <summary>Node IDs that belong exclusively to this part (not shared with chassis).</summary>

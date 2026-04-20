@@ -5,18 +5,42 @@ using LibreRally.Vehicle.JBeam;
 
 namespace LibreRally.Vehicle;
 
+/// <summary>Controls when a setup change can be applied to the active vehicle.</summary>
 public enum VehicleSetupApplyMode
 {
+    /// <summary>The change can be applied immediately without rebuilding the vehicle.</summary>
     Live,
+    /// <summary>The change requires reloading vehicle content or JBeam data.</summary>
     Reload,
 }
 
+/// <summary>Identifies the underlying source of a setup entry.</summary>
 public enum VehicleSetupEntryKind
 {
+    /// <summary>The entry maps to a BeamNG setup variable.</summary>
     Variable,
+    /// <summary>The entry maps to tyre pressure for a specific axle.</summary>
     TyrePressure,
 }
 
+/// <summary>Describes a single editable setup field exposed to the garage UI.</summary>
+/// <param name="Id">Stable identifier for the entry.</param>
+/// <param name="ResolvedKey">Resolved variable or override key used at apply time.</param>
+/// <param name="Label">Display label shown in the UI.</param>
+/// <param name="Description">Long-form field description.</param>
+/// <param name="Category">Top-level setup category name.</param>
+/// <param name="SubCategory">Optional subcategory used for sorting or grouping.</param>
+/// <param name="Value">Current setting presented to the player.</param>
+/// <param name="DefaultValue">Original default setting from the vehicle definition.</param>
+/// <param name="MinimumValue">Lowest allowed numeric setting.</param>
+/// <param name="MaximumValue">Highest allowed numeric setting.</param>
+/// <param name="Step">Recommended edit step size.</param>
+/// <param name="Unit">Display unit text.</param>
+/// <param name="MinDisplayValue">Optional alternate minimum shown in the UI.</param>
+/// <param name="MaxDisplayValue">Optional alternate maximum shown in the UI.</param>
+/// <param name="ApplyMode">How the entry is applied to the vehicle.</param>
+/// <param name="Kind">Underlying entry type.</param>
+/// <param name="Axle">Associated axle when the entry is axle-specific.</param>
 public sealed record VehicleSetupEntry(
     string Id,
     string ResolvedKey,
@@ -36,6 +60,12 @@ public sealed record VehicleSetupEntry(
     VehicleSetupEntryKind Kind,
     VehicleSetupAxle Axle);
 
+/// <summary>Groups related setup fields into a UI category.</summary>
+/// <param name="Id">Stable identifier for the category.</param>
+/// <param name="Title">Display title for the category.</param>
+/// <param name="Tagline">Short supporting tagline.</param>
+/// <param name="Description">Long-form category description.</param>
+/// <param name="Entries">Setup entries displayed inside the category.</param>
 public sealed record VehicleSetupCategory(
     string Id,
     string Title,
@@ -43,6 +73,7 @@ public sealed record VehicleSetupCategory(
     string Description,
     IReadOnlyList<VehicleSetupEntry> Entries);
 
+/// <summary>Builds setup-category metadata from resolved vehicle definitions and active overrides.</summary>
 public static class VehicleSetupCatalogBuilder
 {
     private static readonly string[] EffectiveValueSuffixPriority =
@@ -57,6 +88,10 @@ public static class VehicleSetupCatalogBuilder
         "_race",
     ];
 
+    /// <summary>Builds setup categories for the supplied vehicle definition.</summary>
+    /// <param name="definition">Resolved vehicle definition that exposes setup metadata.</param>
+    /// <param name="overrides">Optional live setup overrides already applied to the vehicle.</param>
+    /// <returns>Ordered setup categories ready for UI presentation.</returns>
     public static IReadOnlyList<VehicleSetupCategory> BuildCategories(VehicleDefinition? definition, VehicleSetupOverrides? overrides)
     {
         if (definition == null)

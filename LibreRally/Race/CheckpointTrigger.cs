@@ -30,7 +30,9 @@ public class CheckpointTrigger : StartupScript
 
     private bool _triggered;
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Creates and attaches the trigger volume that reports checkpoint crossings.
+    /// </summary>
     public override void Start()
     {
         var trigger = new Trigger();

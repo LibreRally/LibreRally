@@ -104,6 +104,8 @@ public readonly struct SurfaceProperties
     /// dry tarmac 0.8–1.0, wet 0.2–0.65, icy 0.15.
     /// Microtexture/macrotexture values represent typical UK road aggregate.
     /// </summary>
+    /// <param name="surfaceType">Surface type to resolve.</param>
+    /// <returns>The default physics properties for the requested surface type.</returns>
     public static SurfaceProperties ForType(SurfaceType surfaceType) => surfaceType switch
     {
         SurfaceType.Tarmac => new SurfaceProperties

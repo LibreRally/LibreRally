@@ -388,7 +388,9 @@ public class RallyCarComponent : SyncScript
     private readonly float[] _wheelSurfaceVfxIntensity = new float[VehicleDynamicsSystem.WheelCount];
     private bool _wheelSurfaceVfxInitialized;
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Initializes runtime drivetrain, thermal, and wheel-surface state for the loaded rally car.
+    /// </summary>
     public override void Start()
     {
         _engineRpm = IdleRpm;
@@ -412,7 +414,9 @@ public class RallyCarComponent : SyncScript
         InitializeWheelSurfaceVfx();
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Advances the rally car simulation, input handling, and telemetry for the current frame.
+    /// </summary>
     public override void Update()
     {
         var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;

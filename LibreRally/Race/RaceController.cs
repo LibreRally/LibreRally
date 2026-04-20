@@ -60,7 +60,9 @@ public class RaceController : SyncScript
     /// </summary>
     public event Action? RaceFinished;
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Starts the race countdown and subscribes to checkpoint events.
+    /// </summary>
     public override void Start()
     {
         _countdown = CountdownDuration;
@@ -68,7 +70,9 @@ public class RaceController : SyncScript
             cp.Triggered += OnCheckpointTriggered;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Advances the race countdown and monitors checkpoint completion.
+    /// </summary>
     public override void Update()
     {
         var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;

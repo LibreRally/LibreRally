@@ -578,18 +578,43 @@ public sealed class SetupUiFieldModel
     /// <summary>
     /// Creates a numeric field model.
     /// </summary>
+    /// <param name="id">Stable field identifier.</param>
+    /// <param name="label">Display label shown in the setup UI.</param>
+    /// <param name="description">Long-form helper text for the field.</param>
+    /// <param name="value">Initial numeric value.</param>
+    /// <param name="minimum">Minimum allowed numeric value.</param>
+    /// <param name="maximum">Maximum allowed numeric value.</param>
+    /// <param name="step">Increment step used by the UI.</param>
+    /// <param name="unit">Display unit label.</param>
+    /// <param name="applyMode">How the field is applied to the vehicle.</param>
+    /// <returns>A configured numeric <see cref="SetupUiFieldModel"/>.</returns>
     public static SetupUiFieldModel Numeric(string id, string label, string description, float value, float minimum, float maximum, float step, string unit, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Numeric, applyMode, value, minimum, maximum, step, unit, false, string.Empty, string.Empty, null, 0, null, null, VehicleSetupAxle.Unspecified, value);
 
     /// <summary>
     /// Creates a choice field model.
     /// </summary>
+    /// <param name="id">Stable field identifier.</param>
+    /// <param name="label">Display label shown in the setup UI.</param>
+    /// <param name="description">Long-form helper text for the field.</param>
+    /// <param name="choiceIndex">Initial selected option index.</param>
+    /// <param name="options">Available option labels.</param>
+    /// <param name="applyMode">How the field is applied to the vehicle.</param>
+    /// <returns>A configured choice <see cref="SetupUiFieldModel"/>.</returns>
     public static SetupUiFieldModel Choice(string id, string label, string description, int choiceIndex, IReadOnlyList<string> options, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Choice, applyMode, 0f, 0f, 0f, 0f, string.Empty, false, string.Empty, string.Empty, options, choiceIndex);
 
     /// <summary>
     /// Creates a toggle field model.
     /// </summary>
+    /// <param name="id">Stable field identifier.</param>
+    /// <param name="label">Display label shown in the setup UI.</param>
+    /// <param name="description">Long-form helper text for the field.</param>
+    /// <param name="value">Initial toggle state.</param>
+    /// <param name="onLabel">Text shown for the enabled state.</param>
+    /// <param name="offLabel">Text shown for the disabled state.</param>
+    /// <param name="applyMode">How the field is applied to the vehicle.</param>
+    /// <returns>A configured toggle <see cref="SetupUiFieldModel"/>.</returns>
     public static SetupUiFieldModel Toggle(string id, string label, string description, bool value, string onLabel, string offLabel, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Toggle, applyMode, 0f, 0f, 1f, 1f, string.Empty, value, onLabel, offLabel, null, 0);
 
