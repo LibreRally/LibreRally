@@ -311,6 +311,10 @@ public static class JBeamParser
             }
         }
 
+        var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        var variableDefinitions = new List<JBeamVariableDefinition>();
+        ParseVariables(obj, variables, variableDefinitions);
+
         var part = new JBeamPart
         {
             Name = name,
@@ -319,8 +323,8 @@ public static class JBeamParser
             Nodes = ParseNodes(obj),
             Beams = ParseBeams(obj),
             FlexBodies = ParseFlexBodies(obj),
-            Variables = ParseVariables(obj),
-            VariableDefinitions = ParseVariableDefinitions(obj),
+            Variables = variables,
+            VariableDefinitions = variableDefinitions,
             PowertrainDevices = ParsePowertrain(obj),
             PressureWheels = ParsePressureWheels(obj),
             PressureWheelOptions = ParsePressureWheelOptionsDefinition(obj),
@@ -752,8 +756,9 @@ public static class JBeamParser
 
     private static List<JBeamVariableDefinition> ParseVariableDefinitions(JsonElement obj)
     {
+        var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         var definitions = new List<JBeamVariableDefinition>();
-        ParseVariables(obj, null, definitions);
+        ParseVariables(obj, variables, definitions);
         return definitions;
     }
 

@@ -20,6 +20,11 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
     private static readonly Color TitleColor = new(240, 243, 247, 255);
     private static readonly Color CopyColor = new(183, 193, 205, 255);
     private static readonly Color ValueColor = new(255, 230, 204, 255);
+    private static readonly SolidBrush BackdropBrush = new(BackdropColor);
+    private static readonly SolidBrush ShellBrush = new(ShellColor);
+    private static readonly SolidBrush PanelBrush = new(PanelColor);
+    private static readonly SolidBrush SelectedItemBrush = new(AccentSoftColor);
+    private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
 
     private readonly List<(Button Button, Label Title, Label Detail)> _buttons = [];
     private IReadOnlyList<BeamNgVehicleDescriptor> _vehicles = Array.Empty<BeamNgVehicleDescriptor>();
@@ -120,9 +125,6 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
             return;
         }
 
-        UpdateSelectionStyles();
-        UpdateLabels();
-
         var context = _game.GraphicsContext;
         context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
         _desktop.Render();
@@ -134,7 +136,7 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
 
         var root = new Panel
         {
-            Background = new SolidBrush(BackdropColor),
+            Background = BackdropBrush,
         };
 
         var shellFrame = new Panel
@@ -143,7 +145,7 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
             Height = 620,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidBrush(ShellColor),
+            Background = ShellBrush,
         };
 
         var shell = new VerticalStackPanel
@@ -178,7 +180,7 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         var listFrame = new Panel
         {
             Height = 410,
-            Background = new SolidBrush(PanelColor),
+            Background = PanelBrush,
         };
 
         Widget listWidget;
@@ -287,11 +289,11 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         {
             var isSelected = i == Math.Clamp(_selectedIndex, 0, Math.Max(_buttons.Count - 1, 0));
             var colors = isSelected
-                ? (Background: AccentSoftColor, Title: ValueColor, Detail: ValueColor)
-                : (Background: PanelColor, Title: TitleColor, Detail: CopyColor);
+                ? (Title: ValueColor, Detail: ValueColor)
+                : (Title: TitleColor, Detail: CopyColor);
 
             var (button, title, detail) = _buttons[i];
-            button.Background = new SolidBrush(colors.Background);
+            button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
             title.TextColor = colors.Title;
             detail.TextColor = colors.Detail;
         }

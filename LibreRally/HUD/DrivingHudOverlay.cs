@@ -32,6 +32,7 @@ public sealed class DrivingHudOverlay : GameSystemBase
     private static readonly Color InfoColor = new(118, 214, 255, 230);
     private static readonly Color BarTrackColor = new(16, 18, 22, 194);
     private static readonly Color BarInnerColor = new(42, 46, 54, 205);
+    private static readonly Dictionary<Color, SolidBrush> BrushCache = [];
 
     private sealed class HudBar
     {
@@ -789,5 +790,15 @@ public sealed class DrivingHudOverlay : GameSystemBase
         return PositiveColor;
     }
 
-    private static SolidBrush Brush(Color color) => new(color);
+    private static SolidBrush Brush(Color color)
+    {
+        if (BrushCache.TryGetValue(color, out var brush))
+        {
+            return brush;
+        }
+
+        brush = new SolidBrush(color);
+        BrushCache[color] = brush;
+        return brush;
+    }
 }
