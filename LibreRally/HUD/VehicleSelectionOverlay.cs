@@ -11,6 +11,9 @@ using Stride.Games;
 
 namespace LibreRally.HUD;
 
+/// <summary>
+/// UI overlay for selecting a vehicle from the catalog.
+/// </summary>
 public sealed class VehicleSelectionOverlay : GameSystemBase
 {
     private static readonly Color BackdropColor = new(5, 8, 14, 180);
@@ -36,6 +39,9 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
     private Label? _statusLabel;
     private Label? _selectionLabel;
 
+    /// <summary>
+    /// Gets or sets the list of vehicles available for selection.
+    /// </summary>
     public IReadOnlyList<BeamNgVehicleDescriptor> Vehicles
     {
         get => _vehicles;
@@ -46,6 +52,9 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the index of the currently selected vehicle.
+    /// </summary>
     public int SelectedIndex
     {
         get => _selectedIndex;
@@ -58,6 +67,9 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the vehicle selection overlay is visible.
+    /// </summary>
     public bool OverlayVisible
     {
         get => _overlayVisible;
@@ -68,6 +80,9 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the status text displayed in the overlay.
+    /// </summary>
     public string StatusText
     {
         get => _statusText;
@@ -78,8 +93,15 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Occurs when a vehicle is activated (e.g., confirmed for loading).
+    /// </summary>
     public Action<int>? ItemActivated { get; set; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="VehicleSelectionOverlay"/> class.
+    /// </summary>
+    /// <param name="services">The service registry.</param>
     public VehicleSelectionOverlay(IServiceRegistry services) : base(services)
     {
         Enabled = true;
@@ -88,6 +110,7 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         UpdateOrder = 9996;
     }
 
+    /// <inheritdoc/>
     public override void Initialize()
     {
         base.Initialize();
@@ -112,6 +135,7 @@ public sealed class VehicleSelectionOverlay : GameSystemBase
         base.Destroy();
     }
 
+    /// <inheritdoc/>
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _desktop == null)

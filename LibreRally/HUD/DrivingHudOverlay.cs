@@ -14,6 +14,9 @@ using Stride.Games;
 
 namespace LibreRally.HUD;
 
+/// <summary>
+/// UI overlay providing real-time vehicle telemetry, speed, RPM, and other driving metrics.
+/// </summary>
 public sealed class DrivingHudOverlay : GameSystemBase
 {
     private static readonly string[] WheelNames = ["FL", "FR", "RL", "RR"];
@@ -42,10 +45,15 @@ public sealed class DrivingHudOverlay : GameSystemBase
         public int Width { get; init; }
     }
 
+    /// <summary>Gets or sets the associated rally car component to display telemetry for.</summary>
     public RallyCarComponent? Car { get; set; }
+    /// <summary>Gets or sets the associated race timer.</summary>
     public RaceTimer? Timer { get; set; }
+    /// <summary>Gets or sets the associated race controller.</summary>
     public RaceController? RaceController { get; set; }
+    /// <summary>Gets or sets the status text displayed in the debug overlay.</summary>
     public string StatusText { get; set; } = "Waiting for vehicle...";
+    /// <summary>Gets or sets a value indicating whether the debug overlay is visible.</summary>
     public bool DebugOverlayVisible { get; set; } = true;
 
     private readonly List<Label> _wheelDebugLabels = [];
@@ -77,6 +85,10 @@ public sealed class DrivingHudOverlay : GameSystemBase
     private HudBar? _fuelBar;
     private HudBar? _oilBar;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DrivingHudOverlay"/> class.
+    /// </summary>
+    /// <param name="services">The service registry.</param>
     public DrivingHudOverlay(IServiceRegistry services) : base(services)
     {
         Enabled = true;
@@ -85,6 +97,7 @@ public sealed class DrivingHudOverlay : GameSystemBase
         UpdateOrder = 9989;
     }
 
+    /// <inheritdoc/>
     public override void Initialize()
     {
         base.Initialize();
@@ -109,6 +122,7 @@ public sealed class DrivingHudOverlay : GameSystemBase
         base.Destroy();
     }
 
+    /// <inheritdoc/>
     public override void Update(GameTime gameTime)
     {
         if (_desktop == null)
@@ -119,6 +133,7 @@ public sealed class DrivingHudOverlay : GameSystemBase
         UpdateWidgets();
     }
 
+    /// <inheritdoc/>
     public override void Draw(GameTime gameTime)
     {
         if (_game == null || _desktop == null)

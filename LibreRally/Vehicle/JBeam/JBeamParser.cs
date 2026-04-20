@@ -36,6 +36,10 @@ public static class JBeamParser
     /// </summary>
     public static void SetVars(Dictionary<string, float>? vars) => _vars = vars;
 
+    /// <summary>Parses a .jbeam file from the given path into a list of <see cref="JBeamPart"/> objects.</summary>
+    /// <param name="path">The file path to parse.</param>
+    /// <param name="vars">Optional variable table for resolving $var expressions.</param>
+    /// <returns>A list of parsed parts.</returns>
     public static List<JBeamPart> ParseFile(string path, Dictionary<string, float>? vars = null)
     {
         _vars = vars;
@@ -43,6 +47,10 @@ public static class JBeamParser
         return Parse(raw);
     }
 
+    /// <summary>Parses only the variable defaults from a .jbeam file.</summary>
+    /// <param name="path">The file path to parse.</param>
+    /// <param name="inheritedVars">Optional dictionary of inherited variable values.</param>
+    /// <returns>A dictionary of variable names and their default values.</returns>
     public static Dictionary<string, float> ParseVariableDefaultsFile(string path, Dictionary<string, float>? inheritedVars = null)
     {
         var previousVars = _vars;
@@ -57,6 +65,9 @@ public static class JBeamParser
         }
     }
 
+    /// <summary>Parses jbeam text into a list of <see cref="JBeamPart"/> objects.</summary>
+    /// <param name="jbeamText">The raw jbeam string to parse.</param>
+    /// <returns>A list of parsed parts.</returns>
     public static List<JBeamPart> Parse(string jbeamText)
     {
         // Some jbeam files contain multiple top-level objects — merge them before preprocessing.
@@ -216,7 +227,7 @@ public static class JBeamParser
             if (c == ':')              { sb.Append(c); i++; afterValue = false; continue; }
 
             // ── Number ─────────────────────────────────────────────────────
-            if (char.IsDigit(c) || c == '-')
+            if (char.IsDigit(c) || c == '-' || (c == '.' && i + 1 < input.Length && char.IsDigit(input[i + 1])))
             {
                 MaybeComma();
                 var tokenStart = i;
@@ -227,7 +238,7 @@ public static class JBeamParser
                     { i++; }
                     else
                     {
-	                    break;
+                        break;
                     }
                 }
                 sb.Append(NormalizeJsonNumberToken(input[tokenStart..i]));
@@ -236,10 +247,10 @@ public static class JBeamParser
             }
 
             // ── Keyword (true / false / null / identifiers) ────────────────
-            if (char.IsLetter(c))
+            if (char.IsLetter(c) || c == '$' || c == '_')
             {
                 MaybeComma();
-                while (i < input.Length && (char.IsLetterOrDigit(input[i]) || input[i] == '_'))
+                while (i < input.Length && (char.IsLetterOrDigit(input[i]) || input[i] == '_' || input[i] == '$'))
                 { sb.Append(input[i]); i++; }
                 afterValue = true;
                 continue;
@@ -277,13 +288,22 @@ public static class JBeamParser
             ? mantissa[dotIndex..]
             : string.Empty;
 
-        if (integerPart.Length > 1 && integerPart[0] == '0')
+        if (integerPart.Length == 0)
+        {
+            integerPart = "0";
+        }
+        else if (integerPart.Length > 1 && integerPart[0] == '0' && integerPart[1] != '.')
         {
             integerPart = integerPart.TrimStart('0');
             if (integerPart.Length == 0)
             {
                 integerPart = "0";
             }
+        }
+
+        if (fractionalPart == ".")
+        {
+            fractionalPart = ".0";
         }
 
         return sign + integerPart + fractionalPart + exponent;
@@ -307,10 +327,12 @@ public static class JBeamParser
 	            slotType = string.Join(",", st.EnumerateArray().ToList()
 		            .Where(e => e.ValueKind == JsonValueKind.String)
 		            .Select(e => e.GetString() ?? "")
-		            .Where(s => s.Length > 0));
+                .Where(s => s.Length > 0));
             }
         }
 
+        var skinName = GetOptionalString(obj, "skinName");
+        var globalSkin = GetOptionalString(obj, "globalSkin");
         var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
         var variableDefinitions = new List<JBeamVariableDefinition>();
         ParseVariables(obj, variables, variableDefinitions);
@@ -319,6 +341,8 @@ public static class JBeamParser
         {
             Name = name,
             SlotType = slotType,
+            SkinName = skinName,
+            GlobalSkin = globalSkin,
             Slots = ParseSlots(obj),
             Nodes = ParseNodes(obj),
             Beams = ParseBeams(obj),
@@ -339,6 +363,13 @@ public static class JBeamParser
         };
 
         return part;
+    }
+
+    private static string GetOptionalString(JsonElement obj, string propertyName)
+    {
+        return obj.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? ""
+            : "";
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -389,14 +420,13 @@ public static class JBeamParser
 	            continue;
             }
 
-            // Skip entries where default is not a string (e.g. empty array or missing)
-            var defaultVal = items[defaultIdx].ValueKind == JsonValueKind.String
-                ? items[defaultIdx].GetString()
-                : null;
-            if (string.IsNullOrEmpty(defaultVal))
+            // Keep optional slots with an empty-string default so .pc overrides can still populate them.
+            if (items[defaultIdx].ValueKind != JsonValueKind.String)
             {
-	            continue;
+                continue;
             }
+
+            var defaultVal = items[defaultIdx].GetString() ?? "";
 
             var type = items[0].ValueKind == JsonValueKind.String ? items[0].GetString() ?? "" : "";
 

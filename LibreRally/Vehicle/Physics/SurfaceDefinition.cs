@@ -12,10 +12,19 @@ namespace LibreRally.Vehicle.Physics;
 /// </summary>
 public enum SurfaceType : byte
 {
+    /// <summary>Dry tarmac — high grip and low rolling resistance.</summary>
     Tarmac,
+
+    /// <summary>Loose gravel — medium grip and high deformation.</summary>
     Gravel,
+
+    /// <summary>Wet mud — low grip and high rolling resistance.</summary>
     Mud,
+
+    /// <summary>Hard-packed snow — low grip and moderate deformation.</summary>
     Snow,
+
+    /// <summary>Solid ice — very low grip and minimal rolling resistance.</summary>
     Ice,
 
     /// <summary>Wet tarmac — reduced grip from surface water film.</summary>
@@ -52,6 +61,7 @@ public enum SurfaceType : byte
 /// </summary>
 public readonly struct SurfaceProperties
 {
+    /// <summary>Peak friction multiplier (1.0 = reference dry tarmac).</summary>
     public float FrictionCoefficient { get; init; }
 
     /// <summary>
@@ -78,8 +88,13 @@ public readonly struct SurfaceProperties
     /// </summary>
     public float WaterDepth { get; init; }
 
+    /// <summary>Rolling-resistance force coefficient (N per N of load).</summary>
     public float RollingResistance { get; init; }
+
+    /// <summary>Deformation factor (0 = rigid, 1 = fully deformable).</summary>
     public float DeformationFactor { get; init; }
+
+    /// <summary>Road roughness amplitude (0 = smooth, 1 = very rough).</summary>
     public float NoiseFactor { get; init; }
 
     /// <summary>

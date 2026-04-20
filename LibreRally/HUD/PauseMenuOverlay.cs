@@ -10,8 +10,16 @@ using Stride.Games;
 
 namespace LibreRally.HUD;
 
+/// <summary>
+/// Represents an item in the pause menu.
+/// </summary>
+/// <param name="Title">The title of the menu item.</param>
+/// <param name="Description">The detailed description of what the item does.</param>
 public readonly record struct PauseMenuItem(string Title, string Description);
 
+/// <summary>
+/// UI overlay for the in-game pause menu, allowing access to settings, car reset, and vehicle selection.
+/// </summary>
 public sealed class PauseMenuOverlay : GameSystemBase
 {
     private static readonly Color BackdropColor = new(5, 8, 14, 180);
@@ -38,6 +46,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
     private Label? _vehicleNameLabel;
     private Label? _statusLabel;
 
+    /// <summary>
+    /// Gets or sets the list of items to display in the menu.
+    /// </summary>
     public IReadOnlyList<PauseMenuItem> Items
     {
         get => _items;
@@ -48,6 +59,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the index of the currently selected menu item.
+    /// </summary>
     public int SelectedIndex
     {
         get => _selectedIndex;
@@ -58,6 +72,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the pause menu overlay is visible.
+    /// </summary>
     public bool OverlayVisible
     {
         get => _overlayVisible;
@@ -68,6 +85,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the status text displayed in the menu.
+    /// </summary>
     public string StatusText
     {
         get => _statusText;
@@ -78,6 +98,9 @@ public sealed class PauseMenuOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the name of the current vehicle displayed in the menu.
+    /// </summary>
     public string VehicleName
     {
         get => _vehicleName;
@@ -88,8 +111,15 @@ public sealed class PauseMenuOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Occurs when a menu item is activated (e.g., clicked or confirmed).
+    /// </summary>
     public Action<int>? ItemActivated { get; set; }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PauseMenuOverlay"/> class.
+    /// </summary>
+    /// <param name="services">The service registry.</param>
     public PauseMenuOverlay(IServiceRegistry services) : base(services)
     {
         Enabled = true;
@@ -98,6 +128,7 @@ public sealed class PauseMenuOverlay : GameSystemBase
         UpdateOrder = 9995;
     }
 
+    /// <inheritdoc/>
     public override void Initialize()
     {
         base.Initialize();
@@ -122,6 +153,7 @@ public sealed class PauseMenuOverlay : GameSystemBase
         base.Destroy();
     }
 
+    /// <inheritdoc/>
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _desktop == null)

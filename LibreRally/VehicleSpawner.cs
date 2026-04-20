@@ -21,19 +21,37 @@ using Stride.Rendering.Materials.ComputeColors;
 
 namespace LibreRally;
 
+/// <summary>
+/// Defines the available actions in the pause menu.
+/// </summary>
 public enum PauseMenuAction
 {
+    /// <summary>Resume the current driving session.</summary>
     ResumeDriving,
+    /// <summary>Reset the vehicle to the spawn position.</summary>
     ResetVehicle,
+    /// <summary>Open the garage setup/tuning menu.</summary>
     GarageSetup,
+    /// <summary>Open the vehicle selection menu.</summary>
     VehicleSelect,
 }
 
+/// <summary>
+/// Represents an entry in the pause menu, associating a UI item with an action.
+/// </summary>
+/// <param name="Item">The UI item descriptor.</param>
+/// <param name="Action">The action to execute when selected.</param>
 public readonly record struct PauseMenuEntry(PauseMenuItem Item, PauseMenuAction Action);
 
+/// <summary>
+/// Main script responsible for spawning vehicles, managing UI overlays, and handling telemetry.
+/// </summary>
 [ComponentCategory("LibreRally")]
 public class VehicleSpawner : SyncScript
 {
+    /// <summary>
+    /// Gets or sets the path to the folder containing BeamNG vehicles.
+    /// </summary>
     public string VehicleFolderPath { get; set; } = @"Resources\BeamNG Vehicles\basic_car";
 
     /// <summary>
@@ -43,16 +61,59 @@ public class VehicleSpawner : SyncScript
     /// </summary>
     public string ConfigFileName { get; set; } = "rally_pro_asphalt.pc";
 
+    /// <summary>
+    /// Gets or sets the initial spawn position for the vehicle.
+    /// </summary>
     public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
+
+    /// <summary>
+    /// Gets or sets a value indicating whether OutGauge telemetry is enabled.
+    /// </summary>
     public bool OutGaugeEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the delay between OutGauge packets in centiseconds.
+    /// </summary>
     public int OutGaugeDelayCentiseconds { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the target IP address for OutGauge telemetry.
+    /// </summary>
     public string OutGaugeIp { get; set; } = "127.0.0.1";
+
+    /// <summary>
+    /// Gets or sets the target port for OutGauge telemetry.
+    /// </summary>
     public int OutGaugePort { get; set; } = 4444;
+
+    /// <summary>
+    /// Gets or sets the unique ID for OutGauge telemetry.
+    /// </summary>
     public int OutGaugeId { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether OutSim telemetry is enabled.
+    /// </summary>
     public bool OutSimEnabled { get; set; }
+
+    /// <summary>
+    /// Gets or sets the delay between OutSim packets in centiseconds.
+    /// </summary>
     public int OutSimDelayCentiseconds { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets the target IP address for OutSim telemetry.
+    /// </summary>
     public string OutSimIp { get; set; } = "127.0.0.1";
+
+    /// <summary>
+    /// Gets or sets the target port for OutSim telemetry.
+    /// </summary>
     public int OutSimPort { get; set; } = 4123;
+
+    /// <summary>
+    /// Gets or sets the unique ID for OutSim telemetry.
+    /// </summary>
     public int OutSimId { get; set; }
 
     private string _status = "Loading...";
@@ -137,6 +198,7 @@ public class VehicleSpawner : SyncScript
         public float FrictionCoefficient { get; } = frictionCoefficient;
     }
 
+    /// <inheritdoc/>
     public override void Start()
     {
         AddGroundPhysics();
@@ -911,6 +973,7 @@ public class VehicleSpawner : SyncScript
         return trackEntity;
     }
 
+    /// <inheritdoc/>
     public override void Update()
     {
         HandlePauseAndVehicleSelectionInput();

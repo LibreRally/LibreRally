@@ -41,15 +41,36 @@ public record AssembledFlexBody(
     string SourcePartName = "",
     string SourceSlotType = "");
 
+/// <summary>
+/// Assembled options for a pressure-based wheel.
+/// </summary>
+/// <param name="SourcePartName">The name of the source JBeam part.</param>
+/// <param name="SourceSlotType">The slot type of the source JBeam part.</param>
+/// <param name="Options">The resolved pressure wheel options.</param>
 public record AssembledPressureWheelOptions(
     string SourcePartName,
     string SourceSlotType,
     JBeamPressureWheelOptions Options);
 
+/// <summary>
+/// Assembled gear ratio from a specific part (e.g. final drive).
+/// </summary>
+/// <param name="SourcePartName">The name of the source JBeam part.</param>
+/// <param name="SourceSlotType">The slot type of the source JBeam part.</param>
+/// <param name="GearRatio">The resolved gear ratio.</param>
 public record AssembledPartGearRatio(
     string SourcePartName,
     string SourceSlotType,
     float GearRatio);
+
+/// <summary>
+/// Active BeamNG material-skin selection contributed by a resolved part slot.
+/// </summary>
+/// <param name="SlotType">The slot type that selected the skin (for example <c>paint_design</c>).</param>
+/// <param name="VariantName">The resolved material variant token (for example <c>ngrc</c> or <c>rs</c>).</param>
+public readonly record struct ActiveMaterialSkinSelection(
+    string SlotType,
+    string VariantName);
 
 /// <summary>
 /// A logical car part derived from a jbeam slot, containing all its nodes and mesh info.
@@ -57,6 +78,7 @@ public record AssembledPartGearRatio(
 /// </summary>
 public class VehiclePart
 {
+    /// <summary>Gets the name of the part.</summary>
     public string Name { get; init; } = "";
 
     /// <summary>True when this part should become a separate physics body that can detach.</summary>
@@ -82,6 +104,7 @@ public class VehiclePart
 /// </summary>
 public class VehicleDefinition
 {
+    /// <summary>Gets the name of the vehicle.</summary>
     public string VehicleName { get; init; } = "";
 
     /// <summary>All nodes keyed by ID.</summary>
@@ -101,6 +124,9 @@ public class VehicleDefinition
 
     /// <summary>Path to the vehicle folder (used for loading meshes).</summary>
     public string FolderPath { get; init; } = "";
+
+    /// <summary>Active material-skin selections from the resolved BeamNG part tree.</summary>
+    public List<ActiveMaterialSkinSelection> ActiveMaterialSkinSelections { get; init; } = new();
 
     /// <summary>
     /// Orientation ref nodes from jbeam refNodes.

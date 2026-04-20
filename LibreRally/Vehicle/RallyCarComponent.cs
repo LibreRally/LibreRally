@@ -16,6 +16,9 @@ using Stride.Particles.Spawners;
 
 namespace LibreRally.Vehicle;
 
+/// <summary>
+/// Core component for rally vehicle simulation, handling engine, transmission, steering, and tyre dynamics.
+/// </summary>
 [ComponentCategory("LibreRally")]
 public class RallyCarComponent : SyncScript
 {
@@ -83,10 +86,19 @@ public class RallyCarComponent : SyncScript
     /// <summary>Oil reference temperature (°C) above which pressure starts to drop.</summary>
     private const float OilViscosityRefTempC = 80f;
 
+    /// <summary>Gets or sets the entity representing the car's main chassis body.</summary>
     public Entity CarBody { get; set; } = new();
+
+    /// <summary>Gets or sets the list of entities representing all wheels on the vehicle.</summary>
     public List<Entity> Wheels { get; set; } = new();
+
+    /// <summary>Gets or sets the list of entities representing wheels that can be steered.</summary>
     public List<Entity> SteerWheels { get; set; } = new();
+
+    /// <summary>Gets or sets the list of entities representing wheels that are driven by the engine.</summary>
     public List<Entity> DriveWheels { get; set; } = new();
+
+    /// <summary>Gets or sets the list of entities representing wheels that have brakes applied.</summary>
     public List<Entity> BreakWheels { get; set; } = new();
 
     /// <summary>
@@ -273,25 +285,65 @@ public class RallyCarComponent : SyncScript
     public float TurboMaxBoostPsi { get; set; }
 
     // ── Read-only telemetry ──────────────────────────────────────────────────
+    /// <summary>Current vehicle speed in km/h.</summary>
     public float SpeedKmh { get; private set; }
+
+    /// <summary>Forward velocity in m/s.</summary>
     public float ForwardSpeedMs { get; private set; }
+
+    /// <summary>Lateral velocity in m/s (slip speed).</summary>
     public float LateralSpeedMs { get; private set; }
+
+    /// <summary>Yaw rate in radians per second.</summary>
     public float YawRateRad { get; private set; }
+
+    /// <summary>Current engine RPM.</summary>
     public float EngineRpm { get; private set; }
+
+    /// <summary>Filtered throttle input (0–1).</summary>
     public float ThrottleInput { get; private set; }
+
+    /// <summary>Filtered combined brake input (0–1).</summary>
     public float BrakeInput { get; private set; }
+
+    /// <summary>Combined drive demand (throttle - brake).</summary>
     public float DriveInput { get; private set; }
+
+    /// <summary>Filtered service brake input (0–1).</summary>
     public float ServiceBrakeInput { get; private set; }
+
+    /// <summary>Filtered steering input (-1 to 1).</summary>
     public float SteeringInput { get; private set; }
+
+    /// <summary>Current steering rack position (radians).</summary>
     public float SteeringRack { get; private set; }
+
+    /// <summary>Effective driveline RPM before final drive.</summary>
     public float DrivelineRpm { get; private set; }
+
+    /// <summary>Whether the handbrake is currently engaged.</summary>
     public bool HandbrakeEngaged { get; private set; }
+
+    /// <summary>Whether significant wheel slip is detected on any wheel.</summary>
     public bool TractionLossDetected { get; private set; }
+
+    /// <summary>Whether traction control is actively reducing torque.</summary>
     public bool TractionControlActive { get; private set; }
+
+    /// <summary>Whether ABS is actively reducing brake pressure.</summary>
     public bool AbsActive { get; private set; }
+
+    /// <summary>Current maximum slip ratio across all driven wheels.</summary>
     public float DrivenWheelSlipRatio { get; private set; }
+
+    /// <summary>Current torque scale factor applied by traction control (0–1).</summary>
     public float TractionControlTorqueScale { get; private set; } = 1f;
+
+    /// <summary>Currently selected gear (0 = reverse, 1 = first, etc.).</summary>
     public int CurrentGear { get; private set; } = 1;
+
+    /// <summary>Total drive ratio from engine to wheel (including gear and final drive).</summary>
+    public float DriveRatio => EffectiveRatio;
 
     // ── Engine thermal / oil / fuel / turbo runtime state ────────────────────
     /// <summary>Current engine block temperature (°C). Settles at the air-regulator setpoint.</summary>
@@ -308,8 +360,6 @@ public class RallyCarComponent : SyncScript
 
     /// <summary>Current turbo boost pressure (bar). Zero when no turbo is present.</summary>
     public float TurboBoostBar { get; private set; }
-
-    public float DriveRatio => EffectiveRatio;
 
     private float EffectiveRatio => GearRatios[Math.Clamp(CurrentGear, 0, GearRatios.Length - 1)] * FinalDrive;
     private float _shiftCooldown;
@@ -338,6 +388,7 @@ public class RallyCarComponent : SyncScript
     private readonly float[] _wheelSurfaceVfxIntensity = new float[VehicleDynamicsSystem.WheelCount];
     private bool _wheelSurfaceVfxInitialized;
 
+    /// <inheritdoc/>
     public override void Start()
     {
         _engineRpm = IdleRpm;
@@ -361,6 +412,7 @@ public class RallyCarComponent : SyncScript
         InitializeWheelSurfaceVfx();
     }
 
+    /// <inheritdoc/>
     public override void Update()
     {
         var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;

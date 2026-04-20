@@ -13,6 +13,9 @@ using LibreRally.Vehicle;
 
 namespace LibreRally.HUD;
 
+/// <summary>
+/// UI overlay for the garage setup and vehicle tuning menu.
+/// </summary>
 public sealed class SetupUiShellOverlay : GameSystemBase
 {
     private const int MaxVisibleEditorFields = 3;
@@ -59,9 +62,19 @@ public sealed class SetupUiShellOverlay : GameSystemBase
     private int _fieldScrollOffset;
     private int _selectedFooterIndex = FooterActionCount - 1;
 
+    /// <summary>
+    /// Occurs when the user requests to apply the current setup changes.
+    /// </summary>
     public Action<SetupUiApplyPayload>? ApplyRequested { get; set; }
+
+    /// <summary>
+    /// Occurs when the user requests to close the setup menu.
+    /// </summary>
     public Action? CloseRequested { get; set; }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether the setup UI overlay is visible.
+    /// </summary>
     public bool OverlayVisible
     {
         get => _overlayVisible;
@@ -75,6 +88,9 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the status text displayed in the setup menu.
+    /// </summary>
     public string StatusText
     {
         get => _shell.StatusText;
@@ -85,6 +101,9 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Gets or sets the name of the vehicle being tuned.
+    /// </summary>
     public string VehicleName
     {
         get => _shell.VehicleName;
@@ -95,6 +114,10 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         }
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="SetupUiShellOverlay"/> class.
+    /// </summary>
+    /// <param name="services">The service registry.</param>
     public SetupUiShellOverlay(IServiceRegistry services) : base(services)
     {
         Enabled = true;
@@ -103,6 +126,7 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         UpdateOrder = 9997;
     }
 
+    /// <inheritdoc/>
     public override void Initialize()
     {
         base.Initialize();
@@ -131,6 +155,12 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         base.Destroy();
     }
 
+    /// <summary>
+    /// Binds a vehicle and its setup overrides to the UI.
+    /// </summary>
+    /// <param name="vehicle">The loaded vehicle.</param>
+    /// <param name="overrides">The current setup overrides.</param>
+    /// <param name="statusText">Optional status text to display.</param>
     public void BindVehicle(LoadedVehicle? vehicle, VehicleSetupOverrides? overrides, string? statusText = null)
     {
         _shell = SetupUiShellModel.CreateFromVehicleSetup(
@@ -142,6 +172,7 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         RebuildRoot();
     }
 
+    /// <inheritdoc/>
     public override void Update(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null)
@@ -152,6 +183,7 @@ public sealed class SetupUiShellOverlay : GameSystemBase
         HandleNavigationInput();
     }
 
+    /// <inheritdoc/>
     public override void Draw(GameTime gameTime)
     {
         if (!OverlayVisible || _game == null || _desktop == null)

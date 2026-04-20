@@ -7,11 +7,11 @@ namespace LibreRally.Vehicle.Physics;
 /// Monitors the weld constraint each frame and breaks it when the measured
 /// constraint force exceeds <see cref="BreakStrength"/>.
 ///
-/// Once broken, the part's <see cref="BodyComponent"/> becomes a free rigid body
+/// Once broken, the part's <see cref="Stride.BepuPhysics.BodyComponent"/> becomes a free rigid body
 /// that interacts normally with the physics world.
 ///
 /// Attach this to the same entity as the <see cref="WeldConstraintComponent"/> and
-/// the part's <see cref="BodyComponent"/>.
+/// the part's <see cref="Stride.BepuPhysics.BodyComponent"/>.
 /// </summary>
 public class BreakablePartComponent : SyncScript
 {

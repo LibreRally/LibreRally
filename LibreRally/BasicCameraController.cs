@@ -73,6 +73,7 @@ public class BasicCameraController : SyncScript
         }
     }
 
+    /// <inheritdoc/>
     public override void Update()
     {
         ProcessInput();

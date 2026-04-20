@@ -131,6 +131,30 @@ public sealed class JBeamParserTests
         Assert.Equal("test_car", definition.VehicleName);
     }
 
+    [Fact]
+    public void Parse_HandlesNumbersStartingWithDot()
+    {
+        var jbeam = """{ "test_part": { "val": .5 } }""";
+        var parts = JBeamParser.Parse(jbeam);
+        Assert.Single(parts);
+    }
+
+    [Fact]
+    public void Parse_HandlesMissingCommaBetweenStrings()
+    {
+        var jbeam = """{ "test_part": { "test": ["a", "b" "c"] } }""";
+        var parts = JBeamParser.Parse(jbeam);
+        Assert.Single(parts);
+    }
+
+    [Fact]
+    public void Parse_HandlesMissingCommaAfterNumber()
+    {
+        var jbeam = """{ "test_part": { "a": 0.28 "b": "c" } }""";
+        var parts = JBeamParser.Parse(jbeam);
+        Assert.Single(parts);
+    }
+
     private sealed class TempWorkspace : IDisposable
     {
         public TempWorkspace()

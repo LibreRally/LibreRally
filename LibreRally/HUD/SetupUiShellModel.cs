@@ -6,42 +6,77 @@ using LibreRally.Vehicle;
 
 namespace LibreRally.HUD;
 
+/// <summary>
+/// Defines the kind of editor used for a setup field.
+/// </summary>
 public enum SetupUiEditorKind
 {
+    /// <summary>Numeric slider/spinner editor.</summary>
     Numeric,
+    /// <summary>Multiple choice cycle editor.</summary>
     Choice,
+    /// <summary>Boolean toggle editor.</summary>
     Toggle,
 }
 
+/// <summary>
+/// Defines how setup changes are applied to the vehicle.
+/// </summary>
 public enum SetupUiApplyMode
 {
+    /// <summary>Applied in real-time without reloading the vehicle.</summary>
     Live,
+    /// <summary>Requires reloading the vehicle parts or JBeam configuration.</summary>
     Reload,
 }
 
+/// <summary>
+/// Contains the data for a setup application request.
+/// </summary>
 public sealed class SetupUiApplyPayload
 {
+    /// <summary>Gets the dictionary of BeamNG variable overrides.</summary>
     public Dictionary<string, float> VariableOverrides { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Gets the dictionary of tyre pressure overrides per axle.</summary>
     public Dictionary<VehicleSetupAxle, float> PressureOverrides { get; } = new();
+    /// <summary>Gets a human-readable summary of the changes in this payload.</summary>
     public string SummaryText { get; init; } = string.Empty;
+    /// <summary>Gets a value indicating whether this payload contains any changes.</summary>
     public bool HasChanges => VariableOverrides.Count > 0 || PressureOverrides.Count > 0;
+    /// <summary>Gets a value indicating whether any changes in this payload require a vehicle reload.</summary>
     public bool RequiresReload => VariableOverrides.Count > 0;
 }
 
+/// <summary>
+/// Data model for the garage setup UI shell.
+/// </summary>
 public sealed class SetupUiShellModel
 {
+    /// <summary>Gets the main title of the setup shell.</summary>
     public string Title { get; }
+    /// <summary>Gets the subtitle or description of the setup shell.</summary>
     public string Subtitle { get; }
+    /// <summary>Gets the name of the vehicle currently being tuned.</summary>
     public string VehicleName { get; private set; }
+    /// <summary>Gets the current status or instruction text.</summary>
     public string StatusText { get; private set; }
+    /// <summary>Gets the list of setup categories.</summary>
     public IReadOnlyList<SetupUiCategoryModel> Categories { get; }
+    /// <summary>Gets the index of the currently selected category.</summary>
     public int SelectedCategoryIndex { get; private set; }
+    /// <summary>Gets the currently selected category model.</summary>
     public SetupUiCategoryModel SelectedCategory => Categories[SelectedCategoryIndex];
+    /// <summary>Gets the total number of pending changes across all categories.</summary>
     public int PendingChangeCount => Categories.Sum(category => category.PendingChangeCount);
+    /// <summary>Gets the number of pending changes that can be applied live.</summary>
     public int PendingLiveChangeCount => Categories.Sum(category => category.PendingLiveChangeCount);
+    /// <summary>Gets the number of pending changes that require a reload.</summary>
     public int PendingReloadChangeCount => Categories.Sum(category => category.PendingReloadChangeCount);
+    /// <summary>Gets the number of values that have been changed from their defaults.</summary>
     public int NonDefaultChangeCount => Categories.Sum(category => category.NonDefaultChangeCount);
+    /// <summary>Gets a value indicating whether there are any pending changes that can be applied.</summary>
     public bool CanApply => PendingChangeCount > 0;
+    /// <summary>Gets a value indicating whether any values can be reset to their defaults.</summary>
     public bool CanResetToDefaults => NonDefaultChangeCount > 0;
 
     private SetupUiShellModel(
@@ -58,17 +93,30 @@ public sealed class SetupUiShellModel
         Categories = categories.Count == 0 ? [CreateEmptyCategory()] : categories;
     }
 
+    /// <summary>
+    /// Selects a category by its index.
+    /// </summary>
+    /// <param name="index">The index of the category to select.</param>
     public void SelectCategory(int index)
     {
         SelectedCategoryIndex = Categories.Count == 0 ? 0 : Math.Clamp(index, 0, Categories.Count - 1);
     }
 
+    /// <summary>
+    /// Updates the vehicle name and status text for the UI.
+    /// </summary>
+    /// <param name="vehicleName">The name of the vehicle.</param>
+    /// <param name="statusText">The status text.</param>
     public void UpdateVehicleContext(string? vehicleName, string? statusText)
     {
         VehicleName = string.IsNullOrWhiteSpace(vehicleName) ? "Factory Preview Car" : vehicleName;
         StatusText = string.IsNullOrWhiteSpace(statusText) ? "Garage tuning preview ready." : statusText;
     }
 
+    /// <summary>
+    /// Creates an apply payload containing all pending changes.
+    /// </summary>
+    /// <returns>A <see cref="SetupUiApplyPayload"/>.</returns>
     public SetupUiApplyPayload CreateApplyPayload()
     {
         var payload = new SetupUiApplyPayload
@@ -92,6 +140,9 @@ public sealed class SetupUiShellModel
         return payload;
     }
 
+    /// <summary>
+    /// Resets all pending changes to their last committed values.
+    /// </summary>
     public void ResetPendingChanges()
     {
         foreach (var field in Categories.SelectMany(category => category.Fields))
@@ -100,6 +151,9 @@ public sealed class SetupUiShellModel
         }
     }
 
+    /// <summary>
+    /// Accepts all pending changes as the new committed values.
+    /// </summary>
     public void AcceptPendingChanges()
     {
         foreach (var field in Categories.SelectMany(category => category.Fields))
@@ -108,6 +162,9 @@ public sealed class SetupUiShellModel
         }
     }
 
+    /// <summary>
+    /// Resets all fields to their original default values.
+    /// </summary>
     public void ResetToDefaults()
     {
         foreach (var field in Categories.SelectMany(category => category.Fields))
@@ -116,6 +173,12 @@ public sealed class SetupUiShellModel
         }
     }
 
+    /// <summary>
+    /// Creates a preview version of the setup shell model with mock categories.
+    /// </summary>
+    /// <param name="vehicleName">Optional vehicle name.</param>
+    /// <param name="statusText">Optional status text.</param>
+    /// <returns>A new <see cref="SetupUiShellModel"/>.</returns>
     public static SetupUiShellModel CreatePreview(string? vehicleName = null, string? statusText = null)
     {
         var categories = new List<SetupUiCategoryModel>
@@ -187,6 +250,14 @@ public sealed class SetupUiShellModel
         return model;
     }
 
+    /// <summary>
+    /// Creates a setup shell model from a loaded vehicle and its setup overrides.
+    /// </summary>
+    /// <param name="vehicle">The loaded vehicle.</param>
+    /// <param name="overrides">The setup overrides.</param>
+    /// <param name="vehicleName">Optional vehicle name.</param>
+    /// <param name="statusText">Optional status text.</param>
+    /// <returns>A new <see cref="SetupUiShellModel"/>.</returns>
     public static SetupUiShellModel CreateFromVehicleSetup(LoadedVehicle? vehicle, VehicleSetupOverrides? overrides, string? vehicleName = null, string? statusText = null)
     {
         var categories = VehicleSetupCatalogBuilder.BuildCategories(vehicle?.Definition, overrides)
@@ -250,6 +321,14 @@ public sealed class SetupUiShellModel
         []);
 }
 
+/// <summary>
+/// Data model for a category of setup fields.
+/// </summary>
+/// <param name="id">The unique identifier for the category.</param>
+/// <param name="title">The display title of the category.</param>
+/// <param name="tagline">A short tagline for the category.</param>
+/// <param name="description">A detailed description of the category.</param>
+/// <param name="fields">The list of fields in this category.</param>
 public sealed class SetupUiCategoryModel(
     string id,
     string title,
@@ -257,39 +336,72 @@ public sealed class SetupUiCategoryModel(
     string description,
     IReadOnlyList<SetupUiFieldModel> fields)
 {
+    /// <summary>Gets the unique identifier for the category.</summary>
     public string Id { get; } = id;
+    /// <summary>Gets the display title of the category.</summary>
     public string Title { get; } = title;
+    /// <summary>Gets the short tagline for the category.</summary>
     public string Tagline { get; } = tagline;
+    /// <summary>Gets the detailed description of the category.</summary>
     public string Description { get; } = description;
+    /// <summary>Gets the list of fields in this category.</summary>
     public IReadOnlyList<SetupUiFieldModel> Fields { get; } = fields;
+    /// <summary>Gets the number of fields with pending changes in this category.</summary>
     public int PendingChangeCount => Fields.Count(entry => entry.IsDirty);
+    /// <summary>Gets the number of fields with pending live changes in this category.</summary>
     public int PendingLiveChangeCount => Fields.Count(entry => entry.IsDirty && entry.ApplyMode == SetupUiApplyMode.Live);
+    /// <summary>Gets the number of fields with pending reload changes in this category.</summary>
     public int PendingReloadChangeCount => Fields.Count(entry => entry.IsDirty && entry.ApplyMode == SetupUiApplyMode.Reload);
+    /// <summary>Gets the number of fields that have non-default values in this category.</summary>
     public int NonDefaultChangeCount => Fields.Count(entry => entry.CanResetToDefault);
 }
 
+/// <summary>
+/// Data model for a single setup field in the UI.
+/// </summary>
 public sealed class SetupUiFieldModel
 {
+    /// <summary>Gets the unique identifier for the field.</summary>
     public string Id { get; }
+    /// <summary>Gets the display label for the field.</summary>
     public string Label { get; }
+    /// <summary>Gets the detailed description of what the field tunes.</summary>
     public string Description { get; }
+    /// <summary>Gets the kind of editor to use for this field.</summary>
     public SetupUiEditorKind EditorKind { get; }
+    /// <summary>Gets the mode for applying changes to this field.</summary>
     public SetupUiApplyMode ApplyMode { get; }
+    /// <summary>Gets the current display-scale numeric value.</summary>
     public float NumericValue { get; private set; }
+    /// <summary>Gets the current raw-scale numeric value (as used in simulation or BeamNG variables).</summary>
     public float RawNumericValue { get; private set; }
+    /// <summary>Gets the minimum allowed display-scale value.</summary>
     public float Minimum { get; }
+    /// <summary>Gets the maximum allowed display-scale value.</summary>
     public float Maximum { get; }
+    /// <summary>Gets the step size for display-scale adjustments.</summary>
     public float Step { get; }
+    /// <summary>Gets the unit of measurement for the numeric value.</summary>
     public string Unit { get; }
+    /// <summary>Gets the current boolean toggle value.</summary>
     public bool ToggleValue { get; private set; }
+    /// <summary>Gets the label displayed when the toggle is 'on'.</summary>
     public string ToggleOnLabel { get; }
+    /// <summary>Gets the label displayed when the toggle is 'off'.</summary>
     public string ToggleOffLabel { get; }
+    /// <summary>Gets the list of options for a choice field.</summary>
     public IReadOnlyList<string> ChoiceOptions { get; }
+    /// <summary>Gets the current index of the selected choice.</summary>
     public int ChoiceIndex { get; private set; }
+    /// <summary>Gets the key used for binding this field to a vehicle property or variable.</summary>
     public string? BoundKey { get; }
+    /// <summary>Gets the kind of binding (e.g., Variable, TyrePressure).</summary>
     public VehicleSetupEntryKind? BindingKind { get; }
+    /// <summary>Gets the axle associated with this field, if any.</summary>
     public VehicleSetupAxle Axle { get; }
+    /// <summary>Gets a value indicating whether this field is a numeric field bound to a vehicle property.</summary>
     public bool IsBoundNumericField => EditorKind == SetupUiEditorKind.Numeric && !string.IsNullOrWhiteSpace(BoundKey) && BindingKind.HasValue;
+    /// <summary>Gets the display string for the default value of this field.</summary>
     public string DefaultDisplayValue => EditorKind switch
     {
         SetupUiEditorKind.Numeric => FormatNumericValue(ToDisplay(_defaultRawNumericValue), Unit, Step),
@@ -297,6 +409,7 @@ public sealed class SetupUiFieldModel
         SetupUiEditorKind.Choice => ChoiceOptions.Count == 0 ? string.Empty : ChoiceOptions[_defaultChoiceIndex],
         _ => string.Empty,
     };
+    /// <summary>Gets a value indicating whether this field can currently be reset to its default value.</summary>
     public bool CanResetToDefault => EditorKind switch
     {
         SetupUiEditorKind.Numeric => Math.Abs(RawNumericValue - _defaultRawNumericValue) > ResolveDifferenceThreshold(_defaultRawNumericValue),
@@ -304,6 +417,7 @@ public sealed class SetupUiFieldModel
         SetupUiEditorKind.Choice => ChoiceIndex != _defaultChoiceIndex,
         _ => false,
     };
+    /// <summary>Gets a value indicating whether this field has pending changes that haven't been committed.</summary>
     public bool IsDirty => EditorKind switch
     {
         SetupUiEditorKind.Numeric => Math.Abs(RawNumericValue - _committedRawNumericValue) > ResolveDifferenceThreshold(_committedRawNumericValue),
@@ -373,6 +487,9 @@ public sealed class SetupUiFieldModel
         _defaultChoiceIndex = ChoiceIndex;
     }
 
+    /// <summary>
+    /// Gets the human-readable display value of the field.
+    /// </summary>
     public string DisplayValue => EditorKind switch
     {
         SetupUiEditorKind.Numeric => FormatNumericValue(NumericValue, Unit, Step),
@@ -381,19 +498,34 @@ public sealed class SetupUiFieldModel
         _ => string.Empty,
     };
 
+    /// <summary>
+    /// Gets a short hint about when changes to this field will be applied.
+    /// </summary>
     public string ApplyHint => ApplyMode == SetupUiApplyMode.Live ? "Live on apply" : "Reload on apply";
 
+    /// <summary>
+    /// Sets a new numeric value for the field, clamping it to the allowed range.
+    /// </summary>
+    /// <param name="value">The new display-scale value.</param>
     public void SetNumericValue(float value)
     {
         NumericValue = Math.Clamp(value, Minimum, Maximum);
         RawNumericValue = ToRaw(NumericValue);
     }
 
+    /// <summary>
+    /// Sets a new boolean toggle value for the field.
+    /// </summary>
+    /// <param name="value">The new toggle value.</param>
     public void SetToggleValue(bool value)
     {
         ToggleValue = value;
     }
 
+    /// <summary>
+    /// Cycles to the next or previous choice option.
+    /// </summary>
+    /// <param name="step">The number of options to move (can be negative).</param>
     public void CycleChoice(int step = 1)
     {
         if (ChoiceOptions.Count == 0)
@@ -411,6 +543,9 @@ public sealed class SetupUiFieldModel
         ChoiceIndex = nextIndex;
     }
 
+    /// <summary>
+    /// Resets the field's value to the last committed value.
+    /// </summary>
     public void ResetToCommittedValue()
     {
         RawNumericValue = _committedRawNumericValue;
@@ -419,6 +554,9 @@ public sealed class SetupUiFieldModel
         ChoiceIndex = _committedChoiceIndex;
     }
 
+    /// <summary>
+    /// Commits the current pending value as the new baseline.
+    /// </summary>
     public void AcceptPendingValue()
     {
         _committedRawNumericValue = RawNumericValue;
@@ -426,6 +564,9 @@ public sealed class SetupUiFieldModel
         _committedChoiceIndex = ChoiceIndex;
     }
 
+    /// <summary>
+    /// Resets the field's value to its original default value.
+    /// </summary>
     public void ResetToDefaultValue()
     {
         RawNumericValue = _defaultRawNumericValue;
@@ -434,15 +575,30 @@ public sealed class SetupUiFieldModel
         ChoiceIndex = _defaultChoiceIndex;
     }
 
+    /// <summary>
+    /// Creates a numeric field model.
+    /// </summary>
     public static SetupUiFieldModel Numeric(string id, string label, string description, float value, float minimum, float maximum, float step, string unit, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Numeric, applyMode, value, minimum, maximum, step, unit, false, string.Empty, string.Empty, null, 0, null, null, VehicleSetupAxle.Unspecified, value);
 
+    /// <summary>
+    /// Creates a choice field model.
+    /// </summary>
     public static SetupUiFieldModel Choice(string id, string label, string description, int choiceIndex, IReadOnlyList<string> options, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Choice, applyMode, 0f, 0f, 0f, 0f, string.Empty, false, string.Empty, string.Empty, options, choiceIndex);
 
+    /// <summary>
+    /// Creates a toggle field model.
+    /// </summary>
     public static SetupUiFieldModel Toggle(string id, string label, string description, bool value, string onLabel, string offLabel, SetupUiApplyMode applyMode)
         => new(id, label, description, SetupUiEditorKind.Toggle, applyMode, 0f, 0f, 1f, 1f, string.Empty, value, onLabel, offLabel, null, 0);
 
+    /// <summary>
+    /// Creates a setup field model from a <see cref="VehicleSetupEntry"/>.
+    /// </summary>
+    /// <param name="entry">The vehicle setup entry.</param>
+    /// <param name="label">The display label for the field.</param>
+    /// <returns>A new <see cref="SetupUiFieldModel"/>.</returns>
     public static SetupUiFieldModel FromVehicleSetupEntry(VehicleSetupEntry entry, string label)
     {
         var useDisplayRange = entry.MinDisplayValue.HasValue &&

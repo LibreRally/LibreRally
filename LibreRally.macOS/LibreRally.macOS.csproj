@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-macos</TargetFramework>
-    <RuntimeIdentifier>osx-x64</RuntimeIdentifier>
+    <RuntimeIdentifiers>osx-x64;osx-arm64</RuntimeIdentifiers>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
     <OutputType>Exe</OutputType>
     <RootNamespace>LibreRally</RootNamespace>

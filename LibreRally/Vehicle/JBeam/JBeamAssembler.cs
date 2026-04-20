@@ -12,7 +12,7 @@ namespace LibreRally.Vehicle.JBeam;
 ///
 /// BeamNG jbeam coordinate space: X = right, Y = forward, Z = up.
 /// We convert to Stride space (X = right, Y = up, Z = backward) in
-/// <see cref="VehiclePhysicsBuilder"/> rather than here, to preserve raw data fidelity.
+/// <see cref="LibreRally.Vehicle.Physics.VehiclePhysicsBuilder"/> rather than here, to preserve raw data fidelity.
 /// </summary>
 public static class JBeamAssembler
 {
@@ -125,6 +125,13 @@ public static class JBeamAssembler
     // Slot resolution
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Resolves part slots recursively starting from the given part.</summary>
+    /// <param name="part">The current part to resolve slots for.</param>
+    /// <param name="library">The library of all available parts.</param>
+    /// <param name="result">The list to accumulate resolved part instances.</param>
+    /// <param name="visited">Set of visited part names to prevent circular dependencies.</param>
+    /// <param name="pcParts">Optional map of slot names to part names from a .pc config.</param>
+    /// <param name="visualOffset">The visual offset accumulated from parent slots.</param>
     private static void ResolveSlots(
         JBeamPart part,
         Dictionary<string, JBeamPart> library,
@@ -173,6 +180,11 @@ public static class JBeamAssembler
     // Merge
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Merges multiple resolved parts into a single <see cref="VehicleDefinition"/>.</summary>
+    /// <param name="vehicleName">The name of the vehicle.</param>
+    /// <param name="folderPath">The path to the vehicle folder.</param>
+    /// <param name="parts">The list of resolved part instances to merge.</param>
+    /// <returns>A consolidated <see cref="VehicleDefinition"/>.</returns>
     private static VehicleDefinition Merge(
         string vehicleName,
         string folderPath,
@@ -193,6 +205,7 @@ public static class JBeamAssembler
         JBeamTractionControlDefinition? tractionControl = null;
         JBeamFuelTankDefinition? fuelTank = null;
         var resolvedParts = parts.Select(p => p.Part).ToList();
+        var activeMaterialSkinSelections = CollectActiveMaterialSkinSelections(resolvedParts);
 
         // Build a map: slotType → part name, for identifying detachable vs chassis
         var slotTypeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -290,6 +303,7 @@ public static class JBeamAssembler
             FlexBodies = allFlexBodies,
             Parts = logicalParts,
             FolderPath = folderPath,
+            ActiveMaterialSkinSelections = activeMaterialSkinSelections,
             RefNodes = refNodes,
             SetupVariables = allSetupVariables.Values.ToList(),
             PowertrainDevices = allPowertrainDevices,
@@ -305,6 +319,32 @@ public static class JBeamAssembler
         };
     }
 
+    private static List<ActiveMaterialSkinSelection> CollectActiveMaterialSkinSelections(IEnumerable<JBeamPart> parts)
+    {
+        var selections = new List<ActiveMaterialSkinSelection>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var part in parts)
+        {
+            if (string.IsNullOrWhiteSpace(part.SlotType) ||
+                string.IsNullOrWhiteSpace(part.ActiveMaterialVariantName))
+            {
+                continue;
+            }
+
+            var key = part.SlotType + "|" + part.ActiveMaterialVariantName;
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            selections.Add(new ActiveMaterialSkinSelection(part.SlotType, part.ActiveMaterialVariantName));
+        }
+
+        return selections;
+    }
+
+    /// <summary>Merges vehicle controller definitions.</summary>
     private static JBeamVehicleControllerDefinition? MergeVehicleController(
         JBeamVehicleControllerDefinition? current,
         JBeamVehicleControllerDefinition? next)
@@ -330,6 +370,7 @@ public static class JBeamAssembler
         };
     }
 
+    /// <summary>Merges brake control definitions.</summary>
     private static JBeamBrakeControlDefinition? MergeBrakeControl(
         JBeamBrakeControlDefinition? current,
         JBeamBrakeControlDefinition? next)
@@ -352,6 +393,7 @@ public static class JBeamAssembler
         };
     }
 
+    /// <summary>Merges traction control definitions.</summary>
     private static JBeamTractionControlDefinition? MergeTractionControl(
         JBeamTractionControlDefinition? current,
         JBeamTractionControlDefinition? next)
@@ -375,6 +417,7 @@ public static class JBeamAssembler
         };
     }
 
+    /// <summary>Combines a flexbody's base position with a slot offset if it belongs to any of the specified groups.</summary>
     private static Vector3? CombineFlexBodyPosition(Vector3? basePosition, Vector3 slotOffset, IReadOnlyCollection<string> groups)
     {
         if (basePosition == null && slotOffset == Vector3.Zero)
@@ -385,6 +428,7 @@ public static class JBeamAssembler
         return ApplySlotOffset(basePosition ?? Vector3.Zero, slotOffset, groups);
     }
 
+    /// <summary>Applies a slot offset to a position if it belongs to any of the specified groups.</summary>
     private static Vector3 ApplySlotOffset(Vector3 basePosition, Vector3 slotOffset, IReadOnlyCollection<string> groups)
     {
         if (slotOffset == Vector3.Zero)
@@ -401,6 +445,7 @@ public static class JBeamAssembler
         return basePosition + adjustedOffset;
     }
 
+    /// <summary>Tries to resolve the lateral side sign (1.0 for right, -1.0 for left) based on group names.</summary>
     private static bool TryResolveLateralSideSign(IReadOnlyCollection<string> groups, float fallbackX, out float sideSign)
     {
         foreach (var group in groups)
@@ -442,6 +487,7 @@ public static class JBeamAssembler
         "glass", "windshield", "backlight", "mirror", "roof"
     };
 
+    /// <summary>Builds logical <see cref="VehiclePart"/> instances from JBeam parts and assembled nodes/beams.</summary>
     private static List<VehiclePart> BuildLogicalParts(
         List<JBeamPart> activeParts,
         Dictionary<string, AssembledNode> allNodes,
@@ -535,6 +581,7 @@ public static class JBeamAssembler
         return result;
     }
 
+    /// <summary>Determines if a slot type represents a detachable part.</summary>
     private static bool IsDetachable(string slotType)
     {
         if (string.IsNullOrEmpty(slotType))
@@ -552,6 +599,7 @@ public static class JBeamAssembler
         return false;
     }
 
+    /// <summary>Computes the break strength for a set of nodes based on beam properties.</summary>
     private static float ComputeBreakStrength(
         List<string> partNodeIds,
         List<AssembledBeam> allBeams,

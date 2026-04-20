@@ -37,6 +37,9 @@ public static class PcConfigLoader
         AllowTrailingCommas = true,
     };
 
+    /// <summary>Loads and parses a .pc configuration file from the specified path.</summary>
+    /// <param name="pcFilePath">The absolute path to the .pc file.</param>
+    /// <returns>A <see cref="PcConfig"/> object containing the parsed settings.</returns>
     public static PcConfig Load(string pcFilePath)
     {
         var text = File.ReadAllText(pcFilePath);

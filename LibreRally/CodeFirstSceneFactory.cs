@@ -10,14 +10,35 @@ using Stride.Rendering.Skyboxes;
 
 namespace LibreRally;
 
+/// <summary>
+/// Factory for creating the main game scene and its associated setup using code-first approach.
+/// </summary>
 public static class CodeFirstSceneFactory
 {
+    /// <summary>
+    /// Creates the main scene with default settings.
+    /// </summary>
+    /// <returns>A new <see cref="Scene"/> instance.</returns>
     public static Scene CreateMainScene() => CreateMainSceneSetup().Scene;
 
+    /// <summary>
+    /// Creates the main scene with an optional game instance for asset loading.
+    /// </summary>
+    /// <param name="game">The game instance to use for loading assets.</param>
+    /// <returns>A new <see cref="Scene"/> instance.</returns>
     public static Scene CreateMainScene(Game? game) => CreateMainSceneSetup(game).Scene;
 
+    /// <summary>
+    /// Creates the main scene setup with default settings.
+    /// </summary>
+    /// <returns>A <see cref="CodeFirstSceneSetup"/> containing the scene, camera, and compositor.</returns>
     public static CodeFirstSceneSetup CreateMainSceneSetup() => CreateMainSceneSetup(null);
 
+    /// <summary>
+    /// Creates the main scene setup with an optional game instance for asset loading.
+    /// </summary>
+    /// <param name="game">The game instance to use for loading assets.</param>
+    /// <returns>A <see cref="CodeFirstSceneSetup"/> containing the scene, camera, and compositor.</returns>
     public static CodeFirstSceneSetup CreateMainSceneSetup(Game? game)
     {
         var groundModel = LoadAsset<Model>(game, "Ground");
@@ -105,8 +126,12 @@ public static class CodeFirstSceneFactory
     }
 }
 
+/// <summary>
+/// Main game class for LibreRally, responsible for initializing the scene and content.
+/// </summary>
 public sealed class LibreRallyGame : Game
 {
+    /// <inheritdoc/>
     protected override async Task LoadContent()
     {
         await base.LoadContent();
@@ -124,6 +149,12 @@ public sealed class LibreRallyGame : Game
     }
 }
 
+/// <summary>
+/// Holds the results of a code-first scene setup.
+/// </summary>
+/// <param name="Scene">The created scene.</param>
+/// <param name="MainCamera">The main camera component.</param>
+/// <param name="GraphicsCompositor">The graphics compositor used by the scene.</param>
 public sealed record CodeFirstSceneSetup(
     Scene Scene,
     CameraComponent MainCamera,

@@ -3,8 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using LibreRally.Vehicle;
 
 namespace LibreRally.Vehicle.Rendering;
+
+public readonly record struct BeamNgMaterialTextureSet(
+    string BaseColorPath,
+    string? ColorPalettePath,
+    bool UsesInstanceDiffuse);
 
 /// <summary>
 /// Loads BeamNG <c>*.materials.json</c> files and resolves material identifiers to concrete diffuse texture
@@ -17,6 +23,7 @@ public static class BeamNGMaterialLoader
         AllowTrailingCommas = true,
         CommentHandling = JsonCommentHandling.Skip,
     };
+    private static readonly string[] TextureExtensions = [".dds", ".png", ".jpg", ".jpeg", ".tga"];
 
     /// <summary>
     /// Scans every *.materials.json in <paramref name="vehicleFolder"/> and builds a map
@@ -33,9 +40,10 @@ public static class BeamNGMaterialLoader
     /// </returns>
     public static Dictionary<string, string> LoadMaterialTextures(
         string vehicleFolder,
-        string vehiclesRootDir)
+        string vehiclesRootDir,
+        IReadOnlyList<ActiveMaterialSkinSelection>? activeMaterialSkins = null)
     {
-        return LoadMaterialTextures([vehicleFolder], [vehiclesRootDir], null);
+        return LoadMaterialTextures([vehicleFolder], [vehiclesRootDir], null, activeMaterialSkins);
     }
 
     /// <summary>
@@ -55,9 +63,28 @@ public static class BeamNGMaterialLoader
     public static Dictionary<string, string> LoadMaterialTextures(
         IEnumerable<string> materialSearchFolders,
         IEnumerable<string> vehiclesRootDirs,
-        Func<string, string?>? virtualPathResolver)
+        Func<string, string?>? virtualPathResolver,
+        IReadOnlyList<ActiveMaterialSkinSelection>? activeMaterialSkins = null)
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return LoadMaterialTextureSets(materialSearchFolders, vehiclesRootDirs, virtualPathResolver, activeMaterialSkins)
+            .ToDictionary(entry => entry.Key, entry => entry.Value.BaseColorPath, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static Dictionary<string, BeamNgMaterialTextureSet> LoadMaterialTextureSets(
+        string vehicleFolder,
+        string vehiclesRootDir,
+        IReadOnlyList<ActiveMaterialSkinSelection>? activeMaterialSkins = null)
+    {
+        return LoadMaterialTextureSets([vehicleFolder], [vehiclesRootDir], null, activeMaterialSkins);
+    }
+
+    public static Dictionary<string, BeamNgMaterialTextureSet> LoadMaterialTextureSets(
+        IEnumerable<string> materialSearchFolders,
+        IEnumerable<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver,
+        IReadOnlyList<ActiveMaterialSkinSelection>? activeMaterialSkins = null)
+    {
+        var result = new Dictionary<string, BeamNgMaterialTextureSet>(StringComparer.OrdinalIgnoreCase);
         var distinctRootDirs = vehiclesRootDirs
             .Where(path => !string.IsNullOrWhiteSpace(path))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -81,6 +108,7 @@ public static class BeamNGMaterialLoader
             }
         }
 
+        ApplyActiveSkinOverrides(result, activeMaterialSkins);
         return result;
     }
 
@@ -90,7 +118,7 @@ public static class BeamNGMaterialLoader
         string jsonFile,
         IReadOnlyList<string> vehiclesRootDirs,
         Func<string, string?>? virtualPathResolver,
-        Dictionary<string, string> result)
+        Dictionary<string, BeamNgMaterialTextureSet> result)
     {
         var text = File.ReadAllText(jsonFile);
         using var doc = JsonDocument.Parse(text, ParseOptions);
@@ -110,53 +138,138 @@ public static class BeamNGMaterialLoader
 	            continue;
             }
 
-            var texPath = FindBestTexturePath(matElem);
-            if (texPath == null)
+            if (!TryFindBestTextureSet(matElem, vehiclesRootDirs, virtualPathResolver, out var textureSet))
             {
 	            continue;
             }
 
-            var resolved = ResolveVehiclePath(texPath, vehiclesRootDirs, virtualPathResolver);
-            if (!string.IsNullOrEmpty(resolved))
-            {
-	            result.TryAdd(matName, resolved);
-            }
+            RegisterMaterialTextureSet(matName, matElem, textureSet, result);
         }
     }
 
-    /// <summary>
-    /// Returns the first non-null diffuse/baseColor texture path found in any stage,
-    /// skipping <see langword="null" /> placeholder textures. Returns <see langword="null" /> if none are found.
-    /// </summary>
-    private static string? FindBestTexturePath(JsonElement material)
+    private static void RegisterMaterialTextureSet(
+        string materialName,
+        JsonElement material,
+        BeamNgMaterialTextureSet textureSet,
+        Dictionary<string, BeamNgMaterialTextureSet> result)
     {
-        if (!material.TryGetProperty("Stages", out var stages))
+        result.TryAdd(materialName, textureSet);
+
+        if (!material.TryGetProperty("mapTo", out var mapToElement) ||
+            mapToElement.ValueKind != JsonValueKind.String)
         {
-	        return null;
+            return;
         }
 
+        var mapTo = mapToElement.GetString();
+        if (string.IsNullOrWhiteSpace(mapTo))
+        {
+            return;
+        }
+
+        result.TryAdd(mapTo, textureSet);
+    }
+
+    private static bool TryFindBestTextureSet(
+        JsonElement material,
+        IReadOnlyList<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver,
+        out BeamNgMaterialTextureSet textureSet)
+    {
+        textureSet = default;
+        if (!material.TryGetProperty("Stages", out var stages))
+        {
+            return false;
+        }
+
+        BeamNgMaterialTextureSet? fallback = null;
         foreach (var stage in stages.EnumerateArray())
         {
             if (stage.ValueKind != JsonValueKind.Object)
             {
-	            continue;
+                continue;
             }
 
-            // PBR format (version 1.5+): baseColorMap
-            if (TryGetNonNullPath(stage, "baseColorMap", out var path))
+            if (TryGetStageTextureSet(stage, vehiclesRootDirs, virtualPathResolver, requireInstanceDiffuse: true, out textureSet))
             {
-	            return path;
+                return true;
             }
 
-            // Legacy format: colorMap
-            if (TryGetNonNullPath(stage, "colorMap", out path))
+            if (fallback == null &&
+                TryGetStageTextureSet(stage, vehiclesRootDirs, virtualPathResolver, requireInstanceDiffuse: false, out var fallbackSet))
             {
-	            return path;
+                fallback = fallbackSet;
             }
-            // Diffuse colour only — skip; no texture file to load
         }
 
-        return null;
+        if (fallback.HasValue)
+        {
+            textureSet = fallback.Value;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetStageTextureSet(
+        JsonElement stage,
+        IReadOnlyList<string> vehiclesRootDirs,
+        Func<string, string?>? virtualPathResolver,
+        bool requireInstanceDiffuse,
+        out BeamNgMaterialTextureSet textureSet)
+    {
+        textureSet = default;
+        if (requireInstanceDiffuse &&
+            (!stage.TryGetProperty("instanceDiffuse", out var instanceDiffuse) || instanceDiffuse.ValueKind != JsonValueKind.True))
+        {
+            return false;
+        }
+
+        if (!TryGetStageBaseTexturePath(stage, out var baseTexturePath))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(baseTexturePath))
+        {
+            return false;
+        }
+
+        var resolvedBaseColorPath = ResolveVehiclePath(baseTexturePath, vehiclesRootDirs, virtualPathResolver);
+        if (string.IsNullOrEmpty(resolvedBaseColorPath))
+        {
+            return false;
+        }
+
+        string? resolvedColorPalettePath = null;
+        if (TryGetNonNullPath(stage, "colorPaletteMap", out var colorPalettePath))
+        {
+            resolvedColorPalettePath = string.IsNullOrWhiteSpace(colorPalettePath)
+                ? null
+                : ResolveVehiclePath(colorPalettePath, vehiclesRootDirs, virtualPathResolver);
+        }
+
+        textureSet = new BeamNgMaterialTextureSet(
+            resolvedBaseColorPath,
+            resolvedColorPalettePath,
+            requireInstanceDiffuse);
+        return true;
+    }
+
+    private static bool TryGetStageBaseTexturePath(JsonElement stage, out string? path)
+    {
+        path = null;
+        if (TryGetNonNullPath(stage, "baseColorMap", out path))
+        {
+            return true;
+        }
+
+        if (TryGetNonNullPath(stage, "colorMap", out path))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TryGetNonNullPath(JsonElement stage, string key, out string? path)
@@ -220,42 +333,119 @@ public static class BeamNGMaterialLoader
             var fullPath = Path.Combine(vehiclesRootDir,
                 normalised.Replace('/', Path.DirectorySeparatorChar));
 
-            if (File.Exists(fullPath))
+            var resolvedLocalPath = ResolveExistingTexturePath(fullPath);
+            if (!string.IsNullOrEmpty(resolvedLocalPath))
             {
-	            return fullPath;
-            }
-
-            // Fallback: if the original reference was a .dds, try .png (for copyright-free placeholders)
-            if (Path.GetExtension(fullPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
-            {
-                var pngPath = Path.ChangeExtension(fullPath, ".png");
-                if (File.Exists(pngPath))
-                {
-	                return pngPath;
-                }
+                return resolvedLocalPath;
             }
         }
 
         var virtualPath = "vehicles/" + normalised.Replace('\\', '/');
-        var resolved = virtualPathResolver?.Invoke(virtualPath);
+        return ResolveVirtualTexturePath(virtualPath, virtualPathResolver);
+    }
+
+    private static string? ResolveExistingTexturePath(string fullPath)
+    {
+        if (File.Exists(fullPath))
+        {
+            return fullPath;
+        }
+
+        var extension = Path.GetExtension(fullPath);
+        var basePath = string.IsNullOrEmpty(extension)
+            ? fullPath
+            : fullPath[..^extension.Length];
+
+        foreach (var candidatePath in TextureExtensions
+                     .Select(ext => basePath + ext)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (File.Exists(candidatePath))
+            {
+                return candidatePath;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ResolveVirtualTexturePath(string virtualPath, Func<string, string?>? virtualPathResolver)
+    {
+        if (virtualPathResolver == null)
+        {
+            return null;
+        }
+
+        var resolved = virtualPathResolver(virtualPath);
         if (!string.IsNullOrEmpty(resolved))
         {
             return resolved;
         }
 
-        if (Path.GetExtension(virtualPath).Equals(".dds", StringComparison.OrdinalIgnoreCase))
+        var extension = Path.GetExtension(virtualPath);
+        var basePath = string.IsNullOrEmpty(extension)
+            ? virtualPath
+            : virtualPath[..^extension.Length];
+
+        foreach (var candidatePath in TextureExtensions
+                     .Select(ext => (basePath + ext).Replace('\\', '/'))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var pngPath = Path.ChangeExtension(virtualPath, ".png");
-            if (!string.IsNullOrEmpty(pngPath))
+            resolved = virtualPathResolver(candidatePath);
+            if (!string.IsNullOrEmpty(resolved))
             {
-                resolved = virtualPathResolver?.Invoke(pngPath.Replace('\\', '/'));
-                if (!string.IsNullOrEmpty(resolved))
-                {
-                    return resolved;
-                }
+                return resolved;
             }
         }
 
         return null;
+    }
+
+    private static void ApplyActiveSkinOverrides(
+        Dictionary<string, BeamNgMaterialTextureSet> result,
+        IReadOnlyList<ActiveMaterialSkinSelection>? activeMaterialSkins)
+    {
+        if (activeMaterialSkins == null || activeMaterialSkins.Count == 0)
+        {
+            return;
+        }
+
+        var materialEntries = result.ToArray();
+        foreach (var selection in activeMaterialSkins)
+        {
+            foreach (var suffix in EnumerateMaterialSkinSuffixes(selection))
+            {
+                foreach (var (materialKey, textureSet) in materialEntries)
+                {
+                    if (!materialKey.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var baseMaterialKey = materialKey[..^suffix.Length];
+                    if (string.IsNullOrWhiteSpace(baseMaterialKey))
+                    {
+                        continue;
+                    }
+
+                    result[baseMaterialKey] = textureSet;
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<string> EnumerateMaterialSkinSuffixes(ActiveMaterialSkinSelection selection)
+    {
+        if (string.IsNullOrWhiteSpace(selection.VariantName))
+        {
+            yield break;
+        }
+
+        if (selection.SlotType.Equals("paint_design", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return ".skin." + selection.VariantName;
+        }
+
+        yield return "." + selection.SlotType + "." + selection.VariantName;
     }
 }
