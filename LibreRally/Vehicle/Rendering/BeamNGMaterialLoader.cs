@@ -8,8 +8,8 @@ using LibreRally.Vehicle;
 namespace LibreRally.Vehicle.Rendering;
 
 /// <summary>Resolved BeamNG texture set for a material entry.</summary>
-/// <param name="BaseColorPath">Absolute path to the resolved base-color texture.</param>
-/// <param name="ColorPalettePath">Optional palette texture used for instance colour overrides.</param>
+/// <param name="BaseColorPath">Resolved file-system path to the base-color texture.</param>
+/// <param name="ColorPalettePath">Optional resolved file-system path to the palette texture used for instance colour overrides.</param>
 /// <param name="UsesInstanceDiffuse">Whether the material expects instance-driven diffuse colours.</param>
 public readonly record struct BeamNgMaterialTextureSet(
     string BaseColorPath,

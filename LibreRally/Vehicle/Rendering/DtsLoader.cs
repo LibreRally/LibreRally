@@ -17,7 +17,7 @@ public static class DtsLoader
     private const float Quat16MaxValue = 32767f;
 
     /// <summary>Loads static mesh geometry from a Torque DTS file.</summary>
-    /// <param name="dtsFilePath">Absolute path to the DTS file.</param>
+    /// <param name="dtsFilePath">Path to the DTS file.</param>
     /// <returns>The extracted meshes converted into <see cref="ColladaMesh"/> objects.</returns>
     /// <exception cref="EndOfStreamException">Thrown when the DTS file ends before the required buffers are fully read.</exception>
     /// <exception cref="InvalidDataException">Thrown when the DTS file header or buffer layout is invalid.</exception>

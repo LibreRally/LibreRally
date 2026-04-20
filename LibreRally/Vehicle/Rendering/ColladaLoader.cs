@@ -43,7 +43,7 @@ public static class ColladaLoader
     private sealed record ColladaGeometry(string Id, string Name, List<ColladaMesh> Meshes);
 
     /// <summary>Loads Collada meshes from the given <c>.dae</c> file.</summary>
-    /// <param name="daeFilePath">Absolute path to the Collada file to load.</param>
+    /// <param name="daeFilePath">Path to the Collada file to load.</param>
     /// <returns>The meshes extracted from the file after scene filtering.</returns>
     /// <exception cref="InvalidDataException">Thrown when the Collada file is missing required root data.</exception>
     public static List<ColladaMesh> Load(string daeFilePath)
@@ -581,7 +581,7 @@ public static class ColladaLoader
     /// The file path stored in the DAE may be absolute from another machine — only the filename
     /// component is returned so callers can do a local lookup.
     /// </summary>
-    /// <param name="daeFilePath">Absolute path to the source Collada file.</param>
+    /// <param name="daeFilePath">Path to the source Collada file.</param>
     /// <returns>A dictionary of material symbols to texture filenames.</returns>
     public static Dictionary<string, string> LoadTextureMap(string daeFilePath)
     {
