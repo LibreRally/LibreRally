@@ -754,14 +754,6 @@ public static class JBeamParser
         return variables;
     }
 
-    private static List<JBeamVariableDefinition> ParseVariableDefinitions(JsonElement obj)
-    {
-        var variables = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
-        var definitions = new List<JBeamVariableDefinition>();
-        ParseVariables(obj, variables, definitions);
-        return definitions;
-    }
-
     private static void ParseVariables(
         JsonElement obj,
         Dictionary<string, float>? variables,
