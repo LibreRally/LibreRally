@@ -21,6 +21,10 @@ namespace LibreRally.Vehicle.Physics;
 /// physics step, producing visible body lean and dive/squat from the measured suspension
 /// state rather than from arbitrary visual offsets.</para>
 ///
+/// <para>This is a reduced-order, torque-based body attitude model. It approximates the
+/// sprung-mass response from compression and acceleration terms and does not model full
+/// multi-body suspension kinematics (control-arm geometry, instant centers, etc.).</para>
+///
 /// <para>Design constraints:
 /// <list type="bullet">
 ///   <item>Zero per-frame allocations — struct with no heap state.</item>

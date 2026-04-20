@@ -14,11 +14,12 @@ namespace LibreRally.Vehicle.Physics;
 ///
 /// <para>Per-frame update order:
 /// <list type="number">
-///   <item>Compute longitudinal and lateral load transfer from chassis acceleration.</item>
+///   <item>Compute longitudinal and lateral load transfer from force-derived chassis acceleration.</item>
 ///   <item>Compute anti-roll bar forces from suspension compression difference.</item>
 ///   <item>Apply chassis body roll torque from suspension compression difference.</item>
 ///   <item>Split engine torque through the drivetrain (center diff → axle diffs → wheels).</item>
 ///   <item>Evaluate tyre model for each wheel (slip ratio, slip angle → Fx, Fy, Mz).</item>
+///   <item>Estimate next-step chassis acceleration from the summed tyre forces.</item>
 ///   <item>Apply all computed forces/impulses to BEPU bodies.</item>
 /// </list></para>
 ///
@@ -143,9 +144,9 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Drive torque delivered to each wheel after differential (N·m).</summary>
     public readonly float[] WheelDriveTorques = new float[WheelCount];
 
-    // ── Previous velocity for acceleration estimation ────────────────────────
-
-    private Vector3 _previousVelocity;
+    // ── Force-derived acceleration state (cached for next step) ──────────────
+    private float _forceEstimatedLongitudinalAccel;
+    private float _forceEstimatedLateralAccel;
 
     /// <summary>Initializes a new dynamics system with default tyre state and tarmac surfaces.</summary>
     public VehicleDynamicsSystem()
@@ -193,20 +194,15 @@ public sealed class VehicleDynamicsSystem
 	        return;
         }
 
-        var chassisVelocity = chassisBody.LinearVelocity;
-
-        // ── 1. Estimate chassis acceleration for load transfer ───────────────
-        // Use finite difference of velocity for acceleration estimation.
-        // Reference: Milliken, RCVD §5.6, load transfer from measured acceleration.
-        var acceleration = (chassisVelocity - _previousVelocity) / dt;
-        _previousVelocity = chassisVelocity;
-
-        // Project acceleration into chassis-local frame.
+        // ── 1. Use force-derived chassis acceleration for load transfer ───────
+        // Acceleration is estimated from summed tyre forces at the end of each
+        // step and cached for use on the next fixed update.
+        // Reference: F = m·a (Newton's second law).
         // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
         var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        var longitudinalAccel = Vector3.Dot(acceleration, forwardDir);
-        var lateralAccel = Vector3.Dot(acceleration, rightDir);
+        var longitudinalAccel = _forceEstimatedLongitudinalAccel;
+        var lateralAccel = _forceEstimatedLateralAccel;
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
@@ -244,7 +240,10 @@ public sealed class VehicleDynamicsSystem
         // ── 5. Evaluate tyre model for each wheel ───────────────────────────
         ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
 
-        // ── 6. Apply all forces as impulses to the chassis at the wheel contact locations ─
+        // ── 6. Update force-derived acceleration estimate for next physics step ─
+        UpdateForceBasedAccelerationEstimate(in chassisWorld, wheelOrientations, wheelContactScales);
+
+        // ── 7. Apply all forces as impulses to the chassis at the wheel contact locations ─
         ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
     }
 
@@ -564,6 +563,73 @@ public sealed class VehicleDynamicsSystem
                 out LateralForces[i],
                 out SelfAligningTorques[i]);
         }
+    }
+
+    /// <summary>
+    /// Estimates chassis longitudinal/lateral acceleration from the current modelled tyre forces.
+    /// This estimate is cached and used on the next update for load transfer/body attitude.
+    /// </summary>
+    private void UpdateForceBasedAccelerationEstimate(
+        in Matrix chassisWorld,
+        ReadOnlySpan<Matrix> wheelOrientations,
+        ReadOnlySpan<float> wheelContactScales)
+    {
+        var netForceWorld = Vector3.Zero;
+
+        for (var i = 0; i < WheelCount; i++)
+        {
+            if (!WheelGrounded[i])
+            {
+                continue;
+            }
+
+            var contactScale = i < wheelContactScales.Length
+                ? Math.Clamp(wheelContactScales[i], 0f, 1f)
+                : 1f;
+
+            if (contactScale <= 1e-4f)
+            {
+                continue;
+            }
+
+            var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
+            var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
+            var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+            var wheelForceWorld = wheelForward * LongitudinalForces[i] + wheelRight * LateralForces[i];
+            netForceWorld += wheelForceWorld * contactScale;
+        }
+
+        var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
+        var planarAcceleration = EstimatePlanarAccelerationFromNetForce(
+            netForceWorld,
+            forwardDir,
+            rightDir,
+            VehicleMass);
+
+        _forceEstimatedLongitudinalAccel = planarAcceleration.X;
+        _forceEstimatedLateralAccel = planarAcceleration.Y;
+    }
+
+    /// <summary>
+    /// Converts net world-space force to chassis-local planar acceleration
+    /// components (longitudinal, lateral).
+    /// </summary>
+    internal static Vector2 EstimatePlanarAccelerationFromNetForce(
+        Vector3 netForceWorld,
+        Vector3 chassisForward,
+        Vector3 chassisRight,
+        float vehicleMass)
+    {
+        if (vehicleMass <= 1e-4f)
+        {
+            return Vector2.Zero;
+        }
+
+        var accelerationWorld = netForceWorld / vehicleMass;
+        return new Vector2(
+            Vector3.Dot(accelerationWorld, chassisForward),
+            Vector3.Dot(accelerationWorld, chassisRight));
     }
 
     /// <summary>
