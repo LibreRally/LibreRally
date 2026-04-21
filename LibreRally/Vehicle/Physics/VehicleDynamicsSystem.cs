@@ -221,37 +221,47 @@ public sealed class VehicleDynamicsSystem
         var longitudinalAccel = Vector3.Dot(predictedAccelerationWorld, forwardDir);
         var lateralAccel = Vector3.Dot(predictedAccelerationWorld, rightDir);
 
-        // ── 2. Compute load transfer ─────────────────────────────────────────
+        // ── 2. First force pass using the cached estimate as a predictor ─────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
-
-        // ── 3. Compute anti-roll bar forces ──────────────────────────────────
         ComputeAntiRollForces(suspensionCompressions);
 
-        // ── 3c. Asymmetric damping correction ─────────────────────────────────
+        // ── 2b. Asymmetric damping correction ─────────────────────────────────
         // BEPU's LinearAxisServo applies an averaged damping ratio. Real suspension has
         // different bump (compression) and rebound (extension) damping — often 2-3× apart.
         // We compute the correction force = (direction-aware damping − average) × velocity
         // and apply it as an additional impulse at each wheel position.
         ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, suspensionCompressions, dt);
-
-        // ── 4. Split engine torque through drivetrain ────────────────────────
-        ComputeDrivetrainTorque(engineTorqueAtWheels);
-
-        // ── 5. Evaluate tyre model for each wheel ───────────────────────────
-        ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
+        var instantaneousAccelerationWorld = RunForcePredictionPass(
+            wheelGrounded,
+            wheelContactScales,
+            suspensionCompressions,
+            engineTorqueAtWheels,
+            wheelOrientations,
+            wheelVelocities,
+            brakeTorque,
+            camberAngles,
+            longitudinalAccel,
+            lateralAccel,
+            dt);
 
         // ── 6. Re-evaluate load transfer with the current-step force estimate ─
         // First pass uses the previous force estimate as a predictor. Recomputing within the
         // same step removes the one-frame lag from load transfer and body attitude response.
-        var instantaneousAccelerationWorld = EstimateForceBasedAcceleration(wheelOrientations);
         longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
         lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
 
-        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
-        ComputeAntiRollForces(suspensionCompressions);
-        ComputeDrivetrainTorque(engineTorqueAtWheels);
-        ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
-        instantaneousAccelerationWorld = EstimateForceBasedAcceleration(wheelOrientations);
+        instantaneousAccelerationWorld = RunForcePredictionPass(
+            wheelGrounded,
+            wheelContactScales,
+            suspensionCompressions,
+            engineTorqueAtWheels,
+            wheelOrientations,
+            wheelVelocities,
+            brakeTorque,
+            camberAngles,
+            longitudinalAccel,
+            lateralAccel,
+            dt);
         longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
         lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
 
@@ -616,6 +626,26 @@ public sealed class VehicleDynamicsSystem
                 out LateralForces[i],
                 out SelfAligningTorques[i]);
         }
+    }
+
+    private Vector3 RunForcePredictionPass(
+        ReadOnlySpan<bool> wheelGrounded,
+        ReadOnlySpan<float> wheelContactScales,
+        ReadOnlySpan<float> suspensionCompressions,
+        float engineTorqueAtWheels,
+        ReadOnlySpan<Matrix> wheelOrientations,
+        ReadOnlySpan<Vector3> wheelVelocities,
+        ReadOnlySpan<float> brakeTorques,
+        ReadOnlySpan<float> camberAngles,
+        float longitudinalAccel,
+        float lateralAccel,
+        float dt)
+    {
+        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
+        ComputeAntiRollForces(suspensionCompressions);
+        ComputeDrivetrainTorque(engineTorqueAtWheels);
+        ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorques, camberAngles, dt);
+        return EstimateForceBasedAcceleration(wheelOrientations);
     }
 
     /// <summary>

@@ -216,15 +216,18 @@ public sealed class TyreModel
     /// <summary>Lateral contact-patch damping (N·s/m).</summary>
     public float ContactPatchDamping { get; set; } = 4500f;
 
-    /// <summary>Lateral relaxation length (m) for the brush tyre transient model.</summary>
+    /// <summary>
+    /// Lateral relaxation length (m) for the brush tyre transient model.
+    /// Tuned shorter than before because loose-surface scaling now lengthens it dynamically.
+    /// </summary>
     public float RelaxationLength { get; set; } = 0.45f;
 
     /// <summary>
-     /// Longitudinal relaxation length (m) for the brush tyre transient model.
-     /// Typically shorter than lateral because the tyre carcass is stiffer in
-     /// the rolling direction. Default 0.28 m.
-     /// Reference: Pacejka §5.4; brush model braking transient.
-     /// </summary>
+    /// Longitudinal relaxation length (m) for the brush tyre transient model.
+    /// Typically shorter than lateral because the tyre carcass is stiffer in
+    /// the rolling direction. Default 0.28 m.
+    /// Reference: Pacejka §5.4; brush model braking transient.
+    /// </summary>
     public float LongitudinalRelaxationLength { get; set; } = 0.28f;
 
     /// <summary>
@@ -339,6 +342,10 @@ public sealed class TyreModel
     private const float RollingRadiusDeflectionDivisor = 3f;
     private const float SurfaceDeformationBrushSoftening = 0.15f;
     private const float ReferencePressureBrushStiffness = ReferencePressure * KilopascalsToPascals * ReferenceTyreWidth;
+    private const float SurfaceRelaxationLowGripBase = 0.2f;
+    private const float SurfaceRelaxationLowGripSensitivityScale = 0.25f;
+    private const float SurfaceRelaxationRoughnessBase = 0.1f;
+    private const float SurfaceRelaxationRoughnessSensitivityScale = 0.1f;
 
     /// <summary>
     /// Reference tyre pressure (kPa) used to normalise pressure-dependent effects.
@@ -984,10 +991,12 @@ public sealed class TyreModel
             ? LongitudinalSurfaceRelaxationSensitivity
             : LateralSurfaceRelaxationSensitivity;
         var deformationFactor = 1f + Math.Clamp(surface.DeformationFactor, 0f, 1f) * MathF.Max(sensitivity, 0f);
+        // Low-grip surfaces delay carcass force buildup beyond the deformation term alone.
         var lowGripFactor = 1f + MathF.Max(1f - Math.Clamp(surface.FrictionCoefficient, 0.1f, 1.25f), 0f)
-            * (0.2f + MathF.Max(sensitivity, 0f) * 0.25f);
+            * (SurfaceRelaxationLowGripBase + MathF.Max(sensitivity, 0f) * SurfaceRelaxationLowGripSensitivityScale);
+        // Rough aggregate adds extra tread-block shuffle, so relaxation grows slightly with surface noise.
         var roughnessFactor = 1f + Math.Clamp(surface.NoiseFactor, 0f, 1f)
-            * (0.1f + MathF.Max(sensitivity, 0f) * 0.1f);
+            * (SurfaceRelaxationRoughnessBase + MathF.Max(sensitivity, 0f) * SurfaceRelaxationRoughnessSensitivityScale);
         var surfaceAdjustedLength = baseLength * deformationFactor * lowGripFactor * roughnessFactor;
         return MathF.Max(surfaceAdjustedLength / MathF.Max(CarcassStiffness, 0.1f), 0.05f);
     }
