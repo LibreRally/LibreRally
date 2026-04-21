@@ -107,6 +107,9 @@ public class RallyCarComponent : SyncScript
     /// </summary>
     public VehicleDynamicsSystem? Dynamics { get; set; }
 
+    /// <summary>Visual suspension link rig driven from the rigid-body wheel/chassis state.</summary>
+    internal Rendering.SuspensionVisualKinematicsRig? SuspensionVisualRig { get; set; }
+
     /// <summary>Wheel radius used to convert speed to spin rate (m).</summary>
     public float WheelRadius { get; set; } = 0.305f;
 
@@ -880,6 +883,7 @@ public class RallyCarComponent : SyncScript
         }
 
         UpdateWheelSurfaceVfx(dt, chassisTransform.WorldMatrix);
+        SuspensionVisualRig?.UpdateVisuals();
     }
 
     /// <summary>

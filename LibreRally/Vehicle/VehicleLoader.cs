@@ -325,6 +325,7 @@ public class VehicleLoader
             BurnEfficiencyValues = powertrain.BurnEfficiencyValues,
             HasTurbo = powertrain.HasTurbo,
             TurboMaxBoostPsi = powertrain.TurboMaxBoostPsi,
+            SuspensionVisualRig = BuildSuspensionVisualRig(definition, result),
         };
         car.Wheels.AddRange(wheelEntities);
         car.SteerWheels.AddRange(new[] { result.WheelFL, result.WheelFR });
@@ -788,6 +789,11 @@ public class VehicleLoader
         var attached = 0;
         foreach (var flexBody in GetWheelVisualFlexBodies(definition))
         {
+            if (SuspensionVisualKinematicsRigBuilder.IsSuspensionKinematicFlexBody(flexBody))
+            {
+                continue;
+            }
+
             if (!TryResolveWheelKey(flexBody, out string? wheelKey) ||
                 wheelKey == null ||
                 !wheelEntities.TryGetValue(wheelKey, out var wheelEntity))
@@ -837,6 +843,7 @@ public class VehicleLoader
     {
         return definition.FlexBodies
             .Where(flexBody => !IsWheelVisualFlexBody(flexBody))
+            .Where(flexBody => !SuspensionVisualKinematicsRigBuilder.IsSuspensionKinematicFlexBody(flexBody))
             .Select(flexBody => flexBody.MeshName)
             .Where(meshName => !string.IsNullOrWhiteSpace(meshName))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -1232,6 +1239,37 @@ public class VehicleLoader
         entity.AddChild(hubEntity);
 
         return entity;
+    }
+
+    private SuspensionVisualKinematicsRig? BuildSuspensionVisualRig(
+        VehicleDefinition definition,
+        VehicleBuilderResult result)
+    {
+        var linkSpecs = SuspensionVisualKinematicsRigBuilder.BuildLinkSpecs(definition, result);
+        if (linkSpecs.Count == 0)
+        {
+            return null;
+        }
+
+        var links = new List<SuspensionVisualKinematicsRig.SuspensionVisualLinkRuntime>(linkSpecs.Count);
+        foreach (var linkSpec in linkSpecs)
+        {
+            var visualEntity = new Entity(linkSpec.Name);
+            visualEntity.Add(new ModelComponent
+            {
+                Model = BuildWheelCylinderModel(1f, 1f, linkSpec.Color),
+            });
+            result.RootEntity.AddChild(visualEntity);
+            links.Add(new SuspensionVisualKinematicsRig.SuspensionVisualLinkRuntime(
+                visualEntity,
+                linkSpec.StartEntity,
+                linkSpec.StartLocalPosition,
+                linkSpec.EndEntity,
+                linkSpec.EndLocalPosition,
+                linkSpec.Radius));
+        }
+
+        return new SuspensionVisualKinematicsRig(links);
     }
 
     private Model BuildWheelCylinderModel(float radius, float width, Color4 color)
