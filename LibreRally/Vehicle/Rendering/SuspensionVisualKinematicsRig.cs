@@ -44,15 +44,7 @@ internal sealed class SuspensionVisualKinematicsRig
             var upReference = MathF.Abs(Vector3.Dot(forward, Vector3.UnitY)) > 0.97f
                 ? Vector3.UnitZ
                 : Vector3.UnitY;
-            var normal = Vector3.Normalize(Vector3.Cross(upReference, forward));
-            var binormal = Vector3.Normalize(Vector3.Cross(forward, normal));
-            var rotation = Quaternion.RotationMatrix(new Matrix
-            {
-                Row1 = new Vector4(forward, 0f),
-                Row2 = new Vector4(normal, 0f),
-                Row3 = new Vector4(binormal, 0f),
-                Row4 = new Vector4(0f, 0f, 0f, 1f),
-            });
+            var rotation = CreateRotationFromXAxis(forward, upReference);
 
             link.VisualEntity.Transform.Position = (start + end) * 0.5f;
             link.VisualEntity.Transform.Rotation = rotation;
@@ -67,6 +59,32 @@ internal sealed class SuspensionVisualKinematicsRig
         Entity EndEntity,
         Vector3 EndLocalPosition,
         float Radius);
+
+    private static Quaternion CreateRotationFromXAxis(Vector3 forward, Vector3 upReference)
+    {
+        var alignAxis = Vector3.Cross(Vector3.UnitX, forward);
+        Quaternion primaryRotation;
+        if (alignAxis.LengthSquared() < 1e-6f)
+        {
+            primaryRotation = Vector3.Dot(Vector3.UnitX, forward) >= 0f
+                ? Quaternion.Identity
+                : Quaternion.RotationAxis(upReference, MathF.PI);
+        }
+        else
+        {
+            var dot = (float)Math.Clamp(Vector3.Dot(Vector3.UnitX, forward), -1f, 1f);
+            primaryRotation = Quaternion.RotationAxis(Vector3.Normalize(alignAxis), MathF.Acos(dot));
+        }
+
+        var currentUp = Vector3.Transform(Vector3.UnitY, primaryRotation);
+        var projectedUp = Vector3.Normalize(currentUp - forward * Vector3.Dot(currentUp, forward));
+        var targetUp = Vector3.Normalize(upReference - forward * Vector3.Dot(upReference, forward));
+        var signedAngle = MathF.Atan2(
+            Vector3.Dot(Vector3.Cross(projectedUp, targetUp), forward),
+            (float)Math.Clamp(Vector3.Dot(projectedUp, targetUp), -1f, 1f));
+        var twistRotation = Quaternion.RotationAxis(forward, signedAngle);
+        return Quaternion.Normalize(twistRotation * primaryRotation);
+    }
 }
 
 internal static class SuspensionVisualKinematicsRigBuilder
@@ -107,14 +125,14 @@ internal static class SuspensionVisualKinematicsRigBuilder
                 continue;
             }
 
-            if (!TryResolveAnchor(definition, result.ChassisEntity, template.StartGroup, template.WheelKey, chassisAnchor: true, out var startLocalPosition))
+            if (!TryResolveAnchor(definition, result.ChassisEntity, template.StartGroup, template.WheelKey, out var startLocalPosition))
             {
                 continue;
             }
 
             var endOnChassis = template.EndGroup.Equals("transaxle", StringComparison.OrdinalIgnoreCase);
             var endEntity = endOnChassis ? result.ChassisEntity : wheelEntity;
-            if (!TryResolveAnchor(definition, endEntity, template.EndGroup, template.WheelKey, chassisAnchor: endOnChassis, out var endLocalPosition))
+            if (!TryResolveAnchor(definition, endEntity, template.EndGroup, template.WheelKey, out var endLocalPosition))
             {
                 continue;
             }
@@ -144,7 +162,6 @@ internal static class SuspensionVisualKinematicsRigBuilder
         Entity entity,
         string groupName,
         string wheelKey,
-        bool chassisAnchor,
         out Vector3 localPosition)
     {
         localPosition = default;
@@ -200,8 +217,20 @@ internal static class SuspensionVisualKinematicsRigBuilder
                value.Contains("halfshaft", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("driveshaft", StringComparison.OrdinalIgnoreCase) ||
                value.Contains("propshaft", StringComparison.OrdinalIgnoreCase) ||
-               value.Contains("arm_r", StringComparison.OrdinalIgnoreCase) ||
-               value.Contains("arm_l", StringComparison.OrdinalIgnoreCase);
+               ContainsDelimitedToken(value, "arm_r") ||
+               ContainsDelimitedToken(value, "arm_l");
+    }
+
+    private static bool ContainsDelimitedToken(string value, string token)
+    {
+        var normalized = value
+            .Replace("-", "_")
+            .Replace(".", "_")
+            .Replace(' ', '_');
+        return normalized.Contains($"_{token}_", StringComparison.OrdinalIgnoreCase) ||
+               normalized.StartsWith($"{token}_", StringComparison.OrdinalIgnoreCase) ||
+               normalized.EndsWith($"_{token}", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals(token, StringComparison.OrdinalIgnoreCase);
     }
 
     private readonly record struct LinkTemplate(
