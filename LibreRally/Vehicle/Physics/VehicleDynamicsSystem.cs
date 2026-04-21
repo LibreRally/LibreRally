@@ -142,6 +142,9 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Previous frame's suspension compression per wheel, used to compute suspension velocity.</summary>
     private readonly float[] _previousSuspensionCompression = new float[WheelCount];
 
+    /// <summary>Reusable snapshot buffer so the predictor pass can evaluate tyre forces without advancing wheel state twice.</summary>
+    private readonly TyreState[] _predictionWheelStates = new TyreState[WheelCount];
+
     // ── Cached per-frame outputs ─────────────────────────────────────────────
 
     /// <summary>Longitudinal force per wheel (N). Read by telemetry.</summary>
@@ -222,15 +225,6 @@ public sealed class VehicleDynamicsSystem
         var lateralAccel = Vector3.Dot(predictedAccelerationWorld, rightDir);
 
         // ── 2. First force pass using the cached estimate as a predictor ─────
-        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
-        ComputeAntiRollForces(suspensionCompressions);
-
-        // ── 2b. Asymmetric damping correction ─────────────────────────────────
-        // BEPU's LinearAxisServo applies an averaged damping ratio. Real suspension has
-        // different bump (compression) and rebound (extension) damping — often 2-3× apart.
-        // We compute the correction force = (direction-aware damping − average) × velocity
-        // and apply it as an additional impulse at each wheel position.
-        ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, suspensionCompressions, dt);
         var instantaneousAccelerationWorld = RunForcePredictionPass(
             wheelGrounded,
             wheelContactScales,
@@ -242,6 +236,7 @@ public sealed class VehicleDynamicsSystem
             camberAngles,
             longitudinalAccel,
             lateralAccel,
+            preserveWheelState: true,
             dt);
 
         // ── 6. Re-evaluate load transfer with the current-step force estimate ─
@@ -261,6 +256,7 @@ public sealed class VehicleDynamicsSystem
             camberAngles,
             longitudinalAccel,
             lateralAccel,
+            preserveWheelState: false,
             dt);
         longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
         lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
@@ -290,7 +286,12 @@ public sealed class VehicleDynamicsSystem
         _forceEstimatedAccelerationWorld = instantaneousAccelerationWorld;
         _hasForceEstimatedAcceleration = true;
 
-        // ── 7. Apply all forces as impulses to the chassis at the wheel contact locations ─
+        // ── 7. Apply chassis impulses after the force prediction is complete ──
+        // The damping correction mutates chassisBody directly, so it must run after the tyre-force
+        // prediction passes that used the current wheel-velocity snapshot.
+        ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, suspensionCompressions, dt);
+
+        // ── 8. Apply all forces as impulses to the chassis at the wheel contact locations ─
         ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
     }
 
@@ -639,13 +640,26 @@ public sealed class VehicleDynamicsSystem
         ReadOnlySpan<float> camberAngles,
         float longitudinalAccel,
         float lateralAccel,
+        bool preserveWheelState,
         float dt)
     {
+        if (preserveWheelState)
+        {
+            Array.Copy(WheelStates, _predictionWheelStates, WheelCount);
+        }
+
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
         ComputeAntiRollForces(suspensionCompressions);
         ComputeDrivetrainTorque(engineTorqueAtWheels);
         ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorques, camberAngles, dt);
-        return EstimateForceBasedAcceleration(wheelOrientations);
+        var predictedAcceleration = EstimateForceBasedAcceleration(wheelOrientations);
+
+        if (preserveWheelState)
+        {
+            Array.Copy(_predictionWheelStates, WheelStates, WheelCount);
+        }
+
+        return predictedAcceleration;
     }
 
     /// <summary>
