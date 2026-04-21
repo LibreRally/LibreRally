@@ -922,6 +922,13 @@ public static class VehiclePhysicsBuilder
     /// </summary>
     /// <param name="v">Vector expressed in BeamNG coordinates (X right, Y forward, Z up).</param>
     /// <returns>Equivalent vector in Stride coordinates (X right, Y up, Z backward).</returns>
+    /// <remarks>
+    /// <para>Coordinate system transform:</para>
+    /// <list type="bullet">
+    ///   <item>BeamNG: X = right, Y = forward, Z = up</item>
+    ///   <item>Stride: X = right, Y = up, Z = backward</item>
+    /// </list>
+    /// </remarks>
     public static Vector3 BeamNGToStride(System.Numerics.Vector3 v)
         => new Vector3(v.X, v.Z, -v.Y);
 
