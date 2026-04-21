@@ -251,6 +251,8 @@ comment_sense.visibility_level = protected
 comment_sense.require_capitalization = true
 comment_sense.require_ending_punctuation = true
 
+resharper_suggest_var_or_type_built_in_types_highlighting = none
+
 [*]
 
 # Microsoft .NET properties

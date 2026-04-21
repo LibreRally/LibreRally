@@ -8,336 +8,337 @@ using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Games;
 
-namespace LibreRally.HUD;
-
-/// <summary>
-/// Represents an item in the pause menu.
-/// </summary>
-/// <param name="Title">The title of the menu item.</param>
-/// <param name="Description">The detailed description of what the item does.</param>
-public readonly record struct PauseMenuItem(string Title, string Description);
-
-/// <summary>
-/// UI overlay for the in-game pause menu, allowing access to settings, car reset, and vehicle selection.
-/// </summary>
-public sealed class PauseMenuOverlay : GameSystemBase
+namespace LibreRally.HUD
 {
-    private static readonly Color BackdropColor = new(5, 8, 14, 180);
-    private static readonly Color ShellColor = new(16, 22, 30, 242);
-    private static readonly Color AccentColor = new(214, 148, 78, 255);
-    private static readonly Color AccentSoftColor = new(214, 148, 78, 84);
-    private static readonly Color PanelColor = new(26, 32, 43, 236);
-    private static readonly Color TitleColor = new(240, 243, 247, 255);
-    private static readonly Color CopyColor = new(183, 193, 205, 255);
-    private static readonly Color ValueColor = new(255, 230, 204, 255);
-    private static readonly SolidBrush BackdropBrush = new(BackdropColor);
-    private static readonly SolidBrush ShellBrush = new(ShellColor);
-    private static readonly SolidBrush SelectedItemBrush = new(AccentColor);
-    private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
+	/// <summary>
+	/// Represents an item in the pause menu.
+	/// </summary>
+	/// <param name="Title">The title of the menu item.</param>
+	/// <param name="Description">The detailed description of what the item does.</param>
+	public readonly record struct PauseMenuItem(string Title, string Description);
 
-    private readonly List<(Button Button, Label Title, Label Description)> _buttons = [];
-    private IReadOnlyList<PauseMenuItem> _items = Array.Empty<PauseMenuItem>();
-    private bool _overlayVisible;
-    private string _statusText = string.Empty;
-    private string _vehicleName = string.Empty;
-    private int _selectedIndex;
-    private Game? _game;
-    private Desktop? _desktop;
-    private Label? _vehicleNameLabel;
-    private Label? _statusLabel;
+	/// <summary>
+	/// UI overlay for the in-game pause menu, allowing access to settings, car reset, and vehicle selection.
+	/// </summary>
+	public sealed class PauseMenuOverlay : GameSystemBase
+	{
+		private static readonly Color BackdropColor = new(5, 8, 14, 180);
+		private static readonly Color ShellColor = new(16, 22, 30, 242);
+		private static readonly Color AccentColor = new(214, 148, 78, 255);
+		private static readonly Color AccentSoftColor = new(214, 148, 78, 84);
+		private static readonly Color PanelColor = new(26, 32, 43, 236);
+		private static readonly Color TitleColor = new(240, 243, 247, 255);
+		private static readonly Color CopyColor = new(183, 193, 205, 255);
+		private static readonly Color ValueColor = new(255, 230, 204, 255);
+		private static readonly SolidBrush BackdropBrush = new(BackdropColor);
+		private static readonly SolidBrush ShellBrush = new(ShellColor);
+		private static readonly SolidBrush SelectedItemBrush = new(AccentColor);
+		private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
 
-    /// <summary>
-    /// Gets or sets the list of items to display in the menu.
-    /// </summary>
-    public IReadOnlyList<PauseMenuItem> Items
-    {
-        get => _items;
-        set
-        {
-            _items = value ?? Array.Empty<PauseMenuItem>();
-            RebuildRoot();
-        }
-    }
+		private readonly List<(Button Button, Label Title, Label Description)> _buttons = [];
+		private IReadOnlyList<PauseMenuItem> _items = [];
+		private bool _overlayVisible;
+		private string _statusText = string.Empty;
+		private string _vehicleName = string.Empty;
+		private int _selectedIndex;
+		private Game? _game;
+		private Desktop? _desktop;
+		private Label? _vehicleNameLabel;
+		private Label? _statusLabel;
 
-    /// <summary>
-    /// Gets or sets the index of the currently selected menu item.
-    /// </summary>
-    public int SelectedIndex
-    {
-        get => _selectedIndex;
-        set
-        {
-            _selectedIndex = value;
-            UpdateSelectionStyles();
-        }
-    }
+		/// <summary>
+		/// Gets or sets the list of items to display in the menu.
+		/// </summary>
+		public IReadOnlyList<PauseMenuItem> Items
+		{
+			get => _items;
+			set
+			{
+				_items = value;
+				RebuildRoot();
+			}
+		}
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the pause menu overlay is visible.
-    /// </summary>
-    public bool OverlayVisible
-    {
-        get => _overlayVisible;
-        set
-        {
-            _overlayVisible = value;
-            FocusSelectedButton();
-        }
-    }
+		/// <summary>
+		/// Gets or sets the index of the currently selected menu item.
+		/// </summary>
+		public int SelectedIndex
+		{
+			get => _selectedIndex;
+			set
+			{
+				_selectedIndex = value;
+				UpdateSelectionStyles();
+			}
+		}
 
-    /// <summary>
-    /// Gets or sets the status text displayed in the menu.
-    /// </summary>
-    public string StatusText
-    {
-        get => _statusText;
-        set
-        {
-            _statusText = value ?? string.Empty;
-            UpdateLabels();
-        }
-    }
+		/// <summary>
+		/// Gets or sets a value indicating whether the pause menu overlay is visible.
+		/// </summary>
+		public bool OverlayVisible
+		{
+			get => _overlayVisible;
+			set
+			{
+				_overlayVisible = value;
+				FocusSelectedButton();
+			}
+		}
 
-    /// <summary>
-    /// Gets or sets the name of the current vehicle displayed in the menu.
-    /// </summary>
-    public string VehicleName
-    {
-        get => _vehicleName;
-        set
-        {
-            _vehicleName = value ?? string.Empty;
-            UpdateLabels();
-        }
-    }
+		/// <summary>
+		/// Gets or sets the status text displayed in the menu.
+		/// </summary>
+		public string StatusText
+		{
+			get => _statusText;
+			set
+			{
+				_statusText = value;
+				UpdateLabels();
+			}
+		}
 
-    /// <summary>
-    /// Occurs when a menu item is activated (e.g., clicked or confirmed).
-    /// </summary>
-    public Action<int>? ItemActivated { get; set; }
+		/// <summary>
+		/// Gets or sets the name of the current vehicle displayed in the menu.
+		/// </summary>
+		public string VehicleName
+		{
+			get => _vehicleName;
+			set
+			{
+				_vehicleName = value;
+				UpdateLabels();
+			}
+		}
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PauseMenuOverlay"/> class.
-    /// </summary>
-    /// <param name="services">The service registry.</param>
-    public PauseMenuOverlay(IServiceRegistry services) : base(services)
-    {
-        Enabled = true;
-        Visible = true;
-        DrawOrder = 9995;
-        UpdateOrder = 9995;
-    }
+		/// <summary>
+		/// Occurs when a menu item is activated (e.g., clicked or confirmed).
+		/// </summary>
+		public Action<int>? ItemActivated { get; set; }
 
-    /// <summary>
-    /// Initializes the pause-menu overlay and desktop UI.
-    /// </summary>
-    public override void Initialize()
-    {
-        base.Initialize();
+		/// <summary>
+		/// Initializes a new instance of the <see cref="PauseMenuOverlay"/> class.
+		/// </summary>
+		/// <param name="services">The service registry.</param>
+		public PauseMenuOverlay(IServiceRegistry services) : base(services)
+		{
+			Enabled = true;
+			Visible = true;
+			DrawOrder = 9995;
+			UpdateOrder = 9995;
+		}
 
-        _game = (Game?)Services.GetService<IGame>();
-        if (_game == null)
-        {
-            return;
-        }
+		/// <summary>
+		/// Initializes the pause-menu overlay and desktop UI.
+		/// </summary>
+		public override void Initialize()
+		{
+			base.Initialize();
 
-        MyraEnvironment.Game = _game;
-        _desktop = new Desktop
-        {
-            Root = BuildRoot(),
-        };
-        FocusSelectedButton();
-    }
+			_game = (Game?)Services.GetService<IGame>();
+			if (_game == null)
+			{
+				return;
+			}
 
-    protected override void Destroy()
-    {
-        _desktop?.Dispose();
-        base.Destroy();
-    }
+			MyraEnvironment.Game = _game;
+			_desktop = new Desktop
+			{
+				Root = BuildRoot(),
+			};
+			FocusSelectedButton();
+		}
 
-    /// <summary>
-    /// Draws the pause-menu overlay when it is visible.
-    /// </summary>
-    /// <param name="gameTime">Stride timing data for the current frame.</param>
-    public override void Draw(GameTime gameTime)
-    {
-        if (!OverlayVisible || _game == null || _desktop == null)
-        {
-            return;
-        }
+		protected override void Destroy()
+		{
+			_desktop?.Dispose();
+			base.Destroy();
+		}
 
-        var presenter = _game.GraphicsDevice.Presenter;
-        if (presenter?.BackBuffer == null)
-        {
-            return;
-        }
+		/// <summary>
+		/// Draws the pause-menu overlay when it is visible.
+		/// </summary>
+		/// <param name="gameTime">Stride timing data for the current frame.</param>
+		public override void Draw(GameTime gameTime)
+		{
+			if (!OverlayVisible || _game == null || _desktop == null)
+			{
+				return;
+			}
 
-        var context = _game.GraphicsContext;
-        context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
-        _desktop.Render();
-    }
+			var presenter = _game.GraphicsDevice.Presenter;
+			if (presenter?.BackBuffer == null)
+			{
+				return;
+			}
 
-    private Widget BuildRoot()
-    {
-        _buttons.Clear();
+			var context = _game.GraphicsContext;
+			context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
+			_desktop.Render();
+		}
 
-        var root = new Panel
-        {
-            Background = BackdropBrush,
-        };
+		private Widget BuildRoot()
+		{
+			_buttons.Clear();
 
-        var shellFrame = new Panel
-        {
-            Width = 760,
-            Height = 560,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Background = ShellBrush,
-        };
+			var root = new Panel
+			{
+				Background = BackdropBrush,
+			};
 
-        var shell = new VerticalStackPanel
-        {
-            Width = 700,
-            Height = 500,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            Spacing = 12,
-        };
+			var shellFrame = new Panel
+			{
+				Width = 760,
+				Height = 560,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center,
+				Background = ShellBrush,
+			};
 
-        shell.Widgets.Add(new Label
-        {
-            Text = "Paused",
-            TextColor = TitleColor,
-        });
+			var shell = new VerticalStackPanel
+			{
+				Width = 700,
+				Height = 500,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center,
+				Spacing = 12,
+			};
 
-        _vehicleNameLabel = new Label
-        {
-            TextColor = ValueColor,
-        };
-        shell.Widgets.Add(_vehicleNameLabel);
+			shell.Widgets.Add(new Label
+			{
+				Text = "Paused",
+				TextColor = TitleColor,
+			});
 
-        shell.Widgets.Add(new Label
-        {
-            Text = "D-Pad Up/Down select  •  A activate  •  B/Esc/Start back out",
-            TextColor = CopyColor,
-            Wrap = true,
-        });
+			_vehicleNameLabel = new Label
+			{
+				TextColor = ValueColor,
+			};
+			shell.Widgets.Add(_vehicleNameLabel);
 
-        shell.Widgets.Add(CreateSpacer(6));
+			shell.Widgets.Add(new Label
+			{
+				Text = "D-Pad Up/Down select  •  A activate  •  B/Esc/Start back out",
+				TextColor = CopyColor,
+				Wrap = true,
+			});
 
-        for (var index = 0; index < _items.Count; index++)
-        {
-            shell.Widgets.Add(CreateMenuButton(_items[index], index));
-        }
+			shell.Widgets.Add(CreateSpacer(6));
 
-        shell.Widgets.Add(CreateSpacer(10));
+			for (var index = 0; index < _items.Count; index++)
+			{
+				shell.Widgets.Add(CreateMenuButton(_items[index], index));
+			}
 
-        _statusLabel = new Label
-        {
-            TextColor = CopyColor,
-            Wrap = true,
-        };
-        shell.Widgets.Add(_statusLabel);
+			shell.Widgets.Add(CreateSpacer(10));
 
-        shellFrame.Widgets.Add(shell);
-        root.Widgets.Add(shellFrame);
+			_statusLabel = new Label
+			{
+				TextColor = CopyColor,
+				Wrap = true,
+			};
+			shell.Widgets.Add(_statusLabel);
 
-        UpdateSelectionStyles();
-        UpdateLabels();
-        return root;
-    }
+			shellFrame.Widgets.Add(shell);
+			root.Widgets.Add(shellFrame);
 
-    private Button CreateMenuButton(PauseMenuItem item, int index)
-    {
-        var titleLabel = new Label
-        {
-            Text = item.Title,
-            TextColor = TitleColor,
-        };
-        var descriptionLabel = new Label
-        {
-            Text = item.Description,
-            TextColor = CopyColor,
-            Wrap = true,
-        };
+			UpdateSelectionStyles();
+			UpdateLabels();
+			return root;
+		}
 
-        var content = new VerticalStackPanel
-        {
-            Spacing = 4,
-        };
-        content.Widgets.Add(titleLabel);
-        content.Widgets.Add(descriptionLabel);
+		private Button CreateMenuButton(PauseMenuItem item, int index)
+		{
+			var titleLabel = new Label
+			{
+				Text = item.Title,
+				TextColor = TitleColor,
+			};
+			var descriptionLabel = new Label
+			{
+				Text = item.Description,
+				TextColor = CopyColor,
+				Wrap = true,
+			};
 
-        var button = new Button
-        {
-            Height = 78,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Content = content,
-        };
-        button.Click += (_, _) =>
-        {
-            SelectedIndex = index;
-            ItemActivated?.Invoke(index);
-        };
+			var content = new VerticalStackPanel
+			{
+				Spacing = 4,
+			};
+			content.Widgets.Add(titleLabel);
+			content.Widgets.Add(descriptionLabel);
 
-        _buttons.Add((button, titleLabel, descriptionLabel));
-        return button;
-    }
+			var button = new Button
+			{
+				Height = 78,
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				Content = content,
+			};
+			button.Click += (_, _) =>
+			{
+				SelectedIndex = index;
+				ItemActivated?.Invoke(index);
+			};
 
-    private void RebuildRoot()
-    {
-        if (_desktop == null)
-        {
-            return;
-        }
+			_buttons.Add((button, titleLabel, descriptionLabel));
+			return button;
+		}
 
-        _desktop.Root = BuildRoot();
-        FocusSelectedButton();
-    }
+		private void RebuildRoot()
+		{
+			if (_desktop == null)
+			{
+				return;
+			}
 
-    private void UpdateSelectionStyles()
-    {
-        var clampedIndex = _buttons.Count == 0
-            ? 0
-            : Math.Clamp(SelectedIndex, 0, _buttons.Count - 1);
+			_desktop.Root = BuildRoot();
+			FocusSelectedButton();
+		}
 
-        for (var i = 0; i < _buttons.Count; i++)
-        {
-            var (button, title, description) = _buttons[i];
-            var isSelected = i == clampedIndex;
-            button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
-            title.TextColor = isSelected ? ValueColor : TitleColor;
-            description.TextColor = isSelected ? new Color(255, 239, 220, 220) : CopyColor;
-        }
-    }
+		private void UpdateSelectionStyles()
+		{
+			var clampedIndex = _buttons.Count == 0
+				? 0
+				: Math.Clamp(SelectedIndex, 0, _buttons.Count - 1);
 
-    private void UpdateLabels()
-    {
-        if (_vehicleNameLabel != null)
-        {
-            _vehicleNameLabel.Text = string.IsNullOrWhiteSpace(VehicleName) ? "LibreRally" : VehicleName;
-        }
+			for (var i = 0; i < _buttons.Count; i++)
+			{
+				var (button, title, description) = _buttons[i];
+				var isSelected = i == clampedIndex;
+				button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
+				title.TextColor = isSelected ? ValueColor : TitleColor;
+				description.TextColor = isSelected ? new Color(255, 239, 220, 220) : CopyColor;
+			}
+		}
 
-        if (_statusLabel != null)
-        {
-            _statusLabel.Text = StatusText;
-        }
-    }
+		private void UpdateLabels()
+		{
+			if (_vehicleNameLabel != null)
+			{
+				_vehicleNameLabel.Text = string.IsNullOrWhiteSpace(VehicleName) ? "LibreRally" : VehicleName;
+			}
 
-    private void FocusSelectedButton()
-    {
-        if (!_overlayVisible || _desktop == null || _buttons.Count == 0)
-        {
-            return;
-        }
+			if (_statusLabel != null)
+			{
+				_statusLabel.Text = StatusText;
+			}
+		}
 
-        var clampedIndex = Math.Clamp(SelectedIndex, 0, _buttons.Count - 1);
-        _desktop.FocusedKeyboardWidget = _buttons[clampedIndex].Button;
-    }
+		private void FocusSelectedButton()
+		{
+			if (!_overlayVisible || _desktop == null || _buttons.Count == 0)
+			{
+				return;
+			}
 
-    private static Panel CreateSpacer(int height) => new()
-    {
-        Height = height,
-    };
+			var clampedIndex = Math.Clamp(SelectedIndex, 0, _buttons.Count - 1);
+			_desktop.FocusedKeyboardWidget = _buttons[clampedIndex].Button;
+		}
 
+		private static Panel CreateSpacer(int height) => new()
+		{
+			Height = height,
+		};
+
+	}
 }

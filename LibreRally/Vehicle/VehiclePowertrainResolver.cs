@@ -4,542 +4,543 @@ using System.Linq;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
 
-namespace LibreRally.Vehicle;
-
-/// <summary>Resolved drivetrain, engine, and thermal settings used to initialize vehicle powertrain simulation.</summary>
-public sealed class VehiclePowertrainSetup
+namespace LibreRally.Vehicle
 {
-    /// <summary>Gets whether the front axle receives drive torque.</summary>
-    public bool DriveFrontAxle { get; init; } = true;
-    /// <summary>Gets whether the rear axle receives drive torque.</summary>
-    public bool DriveRearAxle { get; init; } = true;
-    /// <summary>Gets the wheel keys driven by the resolved powertrain graph.</summary>
-    public string[] DrivenWheelKeys { get; init; } = { "wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR" };
-    /// <summary>Gets the forward gear ratios used by the gearbox.</summary>
-    public float[] GearRatios { get; init; } = { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
-    /// <summary>Gets the final drive ratio applied after the gearbox.</summary>
-    public float FinalDrive { get; init; } = 4.55f;
-    /// <summary>Gets the engine torque-curve RPM sample points.</summary>
-    public float[] TorqueCurveRpm { get; init; } = { 0f, 500f, 1000f, 1500f, 2000f, 2500f, 3000f, 3500f, 4000f, 4500f, 5000f, 5500f, 6000f, 6500f, 7000f, 7500f };
-    /// <summary>Gets the engine torque values aligned with <see cref="TorqueCurveRpm"/>.</summary>
-    public float[] TorqueCurveNm { get; init; } = { 0f, 62f, 105f, 142f, 176f, 198f, 210f, 216f, 221f, 222f, 221f, 218f, 210f, 199f, 186f, 168f };
-    /// <summary>Gets the engine redline in RPM.</summary>
-    public float MaxRpm { get; init; } = 7500f;
-    /// <summary>Gets the target idle speed in RPM.</summary>
-    public float IdleRpm { get; init; } = 900f;
-    /// <summary>Gets the engine rotational inertia in kg·m².</summary>
-    public float EngineInertia { get; init; } = 0.25f;
-    /// <summary>Gets the static engine friction torque in Nm.</summary>
-    public float EngineFriction { get; init; } = 11.5f;
-    /// <summary>Gets the dynamic engine friction coefficient.</summary>
-    public float EngineDynamicFriction { get; init; } = 0.024f;
-    /// <summary>Gets the additional engine-braking torque in Nm.</summary>
-    public float EngineBrakeTorque { get; init; } = 38f;
-    /// <summary>Gets the launch RPM target used by the auto-clutch logic.</summary>
-    public float AutoClutchLaunchRpm { get; init; } = 4500f;
-    /// <summary>Gets the automatic upshift threshold in RPM.</summary>
-    public float ShiftUpRpm { get; init; } = 6500f;
-    /// <summary>Gets the automatic downshift threshold in RPM.</summary>
-    public float ShiftDownRpm { get; init; } = 2200f;
-    /// <summary>Gets the resolved front differential configuration.</summary>
-    public DifferentialConfig FrontDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f);
-    /// <summary>Gets the resolved rear differential configuration.</summary>
-    public DifferentialConfig RearDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
-    /// <summary>Gets the resolved centre differential configuration.</summary>
-    public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
-
-    /// <summary>Gets the engine oil volume in litres.</summary>
-    public float OilVolumeLiters { get; init; }
-    /// <summary>Gets the total fuel capacity in litres.</summary>
-    public float FuelCapacityLiters { get; init; }
-    /// <summary>Gets the starting fuel load in litres.</summary>
-    public float StartingFuelLiters { get; init; }
-    /// <summary>Gets the engine-block damage temperature threshold in °C.</summary>
-    public float EngineBlockTempDamageThreshold { get; init; } = 180f;
-    /// <summary>Gets the target air-regulator temperature in °C.</summary>
-    public float AirRegulatorTemperature { get; init; } = 85f;
-    /// <summary>Gets the air-cooling efficiency applied to the engine block.</summary>
-    public float EngineBlockAirCoolingEfficiency { get; init; }
-    /// <summary>Gets the throttle sample points for the burn-efficiency curve.</summary>
-    public float[] BurnEfficiencyThrottle { get; init; } = Array.Empty<float>();
-    /// <summary>Gets the burn-efficiency values aligned with <see cref="BurnEfficiencyThrottle"/>.</summary>
-    public float[] BurnEfficiencyValues { get; init; } = Array.Empty<float>();
-
-    /// <summary>Gets whether the resolved engine includes a turbocharger.</summary>
-    public bool HasTurbo { get; init; }
-    /// <summary>Gets the turbo wastegate pressure in PSI.</summary>
-    public float TurboMaxBoostPsi { get; init; }
-}
-
-/// <summary>Builds <see cref="VehiclePowertrainSetup"/> instances from assembled BeamNG vehicle definitions.</summary>
-public static class VehiclePowertrainResolver
-{
-    private static readonly string[] DefaultDrivenWheelKeys = { "wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR" };
-    private static readonly HashSet<string> FrontWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "FL", "FR" };
-    private static readonly HashSet<string> RearWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "RL", "RR" };
-
-    /// <summary>Resolves the powertrain, gearing, and thermal data needed to simulate the given vehicle.</summary>
-    /// <param name="definition">Assembled vehicle definition to inspect.</param>
-    /// <returns>The resolved runtime powertrain setup.</returns>
-    public static VehiclePowertrainSetup Resolve(VehicleDefinition definition)
-    {
-        var deviceMap = definition.PowertrainDevices
-            .Where(device => !string.IsNullOrWhiteSpace(device.Name))
-            .GroupBy(device => device.Name, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-        var childMap = BuildChildMap(definition.PowertrainDevices);
-        var engineNames = new HashSet<string>(
-            definition.PowertrainDevices
-                .Where(device => IsEngineType(device.Type))
-                .Select(device => device.Name),
-            StringComparer.OrdinalIgnoreCase);
-        if (engineNames.Count == 0 && definition.Engine != null)
-        {
-            engineNames.Add("mainEngine");
-        }
-
-        var drivenWheelCodes = ResolveDrivenWheelCodes(definition.PowertrainDevices, deviceMap, engineNames);
-        var driveFrontAxle = drivenWheelCodes.Overlaps(FrontWheelCodes);
-        var driveRearAxle = drivenWheelCodes.Overlaps(RearWheelCodes);
-        if (!driveFrontAxle && !driveRearAxle)
-        {
-            driveFrontAxle = true;
-            driveRearAxle = true;
-        }
-
-        var finalDriveFallback = driveRearAxle && !driveFrontAxle
-            ? GetVar(definition, "finaldrive_R", GetVar(definition, "finaldrive_F", 4.55f))
-            : GetVar(definition, "finaldrive_F", GetVar(definition, "finaldrive_R", 4.55f));
-        var finalDrive = ResolveFinalDrive(definition, deviceMap, engineNames, drivenWheelCodes, finalDriveFallback);
-        var gearRatios = ResolveGearRatios(definition.Gearbox);
-        var torqueCurve = ResolveTorqueCurve(definition.Engine);
-        var maxRpm = definition.Engine?.MaxRpm > 0f ? definition.Engine.MaxRpm : GetVar(definition, "maxRPM", 7500f);
-        var idleRpm = definition.Engine?.IdleRpm > 0f ? definition.Engine.IdleRpm : GetVar(definition, "idleRPM", 900f);
-        var controller = definition.VehicleController;
-        var shiftUpRpm = ResolveShiftUpRpm(controller, maxRpm);
-        var shiftDownRpm = ResolveShiftDownRpm(controller);
-        var autoClutchLaunchRpm = controller?.ClutchLaunchTargetRpm
-            ?? controller?.ClutchLaunchStartRpm
-            ?? MathF.Max(idleRpm + 600f, shiftDownRpm);
-
-        return new VehiclePowertrainSetup
-        {
-            DriveFrontAxle = driveFrontAxle,
-            DriveRearAxle = driveRearAxle,
-            DrivenWheelKeys = drivenWheelCodes.Count > 0
-                ? drivenWheelCodes.Select(ToWheelKey).OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToArray()
-                : DefaultDrivenWheelKeys,
-            GearRatios = gearRatios,
-            FinalDrive = finalDrive,
-            TorqueCurveRpm = torqueCurve.rpm,
-            TorqueCurveNm = torqueCurve.torque,
-            MaxRpm = maxRpm,
-            IdleRpm = idleRpm,
-            EngineInertia = definition.Engine?.Inertia > 0f ? definition.Engine.Inertia : 0.25f,
-            EngineFriction = definition.Engine?.Friction > 0f ? definition.Engine.Friction : 11.5f,
-            EngineDynamicFriction = definition.Engine?.DynamicFriction > 0f ? definition.Engine.DynamicFriction : 0.024f,
-            EngineBrakeTorque = definition.Engine?.EngineBrakeTorque > 0f ? definition.Engine.EngineBrakeTorque : 38f,
-            AutoClutchLaunchRpm = autoClutchLaunchRpm,
-            ShiftUpRpm = shiftUpRpm,
-            ShiftDownRpm = shiftDownRpm,
-            FrontDiff = ResolveDifferential(definition.PowertrainDevices, childMap, FrontWheelCodes, DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f)),
-            RearDiff = ResolveDifferential(definition.PowertrainDevices, childMap, RearWheelCodes, DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f)),
-            CenterDiff = ResolveCenterDifferential(definition.PowertrainDevices, childMap),
-            OilVolumeLiters = definition.Engine?.OilVolume > 0f ? definition.Engine.OilVolume : 0f,
-            FuelCapacityLiters = definition.FuelTank?.FuelCapacity > 0f ? definition.FuelTank.FuelCapacity : 0f,
-            StartingFuelLiters = definition.FuelTank?.StartingFuelCapacity > 0f ? definition.FuelTank.StartingFuelCapacity : 0f,
-            EngineBlockTempDamageThreshold = definition.Engine?.EngineBlockTemperatureDamageThreshold > 0f
-                ? definition.Engine.EngineBlockTemperatureDamageThreshold : 180f,
-            AirRegulatorTemperature = definition.Engine?.AirRegulatorTemperature > 0f
-                ? definition.Engine.AirRegulatorTemperature : 85f,
-            EngineBlockAirCoolingEfficiency = definition.Engine?.EngineBlockAirCoolingEfficiency > 0f
-                ? definition.Engine.EngineBlockAirCoolingEfficiency : 0f,
-            BurnEfficiencyThrottle = ResolveBurnEfficiencyThrottle(definition.Engine),
-            BurnEfficiencyValues = ResolveBurnEfficiencyValues(definition.Engine),
-            HasTurbo = definition.Engine?.Turbo != null,
-            TurboMaxBoostPsi = definition.Engine?.Turbo?.WastegatePressure ?? 0f,
-        };
-    }
-
-    private static Dictionary<string, List<JBeamPowertrainDevice>> BuildChildMap(IEnumerable<JBeamPowertrainDevice> devices)
-    {
-        var childMap = new Dictionary<string, List<JBeamPowertrainDevice>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var device in devices)
-        {
-            if (string.IsNullOrWhiteSpace(device.InputName))
-            {
-                continue;
-            }
-
-            if (!childMap.TryGetValue(device.InputName, out var children))
-            {
-                children = new List<JBeamPowertrainDevice>();
-                childMap[device.InputName] = children;
-            }
-
-            children.Add(device);
-        }
-
-        return childMap;
-    }
-
-    private static HashSet<string> ResolveDrivenWheelCodes(
-        IEnumerable<JBeamPowertrainDevice> devices,
-        IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
-        IReadOnlySet<string> engineNames)
-    {
-        var driven = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var device in devices)
-        {
-            if (string.IsNullOrWhiteSpace(device.ConnectedWheel))
-            {
-                continue;
-            }
-
-            if (IsConnectedToEngine(device, deviceMap, engineNames))
-            {
-                driven.Add(device.ConnectedWheel);
-            }
-        }
-
-        return driven;
-    }
-
-    private static bool IsConnectedToEngine(
-        JBeamPowertrainDevice startDevice,
-        IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
-        IReadOnlySet<string> engineNames)
-    {
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var currentInput = startDevice.InputName;
-        while (!string.IsNullOrWhiteSpace(currentInput))
-        {
-            if (!visited.Add(currentInput))
-            {
-                break;
-            }
-
-            if (engineNames.Contains(currentInput))
-            {
-                return true;
-            }
-
-            if (!deviceMap.TryGetValue(currentInput, out var upstreamDevice))
-            {
-                break;
-            }
-
-            if (IsEngineType(upstreamDevice.Type))
-            {
-                return true;
-            }
-
-            currentInput = upstreamDevice.InputName;
-        }
-
-        return false;
-    }
-
-    private static float ResolveFinalDrive(
-        VehicleDefinition definition,
-        IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
-        IReadOnlySet<string> engineNames,
-        IReadOnlySet<string> drivenWheelCodes,
-        float fallback)
-    {
-        var ratios = new List<float>();
-        foreach (var device in definition.PowertrainDevices)
-        {
-            if (string.IsNullOrWhiteSpace(device.ConnectedWheel) ||
-                !drivenWheelCodes.Contains(device.ConnectedWheel) ||
-                !IsConnectedToEngine(device, deviceMap, engineNames))
-            {
-                continue;
-            }
-
-            var ratio = 1f;
-            var foundMeaningfulRatio = false;
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var currentInput = device.InputName;
-            while (!string.IsNullOrWhiteSpace(currentInput))
-            {
-                if (!visited.Add(currentInput))
-                {
-                    break;
-                }
-
-                if (engineNames.Contains(currentInput))
-                {
-                    break;
-                }
-
-                if (!deviceMap.TryGetValue(currentInput, out var upstreamDevice))
-                {
-                    break;
-                }
-
-                if (!IsGearboxType(upstreamDevice.Type) &&
-                    !IsEngineType(upstreamDevice.Type) &&
-                    upstreamDevice.GearRatio is { } gearRatio &&
-                    MathF.Abs(gearRatio) > 1e-4f)
-                {
-                    var absGearRatio = MathF.Abs(gearRatio);
-                    ratio *= absGearRatio;
-                    foundMeaningfulRatio |= MathF.Abs(absGearRatio - 1f) > 1e-3f;
-                }
-
-                currentInput = upstreamDevice.InputName;
-            }
-
-            if (foundMeaningfulRatio)
-            {
-                ratios.Add(ratio);
-            }
-        }
-
-        if (ratios.Count > 0)
-        {
-            return ratios.Average();
-        }
-
-        return ResolveFinalDrivePartRatio(definition.PartGearRatios, drivenWheelCodes) ?? fallback;
-    }
-
-    private static float[] ResolveGearRatios(JBeamGearboxDefinition? gearbox)
-    {
-        if (gearbox?.GearRatios == null || gearbox.GearRatios.Count == 0)
-        {
-            return new[] { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
-        }
-
-        var normalized = new List<float>();
-        var reverse = gearbox.GearRatios[0];
-        normalized.Add(MathF.Abs(reverse) > 1e-4f ? MathF.Abs(reverse) : 3.25f);
-        foreach (var ratio in gearbox.GearRatios.Skip(1).Where(ratio => ratio > 1e-4f))
-        {
-            normalized.Add(MathF.Abs(ratio));
-        }
-
-        return normalized.Count > 1 ? normalized.ToArray() : new[] { 3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f };
-    }
-
-    private static (float[] rpm, float[] torque) ResolveTorqueCurve(JBeamEngineDefinition? engine)
-    {
-        if (engine?.TorqueCurve == null || engine.TorqueCurve.Count < 2)
-        {
-            return (
-                new[] { 0f, 500f, 1000f, 1500f, 2000f, 2500f, 3000f, 3500f, 4000f, 4500f, 5000f, 5500f, 6000f, 6500f, 7000f, 7500f },
-                new[] { 0f, 62f, 105f, 142f, 176f, 198f, 210f, 216f, 221f, 222f, 221f, 218f, 210f, 199f, 186f, 168f });
-        }
-
-        return (
-            engine.TorqueCurve.Select(point => point.Rpm).ToArray(),
-            engine.TorqueCurve.Select(point => point.Torque).ToArray());
-    }
-
-    private static float ResolveShiftUpRpm(JBeamVehicleControllerDefinition? controller, float maxRpm)
-    {
-        if (controller?.HighShiftUpRpm is { } highShiftUp && highShiftUp > 0f)
-        {
-            return highShiftUp;
-        }
-
-        var lowShiftUp = GetPositiveValues(controller?.LowShiftUpRpm).DefaultIfEmpty().Max();
-        if (lowShiftUp > 0f)
-        {
-            return lowShiftUp;
-        }
-
-        return MathF.Max(2500f, maxRpm * 0.85f);
-    }
-
-    private static float ResolveShiftDownRpm(JBeamVehicleControllerDefinition? controller)
-    {
-        var candidates = GetPositiveValues(controller?.HighShiftDownRpm)
-            .Concat(GetPositiveValues(controller?.LowShiftDownRpm))
-            .ToArray();
-        if (candidates.Length == 0)
-        {
-            return 2200f;
-        }
-
-        return candidates.Average();
-    }
-
-    private static IEnumerable<float> GetPositiveValues(IEnumerable<float>? values)
-    {
-        return values?.Where(value => value > 0f) ?? Enumerable.Empty<float>();
-    }
-
-    private static DifferentialConfig ResolveDifferential(
-        IEnumerable<JBeamPowertrainDevice> devices,
-        IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap,
-        IReadOnlySet<string> axleWheelCodes,
-        DifferentialConfig fallback)
-    {
-        foreach (var device in devices)
-        {
-            if (!IsDifferentialType(device.Type))
-            {
-                continue;
-            }
-
-            var wheels = CollectConnectedWheels(device.Name, childMap);
-            if (wheels.SetEquals(axleWheelCodes))
-            {
-                return MapDifferential(device, fallback);
-            }
-        }
-
-        return fallback;
-    }
-
-    private static DifferentialConfig ResolveCenterDifferential(
-        IEnumerable<JBeamPowertrainDevice> devices,
-        IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap)
-    {
-        foreach (var device in devices)
-        {
-            if (!IsDifferentialType(device.Type))
-            {
-                continue;
-            }
-
-            var wheels = CollectConnectedWheels(device.Name, childMap);
-            var hasFront = wheels.Overlaps(FrontWheelCodes);
-            var hasRear = wheels.Overlaps(RearWheelCodes);
-            if (hasFront && hasRear)
-            {
-                return MapDifferential(device, DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f));
-            }
-        }
-
-        return DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
-    }
-
-    private static HashSet<string> CollectConnectedWheels(
-        string rootDeviceName,
-        IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap)
-    {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pending = new Stack<string>();
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        pending.Push(rootDeviceName);
-
-        while (pending.Count > 0)
-        {
-            var current = pending.Pop();
-            if (!visited.Add(current) || !childMap.TryGetValue(current, out var children))
-            {
-                continue;
-            }
-
-            foreach (var child in children)
-            {
-                if (!string.IsNullOrWhiteSpace(child.ConnectedWheel))
-                {
-                    result.Add(child.ConnectedWheel);
-                }
-
-                pending.Push(child.Name);
-            }
-        }
-
-        return result;
-    }
-
-    private static DifferentialConfig MapDifferential(JBeamPowertrainDevice device, DifferentialConfig fallback)
-    {
-        var diffType = device.DiffType?.Trim().ToLowerInvariant();
-        return diffType switch
-        {
-            "open" => DifferentialConfig.CreateOpen(),
-            "lsd" or "limitedslip" => CreateLimitedSlipConfig(device, fallback),
-            "locked" or "spool" or "welded" => DifferentialConfig.CreateLocking(),
-            _ => fallback,
-        };
-    }
-
-    private static DifferentialConfig CreateLimitedSlipConfig(JBeamPowertrainDevice device, DifferentialConfig fallback)
-    {
-        var biasRatio = fallback.BiasRatio > 1f && float.IsFinite(fallback.BiasRatio)
-            ? fallback.BiasRatio
-            : 2.5f;
-
-        var driveLock = Math.Clamp(device.LsdLockCoef ?? fallback.LockingCoefficient, 0f, 1f);
-        var coastLock = device.LsdRevLockCoef.HasValue
-            ? Math.Clamp(device.LsdRevLockCoef.Value, 0f, 1f)
-            : driveLock;
-
-        return DifferentialConfig.CreateLimitedSlip(
-            biasRatio: biasRatio,
-            lockingCoeff: driveLock,
-            coastLockingCoeff: coastLock,
-            preloadTorque: MathF.Max(0f, device.LsdPreload ?? fallback.PreloadTorque));
-    }
-
-    private static float? ResolveFinalDrivePartRatio(
-        IEnumerable<AssembledPartGearRatio> partGearRatios,
-        IReadOnlySet<string> drivenWheelCodes)
-    {
-        var candidates = partGearRatios
-            .Where(part => part.GearRatio > 0f && IsFinalDriveSlot(part.SourceSlotType))
-            .ToList();
-        if (candidates.Count == 0)
-        {
-            return null;
-        }
-
-        var wantsFront = drivenWheelCodes.Overlaps(FrontWheelCodes);
-        var wantsRear = drivenWheelCodes.Overlaps(RearWheelCodes);
-        if (wantsFront ^ wantsRear)
-        {
-            var axleCandidates = candidates
-                .Where(candidate => VehicleTyreSpecResolver.MatchesAxle(candidate.SourceSlotType, wantsFront) ||
-                                    VehicleTyreSpecResolver.MatchesAxle(candidate.SourcePartName, wantsFront))
-                .Select(candidate => candidate.GearRatio)
-                .ToList();
-            if (axleCandidates.Count > 0)
-            {
-                return axleCandidates.Average();
-            }
-        }
-
-        return candidates.Select(candidate => candidate.GearRatio).Average();
-    }
-
-    private static string ToWheelKey(string wheelCode) => $"wheel_{wheelCode.ToUpperInvariant()}";
-
-    private static float GetVar(VehicleDefinition definition, string name, float fallback)
-    {
-        return definition.Vars.TryGetValue(name, out var value) && value > 0f ? value : fallback;
-    }
-
-    private static bool IsEngineType(string type) => type.Contains("engine", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsGearboxType(string type) => type.Contains("gearbox", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsDifferentialType(string type) => type.Contains("differential", StringComparison.OrdinalIgnoreCase);
-
-    private static bool IsFinalDriveSlot(string slotType) => slotType.Contains("finaldrive", StringComparison.OrdinalIgnoreCase);
-
-    private static float[] ResolveBurnEfficiencyThrottle(JBeamEngineDefinition? engine)
-    {
-        if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
-        {
-            return Array.Empty<float>();
-        }
-
-        return engine.BurnEfficiency.Select(p => p.Throttle).ToArray();
-    }
-
-    private static float[] ResolveBurnEfficiencyValues(JBeamEngineDefinition? engine)
-    {
-        if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
-        {
-            return Array.Empty<float>();
-        }
-
-        return engine.BurnEfficiency.Select(p => p.Efficiency).ToArray();
-    }
+	/// <summary>Resolved drivetrain, engine, and thermal settings used to initialize vehicle powertrain simulation.</summary>
+	public sealed class VehiclePowertrainSetup
+	{
+		/// <summary>Gets whether the front axle receives drive torque.</summary>
+		public bool DriveFrontAxle { get; init; } = true;
+		/// <summary>Gets whether the rear axle receives drive torque.</summary>
+		public bool DriveRearAxle { get; init; } = true;
+		/// <summary>Gets the wheel keys driven by the resolved powertrain graph.</summary>
+		public string[] DrivenWheelKeys { get; init; } = ["wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR"];
+		/// <summary>Gets the forward gear ratios used by the gearbox.</summary>
+		public float[] GearRatios { get; init; } = [3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f];
+		/// <summary>Gets the final drive ratio applied after the gearbox.</summary>
+		public float FinalDrive { get; init; } = 4.55f;
+		/// <summary>Gets the engine torque-curve RPM sample points.</summary>
+		public float[] TorqueCurveRpm { get; init; } = [0f, 500f, 1000f, 1500f, 2000f, 2500f, 3000f, 3500f, 4000f, 4500f, 5000f, 5500f, 6000f, 6500f, 7000f, 7500f];
+		/// <summary>Gets the engine torque values aligned with <see cref="TorqueCurveRpm"/>.</summary>
+		public float[] TorqueCurveNm { get; init; } = [0f, 62f, 105f, 142f, 176f, 198f, 210f, 216f, 221f, 222f, 221f, 218f, 210f, 199f, 186f, 168f];
+		/// <summary>Gets the engine redline in RPM.</summary>
+		public float MaxRpm { get; init; } = 7500f;
+		/// <summary>Gets the target idle speed in RPM.</summary>
+		public float IdleRpm { get; init; } = 900f;
+		/// <summary>Gets the engine rotational inertia in kg·m².</summary>
+		public float EngineInertia { get; init; } = 0.25f;
+		/// <summary>Gets the static engine friction torque in Nm.</summary>
+		public float EngineFriction { get; init; } = 11.5f;
+		/// <summary>Gets the dynamic engine friction coefficient.</summary>
+		public float EngineDynamicFriction { get; init; } = 0.024f;
+		/// <summary>Gets the additional engine-braking torque in Nm.</summary>
+		public float EngineBrakeTorque { get; init; } = 38f;
+		/// <summary>Gets the launch RPM target used by the auto-clutch logic.</summary>
+		public float AutoClutchLaunchRpm { get; init; } = 4500f;
+		/// <summary>Gets the automatic upshift threshold in RPM.</summary>
+		public float ShiftUpRpm { get; init; } = 6500f;
+		/// <summary>Gets the automatic downshift threshold in RPM.</summary>
+		public float ShiftDownRpm { get; init; } = 2200f;
+		/// <summary>Gets the resolved front differential configuration.</summary>
+		public DifferentialConfig FrontDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f);
+		/// <summary>Gets the resolved rear differential configuration.</summary>
+		public DifferentialConfig RearDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
+		/// <summary>Gets the resolved centre differential configuration.</summary>
+		public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+
+		/// <summary>Gets the engine oil volume in litres.</summary>
+		public float OilVolumeLiters { get; init; }
+		/// <summary>Gets the total fuel capacity in litres.</summary>
+		public float FuelCapacityLiters { get; init; }
+		/// <summary>Gets the starting fuel load in litres.</summary>
+		public float StartingFuelLiters { get; init; }
+		/// <summary>Gets the engine-block damage temperature threshold in °C.</summary>
+		public float EngineBlockTempDamageThreshold { get; init; } = 180f;
+		/// <summary>Gets the target air-regulator temperature in °C.</summary>
+		public float AirRegulatorTemperature { get; init; } = 85f;
+		/// <summary>Gets the air-cooling efficiency applied to the engine block.</summary>
+		public float EngineBlockAirCoolingEfficiency { get; init; }
+		/// <summary>Gets the throttle sample points for the burn-efficiency curve.</summary>
+		public float[] BurnEfficiencyThrottle { get; init; } = [];
+		/// <summary>Gets the burn-efficiency values aligned with <see cref="BurnEfficiencyThrottle"/>.</summary>
+		public float[] BurnEfficiencyValues { get; init; } = [];
+
+		/// <summary>Gets whether the resolved engine includes a turbocharger.</summary>
+		public bool HasTurbo { get; init; }
+		/// <summary>Gets the turbo wastegate pressure in PSI.</summary>
+		public float TurboMaxBoostPsi { get; init; }
+	}
+
+	/// <summary>Builds <see cref="VehiclePowertrainSetup"/> instances from assembled BeamNG vehicle definitions.</summary>
+	public static class VehiclePowertrainResolver
+	{
+		private static readonly string[] DefaultDrivenWheelKeys = ["wheel_FL", "wheel_FR", "wheel_RL", "wheel_RR"];
+		private static readonly HashSet<string> FrontWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "FL", "FR" };
+		private static readonly HashSet<string> RearWheelCodes = new(StringComparer.OrdinalIgnoreCase) { "RL", "RR" };
+
+		/// <summary>Resolves the powertrain, gearing, and thermal data needed to simulate the given vehicle.</summary>
+		/// <param name="definition">Assembled vehicle definition to inspect.</param>
+		/// <returns>The resolved runtime powertrain setup.</returns>
+		public static VehiclePowertrainSetup Resolve(VehicleDefinition definition)
+		{
+			var deviceMap = definition.PowertrainDevices
+				.Where(device => !string.IsNullOrWhiteSpace(device.Name))
+				.GroupBy(device => device.Name, StringComparer.OrdinalIgnoreCase)
+				.ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+			var childMap = BuildChildMap(definition.PowertrainDevices);
+			var engineNames = new HashSet<string>(
+				definition.PowertrainDevices
+					.Where(device => IsEngineType(device.Type))
+					.Select(device => device.Name),
+				StringComparer.OrdinalIgnoreCase);
+			if (engineNames.Count == 0 && definition.Engine != null)
+			{
+				engineNames.Add("mainEngine");
+			}
+
+			var drivenWheelCodes = ResolveDrivenWheelCodes(definition.PowertrainDevices, deviceMap, engineNames);
+			var driveFrontAxle = drivenWheelCodes.Overlaps(FrontWheelCodes);
+			var driveRearAxle = drivenWheelCodes.Overlaps(RearWheelCodes);
+			if (!driveFrontAxle && !driveRearAxle)
+			{
+				driveFrontAxle = true;
+				driveRearAxle = true;
+			}
+
+			var finalDriveFallback = driveRearAxle && !driveFrontAxle
+				? GetVar(definition, "finaldrive_R", GetVar(definition, "finaldrive_F", 4.55f))
+				: GetVar(definition, "finaldrive_F", GetVar(definition, "finaldrive_R", 4.55f));
+			var finalDrive = ResolveFinalDrive(definition, deviceMap, engineNames, drivenWheelCodes, finalDriveFallback);
+			var gearRatios = ResolveGearRatios(definition.Gearbox);
+			var torqueCurve = ResolveTorqueCurve(definition.Engine);
+			var maxRpm = definition.Engine?.MaxRpm > 0f ? definition.Engine.MaxRpm : GetVar(definition, "maxRPM", 7500f);
+			var idleRpm = definition.Engine?.IdleRpm > 0f ? definition.Engine.IdleRpm : GetVar(definition, "idleRPM", 900f);
+			var controller = definition.VehicleController;
+			var shiftUpRpm = ResolveShiftUpRpm(controller, maxRpm);
+			var shiftDownRpm = ResolveShiftDownRpm(controller);
+			var autoClutchLaunchRpm = controller?.ClutchLaunchTargetRpm
+			                          ?? controller?.ClutchLaunchStartRpm
+			                          ?? MathF.Max(idleRpm + 600f, shiftDownRpm);
+
+			return new VehiclePowertrainSetup
+			{
+				DriveFrontAxle = driveFrontAxle,
+				DriveRearAxle = driveRearAxle,
+				DrivenWheelKeys = drivenWheelCodes.Count > 0
+					? drivenWheelCodes.Select(ToWheelKey).OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToArray()
+					: DefaultDrivenWheelKeys,
+				GearRatios = gearRatios,
+				FinalDrive = finalDrive,
+				TorqueCurveRpm = torqueCurve.rpm,
+				TorqueCurveNm = torqueCurve.torque,
+				MaxRpm = maxRpm,
+				IdleRpm = idleRpm,
+				EngineInertia = definition.Engine?.Inertia > 0f ? definition.Engine.Inertia : 0.25f,
+				EngineFriction = definition.Engine?.Friction > 0f ? definition.Engine.Friction : 11.5f,
+				EngineDynamicFriction = definition.Engine?.DynamicFriction > 0f ? definition.Engine.DynamicFriction : 0.024f,
+				EngineBrakeTorque = definition.Engine?.EngineBrakeTorque > 0f ? definition.Engine.EngineBrakeTorque : 38f,
+				AutoClutchLaunchRpm = autoClutchLaunchRpm,
+				ShiftUpRpm = shiftUpRpm,
+				ShiftDownRpm = shiftDownRpm,
+				FrontDiff = ResolveDifferential(definition.PowertrainDevices, childMap, FrontWheelCodes, DifferentialConfig.CreateLimitedSlip(2.0f, 0.25f)),
+				RearDiff = ResolveDifferential(definition.PowertrainDevices, childMap, RearWheelCodes, DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f)),
+				CenterDiff = ResolveCenterDifferential(definition.PowertrainDevices, childMap),
+				OilVolumeLiters = definition.Engine?.OilVolume > 0f ? definition.Engine.OilVolume : 0f,
+				FuelCapacityLiters = definition.FuelTank?.FuelCapacity > 0f ? definition.FuelTank.FuelCapacity : 0f,
+				StartingFuelLiters = definition.FuelTank?.StartingFuelCapacity > 0f ? definition.FuelTank.StartingFuelCapacity : 0f,
+				EngineBlockTempDamageThreshold = definition.Engine?.EngineBlockTemperatureDamageThreshold > 0f
+					? definition.Engine.EngineBlockTemperatureDamageThreshold : 180f,
+				AirRegulatorTemperature = definition.Engine?.AirRegulatorTemperature > 0f
+					? definition.Engine.AirRegulatorTemperature : 85f,
+				EngineBlockAirCoolingEfficiency = definition.Engine?.EngineBlockAirCoolingEfficiency > 0f
+					? definition.Engine.EngineBlockAirCoolingEfficiency : 0f,
+				BurnEfficiencyThrottle = ResolveBurnEfficiencyThrottle(definition.Engine),
+				BurnEfficiencyValues = ResolveBurnEfficiencyValues(definition.Engine),
+				HasTurbo = definition.Engine?.Turbo != null,
+				TurboMaxBoostPsi = definition.Engine?.Turbo?.WastegatePressure ?? 0f,
+			};
+		}
+
+		private static Dictionary<string, List<JBeamPowertrainDevice>> BuildChildMap(IEnumerable<JBeamPowertrainDevice> devices)
+		{
+			var childMap = new Dictionary<string, List<JBeamPowertrainDevice>>(StringComparer.OrdinalIgnoreCase);
+			foreach (var device in devices)
+			{
+				if (string.IsNullOrWhiteSpace(device.InputName))
+				{
+					continue;
+				}
+
+				if (!childMap.TryGetValue(device.InputName, out var children))
+				{
+					children = [];
+					childMap[device.InputName] = children;
+				}
+
+				children.Add(device);
+			}
+
+			return childMap;
+		}
+
+		private static HashSet<string> ResolveDrivenWheelCodes(
+			IEnumerable<JBeamPowertrainDevice> devices,
+			IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
+			IReadOnlySet<string> engineNames)
+		{
+			var driven = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			foreach (var device in devices)
+			{
+				if (string.IsNullOrWhiteSpace(device.ConnectedWheel))
+				{
+					continue;
+				}
+
+				if (IsConnectedToEngine(device, deviceMap, engineNames))
+				{
+					driven.Add(device.ConnectedWheel);
+				}
+			}
+
+			return driven;
+		}
+
+		private static bool IsConnectedToEngine(
+			JBeamPowertrainDevice startDevice,
+			IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
+			IReadOnlySet<string> engineNames)
+		{
+			var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var currentInput = startDevice.InputName;
+			while (!string.IsNullOrWhiteSpace(currentInput))
+			{
+				if (!visited.Add(currentInput))
+				{
+					break;
+				}
+
+				if (engineNames.Contains(currentInput))
+				{
+					return true;
+				}
+
+				if (!deviceMap.TryGetValue(currentInput, out var upstreamDevice))
+				{
+					break;
+				}
+
+				if (IsEngineType(upstreamDevice.Type))
+				{
+					return true;
+				}
+
+				currentInput = upstreamDevice.InputName;
+			}
+
+			return false;
+		}
+
+		private static float ResolveFinalDrive(
+			VehicleDefinition definition,
+			IReadOnlyDictionary<string, JBeamPowertrainDevice> deviceMap,
+			IReadOnlySet<string> engineNames,
+			IReadOnlySet<string> drivenWheelCodes,
+			float fallback)
+		{
+			var ratios = new List<float>();
+			foreach (var device in definition.PowertrainDevices)
+			{
+				if (string.IsNullOrWhiteSpace(device.ConnectedWheel) ||
+				    !drivenWheelCodes.Contains(device.ConnectedWheel) ||
+				    !IsConnectedToEngine(device, deviceMap, engineNames))
+				{
+					continue;
+				}
+
+				var ratio = 1f;
+				var foundMeaningfulRatio = false;
+				var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+				var currentInput = device.InputName;
+				while (!string.IsNullOrWhiteSpace(currentInput))
+				{
+					if (!visited.Add(currentInput))
+					{
+						break;
+					}
+
+					if (engineNames.Contains(currentInput))
+					{
+						break;
+					}
+
+					if (!deviceMap.TryGetValue(currentInput, out var upstreamDevice))
+					{
+						break;
+					}
+
+					if (!IsGearboxType(upstreamDevice.Type) &&
+					    !IsEngineType(upstreamDevice.Type) &&
+					    upstreamDevice.GearRatio is { } gearRatio &&
+					    MathF.Abs(gearRatio) > 1e-4f)
+					{
+						var absGearRatio = MathF.Abs(gearRatio);
+						ratio *= absGearRatio;
+						foundMeaningfulRatio |= MathF.Abs(absGearRatio - 1f) > 1e-3f;
+					}
+
+					currentInput = upstreamDevice.InputName;
+				}
+
+				if (foundMeaningfulRatio)
+				{
+					ratios.Add(ratio);
+				}
+			}
+
+			if (ratios.Count > 0)
+			{
+				return ratios.Average();
+			}
+
+			return ResolveFinalDrivePartRatio(definition.PartGearRatios, drivenWheelCodes) ?? fallback;
+		}
+
+		private static float[] ResolveGearRatios(JBeamGearboxDefinition? gearbox)
+		{
+			if (gearbox?.GearRatios == null || gearbox.GearRatios.Count == 0)
+			{
+				return [3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f];
+			}
+
+			var normalized = new List<float>();
+			var reverse = gearbox.GearRatios[0];
+			normalized.Add(MathF.Abs(reverse) > 1e-4f ? MathF.Abs(reverse) : 3.25f);
+			foreach (var ratio in gearbox.GearRatios.Skip(1).Where(ratio => ratio > 1e-4f))
+			{
+				normalized.Add(MathF.Abs(ratio));
+			}
+
+			return normalized.Count > 1 ? normalized.ToArray() : [3.25f, 3.64f, 2.38f, 1.76f, 1.35f, 1.06f, 0.84f];
+		}
+
+		private static (float[] rpm, float[] torque) ResolveTorqueCurve(JBeamEngineDefinition? engine)
+		{
+			if (engine?.TorqueCurve == null || engine.TorqueCurve.Count < 2)
+			{
+				return (
+					[0f, 500f, 1000f, 1500f, 2000f, 2500f, 3000f, 3500f, 4000f, 4500f, 5000f, 5500f, 6000f, 6500f, 7000f, 7500f],
+					[0f, 62f, 105f, 142f, 176f, 198f, 210f, 216f, 221f, 222f, 221f, 218f, 210f, 199f, 186f, 168f]);
+			}
+
+			return (
+				engine.TorqueCurve.Select(point => point.Rpm).ToArray(),
+				engine.TorqueCurve.Select(point => point.Torque).ToArray());
+		}
+
+		private static float ResolveShiftUpRpm(JBeamVehicleControllerDefinition? controller, float maxRpm)
+		{
+			if (controller?.HighShiftUpRpm is { } highShiftUp && highShiftUp > 0f)
+			{
+				return highShiftUp;
+			}
+
+			var lowShiftUp = GetPositiveValues(controller?.LowShiftUpRpm).DefaultIfEmpty().Max();
+			if (lowShiftUp > 0f)
+			{
+				return lowShiftUp;
+			}
+
+			return MathF.Max(2500f, maxRpm * 0.85f);
+		}
+
+		private static float ResolveShiftDownRpm(JBeamVehicleControllerDefinition? controller)
+		{
+			var candidates = GetPositiveValues(controller?.HighShiftDownRpm)
+				.Concat(GetPositiveValues(controller?.LowShiftDownRpm))
+				.ToArray();
+			if (candidates.Length == 0)
+			{
+				return 2200f;
+			}
+
+			return candidates.Average();
+		}
+
+		private static IEnumerable<float> GetPositiveValues(IEnumerable<float>? values)
+		{
+			return values?.Where(value => value > 0f) ?? [];
+		}
+
+		private static DifferentialConfig ResolveDifferential(
+			IEnumerable<JBeamPowertrainDevice> devices,
+			IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap,
+			IReadOnlySet<string> axleWheelCodes,
+			DifferentialConfig fallback)
+		{
+			foreach (var device in devices)
+			{
+				if (!IsDifferentialType(device.Type))
+				{
+					continue;
+				}
+
+				var wheels = CollectConnectedWheels(device.Name, childMap);
+				if (wheels.SetEquals(axleWheelCodes))
+				{
+					return MapDifferential(device, fallback);
+				}
+			}
+
+			return fallback;
+		}
+
+		private static DifferentialConfig ResolveCenterDifferential(
+			IEnumerable<JBeamPowertrainDevice> devices,
+			IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap)
+		{
+			foreach (var device in devices)
+			{
+				if (!IsDifferentialType(device.Type))
+				{
+					continue;
+				}
+
+				var wheels = CollectConnectedWheels(device.Name, childMap);
+				var hasFront = wheels.Overlaps(FrontWheelCodes);
+				var hasRear = wheels.Overlaps(RearWheelCodes);
+				if (hasFront && hasRear)
+				{
+					return MapDifferential(device, DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f));
+				}
+			}
+
+			return DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+		}
+
+		private static HashSet<string> CollectConnectedWheels(
+			string rootDeviceName,
+			IReadOnlyDictionary<string, List<JBeamPowertrainDevice>> childMap)
+		{
+			var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			var pending = new Stack<string>();
+			var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+			pending.Push(rootDeviceName);
+
+			while (pending.Count > 0)
+			{
+				var current = pending.Pop();
+				if (!visited.Add(current) || !childMap.TryGetValue(current, out var children))
+				{
+					continue;
+				}
+
+				foreach (var child in children)
+				{
+					if (!string.IsNullOrWhiteSpace(child.ConnectedWheel))
+					{
+						result.Add(child.ConnectedWheel);
+					}
+
+					pending.Push(child.Name);
+				}
+			}
+
+			return result;
+		}
+
+		private static DifferentialConfig MapDifferential(JBeamPowertrainDevice device, DifferentialConfig fallback)
+		{
+			var diffType = device.DiffType.Trim().ToLowerInvariant();
+			return diffType switch
+			{
+				"open" => DifferentialConfig.CreateOpen(),
+				"lsd" or "limitedslip" => CreateLimitedSlipConfig(device, fallback),
+				"locked" or "spool" or "welded" => DifferentialConfig.CreateLocking(),
+				_ => fallback,
+			};
+		}
+
+		private static DifferentialConfig CreateLimitedSlipConfig(JBeamPowertrainDevice device, DifferentialConfig fallback)
+		{
+			var biasRatio = fallback.BiasRatio > 1f && float.IsFinite(fallback.BiasRatio)
+				? fallback.BiasRatio
+				: 2.5f;
+
+			var driveLock = Math.Clamp(device.LsdLockCoef ?? fallback.LockingCoefficient, 0f, 1f);
+			var coastLock = device.LsdRevLockCoef.HasValue
+				? Math.Clamp(device.LsdRevLockCoef.Value, 0f, 1f)
+				: driveLock;
+
+			return DifferentialConfig.CreateLimitedSlip(
+				biasRatio: biasRatio,
+				lockingCoeff: driveLock,
+				coastLockingCoeff: coastLock,
+				preloadTorque: MathF.Max(0f, device.LsdPreload ?? fallback.PreloadTorque));
+		}
+
+		private static float? ResolveFinalDrivePartRatio(
+			IEnumerable<AssembledPartGearRatio> partGearRatios,
+			IReadOnlySet<string> drivenWheelCodes)
+		{
+			var candidates = partGearRatios
+				.Where(part => part.GearRatio > 0f && IsFinalDriveSlot(part.SourceSlotType))
+				.ToList();
+			if (candidates.Count == 0)
+			{
+				return null;
+			}
+
+			var wantsFront = drivenWheelCodes.Overlaps(FrontWheelCodes);
+			var wantsRear = drivenWheelCodes.Overlaps(RearWheelCodes);
+			if (wantsFront ^ wantsRear)
+			{
+				var axleCandidates = candidates
+					.Where(candidate => VehicleTyreSpecResolver.MatchesAxle(candidate.SourceSlotType, wantsFront) ||
+					                    VehicleTyreSpecResolver.MatchesAxle(candidate.SourcePartName, wantsFront))
+					.Select(candidate => candidate.GearRatio)
+					.ToList();
+				if (axleCandidates.Count > 0)
+				{
+					return axleCandidates.Average();
+				}
+			}
+
+			return candidates.Select(candidate => candidate.GearRatio).Average();
+		}
+
+		private static string ToWheelKey(string wheelCode) => $"wheel_{wheelCode.ToUpperInvariant()}";
+
+		private static float GetVar(VehicleDefinition definition, string name, float fallback)
+		{
+			return definition.Vars.TryGetValue(name, out var value) && value > 0f ? value : fallback;
+		}
+
+		private static bool IsEngineType(string type) => type.Contains("engine", StringComparison.OrdinalIgnoreCase);
+
+		private static bool IsGearboxType(string type) => type.Contains("gearbox", StringComparison.OrdinalIgnoreCase);
+
+		private static bool IsDifferentialType(string type) => type.Contains("differential", StringComparison.OrdinalIgnoreCase);
+
+		private static bool IsFinalDriveSlot(string slotType) => slotType.Contains("finaldrive", StringComparison.OrdinalIgnoreCase);
+
+		private static float[] ResolveBurnEfficiencyThrottle(JBeamEngineDefinition? engine)
+		{
+			if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
+			{
+				return [];
+			}
+
+			return engine.BurnEfficiency.Select(p => p.Throttle).ToArray();
+		}
+
+		private static float[] ResolveBurnEfficiencyValues(JBeamEngineDefinition? engine)
+		{
+			if (engine?.BurnEfficiency == null || engine.BurnEfficiency.Count == 0)
+			{
+				return [];
+			}
+
+			return engine.BurnEfficiency.Select(p => p.Efficiency).ToArray();
+		}
+	}
 }
