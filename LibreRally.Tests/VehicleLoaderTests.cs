@@ -6,6 +6,8 @@ using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
 using LibreRally.Vehicle.Rendering;
+using StrideMatrix = Stride.Core.Mathematics.Matrix;
+using StrideVector3 = Stride.Core.Mathematics.Vector3;
 using Xunit;
 
 namespace LibreRally.Tests;
@@ -170,8 +172,34 @@ public class VehicleLoaderTests
         Assert.Contains(specs, spec => spec.Name == "rear_trailingarm_wheel_RR");
         Assert.Contains(specs, spec => spec.Name == "rear_halfshaft_wheel_RL");
         Assert.Contains(specs, spec => spec.Name == "rear_halfshaft_wheel_RR");
+        Assert.Contains(specs, spec => spec.EndUsesNonSpinTransform);
         Assert.All(specs, spec => Assert.True(spec.Radius > 0f));
         Assert.All(specs.Where(spec => spec.StartEntity == result.ChassisEntity), spec =>
             Assert.NotEqual(spec.StartLocalPosition, spec.EndLocalPosition));
+    }
+
+    [Fact]
+    public void TransformWheelLocalPositionWithoutSpin_IgnoresWheelSpinAroundAxle()
+    {
+        var chassisWorld = StrideMatrix.Identity;
+        var localAnchor = new StrideVector3(0f, 0.25f, 0f);
+        var translation = new StrideVector3(1f, 2f, 3f);
+        var wheelWithoutSpin = StrideMatrix.Identity;
+        wheelWithoutSpin.TranslationVector = translation;
+        var wheelWithSpin = StrideMatrix.RotationX(1.3f);
+        wheelWithSpin.TranslationVector = translation;
+
+        var anchorWithoutSpin = SuspensionVisualKinematicsRig.TransformWheelLocalPositionWithoutSpin(
+            chassisWorld,
+            wheelWithoutSpin,
+            localAnchor);
+        var anchorWithSpinRemoved = SuspensionVisualKinematicsRig.TransformWheelLocalPositionWithoutSpin(
+            chassisWorld,
+            wheelWithSpin,
+            localAnchor);
+        var anchorWithRawSpin = StrideVector3.TransformCoordinate(localAnchor, wheelWithSpin);
+
+        Assert.Equal(anchorWithoutSpin, anchorWithSpinRemoved);
+        Assert.NotEqual(anchorWithoutSpin, anchorWithRawSpin);
     }
 }

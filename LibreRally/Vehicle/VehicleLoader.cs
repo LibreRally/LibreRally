@@ -27,6 +27,7 @@ public class VehicleLoader
     private sealed record SupplementalModelSource(ModelSource Source, IReadOnlyList<string> RequestedMeshNames);
     private readonly record struct TireSpec(float Radius, float Width);
     private readonly GraphicsDevice _graphicsDevice;
+    private readonly Dictionary<Color4, Model> _suspensionLinkModels = new();
 
     /// <summary>Creates a vehicle loader that uses the given Stride game services and graphics device.</summary>
     /// <param name="game">Stride game instance that provides rendering services.</param>
@@ -1257,7 +1258,7 @@ public class VehicleLoader
             var visualEntity = new Entity(linkSpec.Name);
             visualEntity.Add(new ModelComponent
             {
-                Model = BuildWheelCylinderModel(1f, 1f, linkSpec.Color),
+                Model = GetOrCreateSuspensionLinkModel(linkSpec.Color),
             });
             result.RootEntity.AddChild(visualEntity);
             links.Add(new SuspensionVisualKinematicsRig.SuspensionVisualLinkRuntime(
@@ -1266,10 +1267,22 @@ public class VehicleLoader
                 linkSpec.StartLocalPosition,
                 linkSpec.EndEntity,
                 linkSpec.EndLocalPosition,
+                linkSpec.EndUsesNonSpinTransform,
                 linkSpec.Radius));
         }
 
         return new SuspensionVisualKinematicsRig(links);
+    }
+
+    private Model GetOrCreateSuspensionLinkModel(Color4 color)
+    {
+        if (!_suspensionLinkModels.TryGetValue(color, out var model))
+        {
+            model = BuildWheelCylinderModel(1f, 1f, color);
+            _suspensionLinkModels[color] = model;
+        }
+
+        return model;
     }
 
     private Model BuildWheelCylinderModel(float radius, float width, Color4 color)

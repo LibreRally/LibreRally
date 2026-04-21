@@ -12,6 +12,7 @@ internal sealed record SuspensionVisualLinkSpec(
     Vector3 StartLocalPosition,
     Entity EndEntity,
     Vector3 EndLocalPosition,
+    bool EndUsesNonSpinTransform,
     float Radius,
     Color4 Color);
 
@@ -32,7 +33,12 @@ internal sealed class SuspensionVisualKinematicsRig
             link.EndEntity.Transform.UpdateWorldMatrix();
 
             var start = Vector3.TransformCoordinate(link.StartLocalPosition, link.StartEntity.Transform.WorldMatrix);
-            var end = Vector3.TransformCoordinate(link.EndLocalPosition, link.EndEntity.Transform.WorldMatrix);
+            var end = link.EndUsesNonSpinTransform
+                ? TransformWheelLocalPositionWithoutSpin(
+                    link.StartEntity.Transform.WorldMatrix,
+                    link.EndEntity.Transform.WorldMatrix,
+                    link.EndLocalPosition)
+                : Vector3.TransformCoordinate(link.EndLocalPosition, link.EndEntity.Transform.WorldMatrix);
             var delta = end - start;
             var length = delta.Length();
             if (length < 1e-4f)
@@ -58,7 +64,25 @@ internal sealed class SuspensionVisualKinematicsRig
         Vector3 StartLocalPosition,
         Entity EndEntity,
         Vector3 EndLocalPosition,
+        bool EndUsesNonSpinTransform,
         float Radius);
+
+    internal static Vector3 TransformWheelLocalPositionWithoutSpin(
+        Matrix chassisWorld,
+        Matrix wheelWorld,
+        Vector3 wheelLocalPosition)
+    {
+        var fallbackUp = SafeNormalize(chassisWorld.Up, Vector3.UnitY);
+        var fallbackForward = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
+        var wheelRight = SafeNormalize(wheelWorld.Right, Vector3.UnitX);
+        var wheelUp = SafeNormalize(ProjectOnPlane(fallbackUp, wheelRight), fallbackUp);
+        var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackForward);
+
+        return wheelWorld.TranslationVector +
+               wheelRight * wheelLocalPosition.X +
+               wheelUp * wheelLocalPosition.Y +
+               wheelForward * wheelLocalPosition.Z;
+    }
 
     private static Quaternion CreateRotationFromXAxis(Vector3 forward, Vector3 upReference)
     {
@@ -84,6 +108,19 @@ internal sealed class SuspensionVisualKinematicsRig
             (float)Math.Clamp(Vector3.Dot(projectedUp, targetUp), -1f, 1f));
         var twistRotation = Quaternion.RotationAxis(forward, signedAngle);
         return Quaternion.Normalize(twistRotation * primaryRotation);
+    }
+
+    private static Vector3 ProjectOnPlane(Vector3 vector, Vector3 planeNormal)
+    {
+        return vector - planeNormal * Vector3.Dot(vector, planeNormal);
+    }
+
+    private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
+    {
+        var lengthSquared = value.LengthSquared();
+        return lengthSquared < 1e-6f
+            ? fallback
+            : value / MathF.Sqrt(lengthSquared);
     }
 }
 
@@ -143,6 +180,7 @@ internal static class SuspensionVisualKinematicsRigBuilder
                 startLocalPosition,
                 endEntity,
                 endLocalPosition,
+                endEntity != result.ChassisEntity,
                 template.Radius,
                 template.Color));
         }
