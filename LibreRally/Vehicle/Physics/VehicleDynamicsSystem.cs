@@ -57,11 +57,23 @@ public sealed class VehicleDynamicsSystem
     /// <summary>Centre-of-gravity height above ground (m). Affects load transfer magnitude.</summary>
     public float CgHeight { get; set; } = 0.45f;
 
+    /// <summary>Front axle roll-center height above ground (m). Reduces the sprung-mass roll moment arm.</summary>
+    public float FrontRollCenterHeight { get; set; } = 0.14f;
+
+    /// <summary>Rear axle roll-center height above ground (m). Reduces the sprung-mass roll moment arm.</summary>
+    public float RearRollCenterHeight { get; set; } = 0.18f;
+
     /// <summary>Front-to-rear axle distance (m).</summary>
     public float Wheelbase { get; set; } = 2.55f;
 
     /// <summary>Left-to-right wheel centre distance (m). Used for lateral load transfer.</summary>
     public float TrackWidth { get; set; } = 1.50f;
+
+    /// <summary>Anti-dive geometry fraction in the range [0, 1]. Higher values reduce braking pitch/load transfer.</summary>
+    public float AntiDiveFactor { get; set; } = 0.12f;
+
+    /// <summary>Anti-squat geometry fraction in the range [0, 1]. Higher values reduce acceleration squat/load transfer.</summary>
+    public float AntiSquatFactor { get; set; } = 0.18f;
 
     /// <summary>Front anti-roll bar stiffness (N/m of compression difference). 0 = disabled.</summary>
     public float FrontAntiRollStiffness { get; set; } = 8000f;
@@ -203,35 +215,17 @@ public sealed class VehicleDynamicsSystem
         // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
         var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        var longitudinalAccel = _hasForceEstimatedAcceleration
-            ? Vector3.Dot(_forceEstimatedAccelerationWorld, forwardDir)
-            : 0f;
-        var lateralAccel = _hasForceEstimatedAcceleration
-            ? Vector3.Dot(_forceEstimatedAccelerationWorld, rightDir)
-            : 0f;
+        var predictedAccelerationWorld = _hasForceEstimatedAcceleration
+            ? _forceEstimatedAccelerationWorld
+            : Vector3.Zero;
+        var longitudinalAccel = Vector3.Dot(predictedAccelerationWorld, forwardDir);
+        var lateralAccel = Vector3.Dot(predictedAccelerationWorld, rightDir);
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
 
         // ── 3. Compute anti-roll bar forces ──────────────────────────────────
         ComputeAntiRollForces(suspensionCompressions);
-
-        // ── 3b. Chassis body attitude torque from suspension compression and sprung-mass acceleration ─
-        // Load transfer creates a body moment M = m * a * h about the chassis axes even before
-        // the compression-delta term becomes large enough to be visually obvious in the suspension.
-        // Feeding that moment into the attitude system makes braking dive and cornering lean show up
-        // earlier and more like a sprung body, while still letting suspension compression and damping
-        // shape the final response.
-        var rollAccelerationTorque = lateralAccel * VehicleMass * CgHeight;
-        var pitchAccelerationTorque = -longitudinalAccel * VehicleMass * CgHeight;
-        BodyRoll.Apply(
-            chassisBody,
-            forwardDir,
-            rightDir,
-            suspensionCompressions,
-            rollAccelerationTorque,
-            pitchAccelerationTorque,
-            dt);
 
         // ── 3c. Asymmetric damping correction ─────────────────────────────────
         // BEPU's LinearAxisServo applies an averaged damping ratio. Real suspension has
@@ -246,8 +240,45 @@ public sealed class VehicleDynamicsSystem
         // ── 5. Evaluate tyre model for each wheel ───────────────────────────
         ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
 
-        // ── 6. Update force-derived acceleration estimate for next physics step ─
-        UpdateForceBasedAccelerationEstimate(wheelOrientations);
+        // ── 6. Re-evaluate load transfer with the current-step force estimate ─
+        // First pass uses the previous force estimate as a predictor. Recomputing within the
+        // same step removes the one-frame lag from load transfer and body attitude response.
+        var instantaneousAccelerationWorld = EstimateForceBasedAcceleration(wheelOrientations);
+        longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
+        lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
+
+        ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
+        ComputeAntiRollForces(suspensionCompressions);
+        ComputeDrivetrainTorque(engineTorqueAtWheels);
+        ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
+        instantaneousAccelerationWorld = EstimateForceBasedAcceleration(wheelOrientations);
+        longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
+        lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
+
+        // ── 6b. Chassis body attitude torque from suspension compression and sprung-mass acceleration ─
+        // Load transfer creates a body moment M = m * a * h about the chassis axes even before
+        // the compression-delta term becomes large enough to be visually obvious in the suspension.
+        // Feeding that moment into the attitude system makes braking dive and cornering lean show up
+        // earlier and more like a sprung body, while still letting suspension compression and damping
+        // shape the final response.
+        var rollAccelerationTorque = ComputeRollAccelerationTorque(lateralAccel);
+        var pitchAccelerationTorque = -longitudinalAccel * VehicleMass
+                                      * ComputeEffectivePitchTransferHeight(
+                                          CgHeight,
+                                          longitudinalAccel,
+                                          AntiDiveFactor,
+                                          AntiSquatFactor);
+        BodyRoll.Apply(
+            chassisBody,
+            forwardDir,
+            rightDir,
+            suspensionCompressions,
+            rollAccelerationTorque,
+            pitchAccelerationTorque,
+            dt);
+
+        _forceEstimatedAccelerationWorld = instantaneousAccelerationWorld;
+        _hasForceEstimatedAcceleration = true;
 
         // ── 7. Apply all forces as impulses to the chassis at the wheel contact locations ─
         ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
@@ -257,13 +288,13 @@ public sealed class VehicleDynamicsSystem
     /// Computes longitudinal and lateral load transfer and modifies per-wheel normal loads.
     ///
     /// <para>Longitudinal load transfer (acceleration/braking):
-    /// ΔF = (m · a_x · h_cg) / L
+    /// ΔF = (m · a_x · h_eff) / L where h_eff is reduced by anti-dive / anti-squat geometry.
     /// Positive a_x (acceleration) shifts load rearward.
     /// Reference: Milliken, RCVD §18.2, Eq. 18.1.</para>
     ///
     /// <para>Lateral load transfer (cornering):
-    /// ΔF = (m · a_y · h_cg) / T
-    /// Positive a_y (rightward) shifts load to the left wheels.
+    /// Each axle uses ΔF_axle = (m_axle · a_y · (h_cg − h_rc)) / T so higher roll centers
+    /// reduce the sprung-mass lever arm. Positive a_y (rightward) shifts load to the left wheels.
     /// Reference: Milliken, RCVD §18.3.</para>
     /// </summary>
     private void ComputeLoadTransfer(
@@ -275,11 +306,27 @@ public sealed class VehicleDynamicsSystem
         var wheelbase = MathF.Max(Wheelbase, 0.1f);
         var trackWidth = MathF.Max(TrackWidth, 0.1f);
 
-        // Longitudinal load transfer: ΔF = (m · a_x · h_cg) / L
-        var longTransfer = (VehicleMass * longitudinalAccel * CgHeight) / wheelbase;
-
-        // Lateral load transfer: ΔF = (m · a_y · h_cg) / T
-        var latTransfer = (VehicleMass * lateralAccel * CgHeight) / trackWidth;
+        var effectivePitchHeight = ComputeEffectivePitchTransferHeight(
+            CgHeight,
+            longitudinalAccel,
+            AntiDiveFactor,
+            AntiSquatFactor);
+        var longTransfer = (VehicleMass * longitudinalAccel * effectivePitchHeight) / wheelbase;
+        GetAxleLoadFractions(out var frontAxleLoadFraction, out var rearAxleLoadFraction);
+        var frontLatTransfer = ComputeAxleLateralTransfer(
+            VehicleMass,
+            frontAxleLoadFraction,
+            lateralAccel,
+            CgHeight,
+            FrontRollCenterHeight,
+            trackWidth);
+        var rearLatTransfer = ComputeAxleLateralTransfer(
+            VehicleMass,
+            rearAxleLoadFraction,
+            lateralAccel,
+            CgHeight,
+            RearRollCenterHeight,
+            trackWidth);
 
         // Start from static loads, then add transfer
         for (var i = 0; i < WheelCount; i++)
@@ -298,10 +345,10 @@ public sealed class VehicleDynamicsSystem
         CurrentNormalLoads[RR] += longTransfer * 0.5f;
 
         // Lateral: rightward acceleration shifts load to left (left gains, right loses)
-        CurrentNormalLoads[FL] += latTransfer * 0.5f;
-        CurrentNormalLoads[FR] -= latTransfer * 0.5f;
-        CurrentNormalLoads[RL] += latTransfer * 0.5f;
-        CurrentNormalLoads[RR] -= latTransfer * 0.5f;
+        CurrentNormalLoads[FL] += frontLatTransfer * 0.5f;
+        CurrentNormalLoads[FR] -= frontLatTransfer * 0.5f;
+        CurrentNormalLoads[RL] += rearLatTransfer * 0.5f;
+        CurrentNormalLoads[RR] -= rearLatTransfer * 0.5f;
 
         // Clamp — wheel cannot push up (negative load means wheel has lifted)
         for (var i = 0; i < WheelCount; i++)
@@ -575,7 +622,7 @@ public sealed class VehicleDynamicsSystem
     /// Estimates world-space chassis acceleration from the current modelled tyre forces.
     /// This estimate is cached and projected to chassis axes on the next update.
     /// </summary>
-    private void UpdateForceBasedAccelerationEstimate(
+    private Vector3 EstimateForceBasedAcceleration(
         ReadOnlySpan<Matrix> wheelOrientations)
     {
         var netForceWorld = Vector3.Zero;
@@ -594,8 +641,7 @@ public sealed class VehicleDynamicsSystem
             netForceWorld += wheelForceWorld;
         }
 
-        _forceEstimatedAccelerationWorld = EstimateWorldAccelerationFromNetForce(netForceWorld, VehicleMass);
-        _hasForceEstimatedAcceleration = true;
+        return EstimateWorldAccelerationFromNetForce(netForceWorld, VehicleMass);
     }
 
     internal static Vector3 EstimateWorldAccelerationFromNetForce(Vector3 netForceWorld, float vehicleMass)
@@ -606,6 +652,45 @@ public sealed class VehicleDynamicsSystem
         }
 
         return netForceWorld / vehicleMass;
+    }
+
+    internal static float ComputeEffectivePitchTransferHeight(
+        float cgHeight,
+        float longitudinalAccel,
+        float antiDiveFactor,
+        float antiSquatFactor)
+    {
+        var clampedCgHeight = MathF.Max(cgHeight, 0.01f);
+        var activeFactor = longitudinalAccel >= 0f
+            ? Math.Clamp(antiSquatFactor, 0f, 0.95f)
+            : Math.Clamp(antiDiveFactor, 0f, 0.95f);
+        return MathF.Max(clampedCgHeight * (1f - activeFactor), 0.01f);
+    }
+
+    internal static float ComputeLateralRollMomentArm(float cgHeight, float rollCenterHeight)
+    {
+        var clampedCgHeight = MathF.Max(cgHeight, 0.01f);
+        var clampedRollCenter = Math.Clamp(rollCenterHeight, 0f, clampedCgHeight - 0.01f);
+        return MathF.Max(clampedCgHeight - clampedRollCenter, 0.01f);
+    }
+
+    internal static float ComputeAxleLateralTransfer(
+        float vehicleMass,
+        float axleLoadFraction,
+        float lateralAccel,
+        float cgHeight,
+        float rollCenterHeight,
+        float trackWidth)
+    {
+        if (vehicleMass <= 1e-4f)
+        {
+            return 0f;
+        }
+
+        var clampedTrackWidth = MathF.Max(trackWidth, 0.1f);
+        var clampedLoadFraction = Math.Clamp(axleLoadFraction, 0f, 1f);
+        var rollMomentArm = ComputeLateralRollMomentArm(cgHeight, rollCenterHeight);
+        return (vehicleMass * clampedLoadFraction * lateralAccel * rollMomentArm) / clampedTrackWidth;
     }
 
     /// <summary>
@@ -685,6 +770,32 @@ public sealed class VehicleDynamicsSystem
     {
         // Only front (steered) wheels contribute to steering feel
         return SelfAligningTorques[FL] + SelfAligningTorques[FR];
+    }
+
+    private float ComputeRollAccelerationTorque(float lateralAccel)
+    {
+        GetAxleLoadFractions(out var frontAxleLoadFraction, out var rearAxleLoadFraction);
+        var frontRollMoment = frontAxleLoadFraction
+                              * ComputeLateralRollMomentArm(CgHeight, FrontRollCenterHeight);
+        var rearRollMoment = rearAxleLoadFraction
+                             * ComputeLateralRollMomentArm(CgHeight, RearRollCenterHeight);
+        return lateralAccel * VehicleMass * (frontRollMoment + rearRollMoment);
+    }
+
+    private void GetAxleLoadFractions(out float frontAxleLoadFraction, out float rearAxleLoadFraction)
+    {
+        var frontAxleLoad = StaticNormalLoads[FL] + StaticNormalLoads[FR];
+        var rearAxleLoad = StaticNormalLoads[RL] + StaticNormalLoads[RR];
+        var totalLoad = frontAxleLoad + rearAxleLoad;
+        if (totalLoad <= 1e-4f)
+        {
+            frontAxleLoadFraction = 0.5f;
+            rearAxleLoadFraction = 0.5f;
+            return;
+        }
+
+        frontAxleLoadFraction = frontAxleLoad / totalLoad;
+        rearAxleLoadFraction = rearAxleLoad / totalLoad;
     }
 
     private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)
