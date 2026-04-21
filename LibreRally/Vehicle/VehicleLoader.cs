@@ -216,6 +216,10 @@ public class VehicleLoader
         var averageDamperRear = (dampBumpRear + dampReboundRear) * 0.5f;
         var halfTrack = MathF.Max(trackWidth * 0.5f, 0.45f);
         var halfWheelbase = MathF.Max(wheelbase * 0.5f, 0.75f);
+        var maxFrontRollCenterHeight = MathF.Max(cgHeight - 0.05f, 0.05f);
+        var maxRearRollCenterHeight = MathF.Max(cgHeight - 0.04f, 0.06f);
+        var defaultFrontRollCenterHeight = Math.Clamp(cgHeight * 0.30f, 0.05f, maxFrontRollCenterHeight);
+        var defaultRearRollCenterHeight = Math.Clamp(cgHeight * 0.38f, 0.06f, maxRearRollCenterHeight);
         var derivedFrontRollStiffness = MathF.Max((springRateFront + antiRollRateFront) * halfTrack * 0.6f, 0f);
         var derivedRearRollStiffness = MathF.Max((springRateRear + antiRollRateRear) * halfTrack * 0.6f, 0f);
         var derivedPitchStiffness = MathF.Max(((springRateFront + springRateRear) * 0.5f) * halfWheelbase * 0.45f, 0f);
@@ -226,6 +230,16 @@ public class VehicleLoader
         var rollDamping = TryGetNumericVar("roll_damping") ?? derivedRollDamping;
         var pitchStiffness = TryGetNumericVar("pitch_stiffness", "pitch_stiffness_body") ?? derivedPitchStiffness;
         var pitchDamping = TryGetNumericVar("pitch_damping", "pitch_damping_body") ?? derivedPitchDamping;
+        var frontRollCenterHeight = Math.Clamp(
+            TryGetNumericVar("front_roll_center_height", "roll_center_height_front") ?? defaultFrontRollCenterHeight,
+            0f,
+            MathF.Max(cgHeight - 0.01f, 0f));
+        var rearRollCenterHeight = Math.Clamp(
+            TryGetNumericVar("rear_roll_center_height", "roll_center_height_rear") ?? defaultRearRollCenterHeight,
+            0f,
+            MathF.Max(cgHeight - 0.01f, 0f));
+        var antiDiveFactor = Math.Clamp(TryGetNumericVar("anti_dive_factor", "anti_dive") ?? 0.12f, 0f, 0.95f);
+        var antiSquatFactor = Math.Clamp(TryGetNumericVar("anti_squat_factor", "anti_squat") ?? 0.18f, 0f, 0.95f);
         var quarterLoad = vehicleMass * 9.81f / 4f;
         var diagnostics = new VehicleLoadDiagnostics(vehicleFolderPath, pcPath, vehicleMass);
 
@@ -233,8 +247,12 @@ public class VehicleLoader
         {
             VehicleMass = vehicleMass,
             CgHeight = cgHeight,
+            FrontRollCenterHeight = frontRollCenterHeight,
+            RearRollCenterHeight = rearRollCenterHeight,
             Wheelbase = wheelbase,
             TrackWidth = trackWidth,
+            AntiDiveFactor = antiDiveFactor,
+            AntiSquatFactor = antiSquatFactor,
             FrontAntiRollStiffness = antiRollRateFront,
             RearAntiRollStiffness = antiRollRateRear,
             BodyRoll = new ChassisBodyRollSystem

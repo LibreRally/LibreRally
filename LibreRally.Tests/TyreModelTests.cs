@@ -95,6 +95,25 @@ public class TyreModelTests
     }
 
     [Fact]
+    public void EffectiveRelaxationLength_GrowsOnLooseLowGripSurfaces()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            CarcassStiffness = 1.0f,
+        };
+
+        float tarmacLateral = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
+        float gravelLateral = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Gravel), longitudinal: false);
+        float snowLateral = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Snow), longitudinal: false);
+        float tarmacLongitudinal = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: true);
+        float gravelLongitudinal = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Gravel), longitudinal: true);
+
+        Assert.True(gravelLateral > tarmacLateral);
+        Assert.True(snowLateral > gravelLateral);
+        Assert.True(gravelLongitudinal > tarmacLongitudinal);
+    }
+
+    [Fact]
     public void EffectiveFriction_UsesPowerLawLoadSensitivity()
     {
         var model = new TyreModel(0.305f)
