@@ -15,6 +15,9 @@ public struct TyreState
     /// <summary>Current tyre surface temperature (°C). Starts at ambient (~30 °C).</summary>
     public float Temperature;
 
+    /// <summary>Current tyre carcass/core temperature (°C). Changes slower than the tread surface.</summary>
+    public float CoreTemperature;
+
     /// <summary>Remaining tread fraction (1.0 = new, 0.0 = fully worn).</summary>
     public float TreadLife;
 
@@ -38,6 +41,7 @@ public struct TyreState
     public static TyreState CreateDefault() => new()
     {
         Temperature = 30f,
+        CoreTemperature = 30f,
         TreadLife = 1.0f,
         AngularVelocity = 0f,
         LateralDeflection = 0f,
@@ -245,6 +249,24 @@ public sealed class TyreModel
     /// <summary>Cooling rate to ambient (W/°C).</summary>
     public float CoolingRate { get; set; } = 15f;
 
+    /// <summary>Thermal mass of the tyre core/carcass (J/°C). Higher = slower but more persistent heat storage.</summary>
+    public float CoreThermalMass { get; set; } = 24000f;
+
+    /// <summary>Conductance from tread surface to core (W/°C).</summary>
+    public float SurfaceToCoreConductance { get; set; } = 55f;
+
+    /// <summary>Cooling rate from core/carcass to ambient (W/°C).</summary>
+    public float CoreCoolingRate { get; set; } = 4f;
+
+    /// <summary>Road-contact heat transfer rate from tread surface (W/°C).</summary>
+    public float RoadHeatTransferRate { get; set; } = 25f;
+
+    /// <summary>Additional road heat-transfer gain per metre of water depth (1/m).</summary>
+    public float WaterCoolingGain { get; set; } = 400f;
+
+    /// <summary>Blend of surface and core temperatures used for grip calculations (0 = core only, 1 = surface only).</summary>
+    public float GripTemperatureSurfaceWeight { get; set; } = 0.7f;
+
     /// <summary>Ambient temperature (°C).</summary>
     public float AmbientTemperature { get; set; } = 30f;
 
@@ -261,6 +283,12 @@ public sealed class TyreModel
 
     /// <summary>Minimum grip multiplier when tyre is completely worn (fraction of peak).</summary>
     public float WornGripFraction { get; set; } = 0.65f;
+
+    /// <summary>Combined-slip interaction coupling strength. Higher values reduce Fx/Fy more when both slips are high.</summary>
+    public float CombinedSlipCoupling { get; set; } = 1.0f;
+
+    /// <summary>Combined-slip interaction exponent controlling transition sharpness.</summary>
+    public float CombinedSlipExponent { get; set; } = 2.0f;
 
     // ── Rally high-slip extension ────────────────────────────────────────────
 
@@ -483,7 +511,9 @@ public sealed class TyreModel
         // ── Effective friction coefficient ───────────────────────────────────
         // Combines surface µ, load sensitivity, temperature, wear, wet grip,
         // hydroplaning, and road roughness noise effects.
-        var mu = ComputeEffectiveFriction(normalLoad, surface, state.Temperature,
+        var gripTemperature = Math.Clamp(GripTemperatureSurfaceWeight, 0f, 1f) * state.Temperature
+                              + (1f - Math.Clamp(GripTemperatureSurfaceWeight, 0f, 1f)) * state.CoreTemperature;
+        var mu = ComputeEffectiveFriction(normalLoad, surface, gripTemperature,
             state.TreadLife, absVx: MathF.Abs(longitudinalVelocity), dt: dt);
 
         var effectiveRollingRadius = ComputeEffectiveRollingRadius(normalLoad);
@@ -594,6 +624,7 @@ public sealed class TyreModel
         var longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
         var blendAlphaLong = MathF.Max(speedBlend, longSlideBlend);
         var blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
+        ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, peakForce);
 
         // ── Camber thrust ────────────────────────────────────────────────────
         // Small lateral force from wheel inclination. Fy_camber = γ · Cγ · Fz.
@@ -683,18 +714,29 @@ public sealed class TyreModel
         }
 
         // ── Thermal model ────────────────────────────────────────────────────
-        // Temperature rises with slip energy dissipation and cools toward ambient.
-        // Q_in = |F_slip| · |V_slip| · dt   (slip power → heat)
-        // Q_out = coolingRate · (T − T_ambient) · dt
-        // Reference: Salaani, "Analytical Tire Model", SAE 2007-01-0816.
+        // Two-node thermal model:
+        //  - surface tread node (fast response from slip dissipation + road/air exchange)
+        //  - core/carcass node (slow storage with lagged cooling)
+        // This captures warm-up transients and hysteresis better than a single-lump model.
         var slipSpeed = MathF.Sqrt(
             (wheelLinearSpeed - longitudinalVelocity) * (wheelLinearSpeed - longitudinalVelocity)
             + lateralVelocity * lateralVelocity);
         var slipForceMag = MathF.Sqrt(longitudinalForce * longitudinalForce + lateralForce * lateralForce);
-        var heatInput = slipForceMag * slipSpeed * dt;
-        var heatLoss = CoolingRate * (state.Temperature - AmbientTemperature) * dt;
-        state.Temperature += (heatInput - heatLoss) / MathF.Max(ThermalMass, 1f);
+        var slipPower = slipForceMag * slipSpeed;
+        var surfaceToCorePower = SurfaceToCoreConductance * (state.Temperature - state.CoreTemperature);
+        var roadCoolingRate = RoadHeatTransferRate * (1f + surface.Macrotexture * 0.5f
+            + MathF.Max(surface.WaterDepth, 0f) * WaterCoolingGain);
+        var roadSinkTemperature = AmbientTemperature - MathF.Min(MathF.Max(surface.WaterDepth, 0f) * 5000f, 12f);
+        var surfaceAirPower = CoolingRate * (state.Temperature - AmbientTemperature);
+        var surfaceRoadPower = roadCoolingRate * (state.Temperature - roadSinkTemperature);
+        var coreAmbientPower = CoreCoolingRate * (state.CoreTemperature - AmbientTemperature);
+
+        state.Temperature += (slipPower - surfaceToCorePower - surfaceAirPower - surfaceRoadPower) * dt
+            / MathF.Max(ThermalMass, 1f);
+        state.CoreTemperature += (surfaceToCorePower - coreAmbientPower) * dt
+            / MathF.Max(CoreThermalMass, 1f);
         state.Temperature = MathF.Max(state.Temperature, AmbientTemperature - 10f);
+        state.CoreTemperature = MathF.Max(state.CoreTemperature, AmbientTemperature - 10f);
 
         // ── Wear model ───────────────────────────────────────────────────────
         // Tread life decreases proportionally to slip energy.
@@ -978,6 +1020,24 @@ public sealed class TyreModel
             longitudinalForce *= scale;
             lateralForce *= scale;
         }
+    }
+
+    private void ApplyCombinedSlipInteraction(ref float longitudinalForce, ref float lateralForce, float peakForce)
+    {
+        const float forceEpsilon = 1e-6f;
+        var fxMax = MathF.Max(peakForce, forceEpsilon);
+        var fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
+        var ux = MathF.Abs(longitudinalForce) / fxMax;
+        var uy = MathF.Abs(lateralForce) / fyMax;
+        var exponent = MathF.Max(CombinedSlipExponent, 1f);
+        var coupling = MathF.Max(CombinedSlipCoupling, 0f);
+        var invExponent = 1f / exponent;
+
+        var interactionX = MathF.Pow(1f + coupling * MathF.Pow(uy, exponent), -invExponent);
+        var interactionY = MathF.Pow(1f + coupling * MathF.Pow(ux, exponent), -invExponent);
+
+        longitudinalForce *= interactionX;
+        lateralForce *= interactionY;
     }
 
     internal float ComputeVerticalStiffness()
