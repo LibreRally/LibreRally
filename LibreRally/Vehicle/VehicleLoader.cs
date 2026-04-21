@@ -216,8 +216,10 @@ public class VehicleLoader
         var averageDamperRear = (dampBumpRear + dampReboundRear) * 0.5f;
         var halfTrack = MathF.Max(trackWidth * 0.5f, 0.45f);
         var halfWheelbase = MathF.Max(wheelbase * 0.5f, 0.75f);
-        var defaultFrontRollCenterHeight = Math.Clamp(cgHeight * 0.30f, 0.05f, MathF.Max(cgHeight - 0.05f, 0.05f));
-        var defaultRearRollCenterHeight = Math.Clamp(cgHeight * 0.38f, 0.06f, MathF.Max(cgHeight - 0.04f, 0.06f));
+        var maxFrontRollCenterHeight = MathF.Max(cgHeight - 0.05f, 0.05f);
+        var maxRearRollCenterHeight = MathF.Max(cgHeight - 0.04f, 0.06f);
+        var defaultFrontRollCenterHeight = Math.Clamp(cgHeight * 0.30f, 0.05f, maxFrontRollCenterHeight);
+        var defaultRearRollCenterHeight = Math.Clamp(cgHeight * 0.38f, 0.06f, maxRearRollCenterHeight);
         var derivedFrontRollStiffness = MathF.Max((springRateFront + antiRollRateFront) * halfTrack * 0.6f, 0f);
         var derivedRearRollStiffness = MathF.Max((springRateRear + antiRollRateRear) * halfTrack * 0.6f, 0f);
         var derivedPitchStiffness = MathF.Max(((springRateFront + springRateRear) * 0.5f) * halfWheelbase * 0.45f, 0f);
