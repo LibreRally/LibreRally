@@ -12,6 +12,8 @@ namespace LibreRally
 {
 	internal sealed class TrackSurfaceMaterialLibrary
 	{
+		// Keep displacement subtle on procedural track quads to avoid visible mesh popping.
+		private const float TrackDisplacementIntensity = 0.01f;
 		private readonly GraphicsDevice _graphicsDevice;
 		private readonly string _materialsRoot;
 		private readonly Dictionary<SurfaceType, TrackSurfaceTextureSet> _textureSets = [];
@@ -30,6 +32,13 @@ namespace LibreRally
 			IComputeColor diffuse = textureSet.ColorTexture != null
 				? CreateColorMap(textureSet.ColorTexture, tiledScale)
 				: new ComputeColor(fallbackColor);
+			var microSurface = textureSet.RoughnessTexture != null
+				? new MaterialGlossinessMapFeature(CreateScalarMap(textureSet.RoughnessTexture, tiledScale))
+				{
+					// AmbientCG supplies roughness; Stride expects glossiness for this feature.
+					Invert = true,
+				}
+				: new MaterialGlossinessMapFeature(new ComputeFloat { Value = fallbackGlossiness });
 
 			var descriptor = new MaterialDescriptor
 			{
@@ -37,12 +46,27 @@ namespace LibreRally
 				{
 					Diffuse = new MaterialDiffuseMapFeature(diffuse),
 					DiffuseModel = new MaterialDiffuseLambertModelFeature(),
+					Surface = textureSet.NormalTexture != null
+						? new MaterialNormalMapFeature(CreateColorMap(textureSet.NormalTexture, tiledScale))
+						: null,
+					MicroSurface = microSurface,
+					Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = fallbackMetalness }),
+					SpecularModel = new MaterialSpecularMicrofacetModelFeature(),
+					Occlusion = textureSet.AmbientOcclusionTexture != null
+						? new MaterialOcclusionMapFeature
+						{
+							AmbientOcclusionMap = CreateScalarMap(textureSet.AmbientOcclusionTexture, tiledScale),
+						}
+						: null,
+					Displacement = textureSet.DisplacementTexture != null
+						? new MaterialDisplacementMapFeature(CreateScalarMap(textureSet.DisplacementTexture, tiledScale))
+						{
+							Intensity = new ComputeFloat { Value = TrackDisplacementIntensity },
+						}
+						: null,
 				},
 			};
 
-			// Keep the procedural track on the simplest diffuse path for now.
-			// This matches the runtime vehicle-texture path and makes it much easier to
-			// verify that the color textures are actually showing up in-game.
 			return Material.New(_graphicsDevice, descriptor);
 		}
 
@@ -57,10 +81,10 @@ namespace LibreRally
 			var folder = Path.Combine(_materialsRoot, descriptor.FolderName);
 			var textureSet = new TrackSurfaceTextureSet(
 				TryLoadTexture(Path.Combine(folder, descriptor.ColorFileName)),
-				null,
-				null,
-				null,
-				null);
+				TryLoadTexture(Path.Combine(folder, descriptor.NormalFileName)),
+				TryLoadTexture(Path.Combine(folder, descriptor.RoughnessFileName)),
+				TryLoadTexture(Path.Combine(folder, descriptor.AmbientOcclusionFileName)),
+				TryLoadTexture(Path.Combine(folder, descriptor.DisplacementFileName)));
 
 			_textureSets[surfaceType] = textureSet;
 			return textureSet;
