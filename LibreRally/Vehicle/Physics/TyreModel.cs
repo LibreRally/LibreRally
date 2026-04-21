@@ -354,6 +354,13 @@ public sealed class TyreModel
     private const float KilopascalsToPascals = 1000f;
     private const float RollingRadiusDeflectionDivisor = 3f;
     private const float SurfaceDeformationBrushSoftening = 0.15f;
+    /// <summary>
+    /// Converts water-film depth (m) into an equivalent road sink-temperature drop scaling.
+    /// Higher values increase cooling sensitivity to standing water.
+    /// </summary>
+    private const float WaterDepthRoadCoolingScale = 5000f;
+    /// <summary>Maximum road sink-temperature reduction from water film (°C).</summary>
+    private const float MaxWaterRoadTemperatureOffset = 12f;
     private const float ReferencePressureBrushStiffness = ReferencePressure * KilopascalsToPascals * ReferenceTyreWidth;
 
     /// <summary>
@@ -724,9 +731,12 @@ public sealed class TyreModel
         var slipForceMag = MathF.Sqrt(longitudinalForce * longitudinalForce + lateralForce * lateralForce);
         var slipPower = slipForceMag * slipSpeed;
         var surfaceToCorePower = SurfaceToCoreConductance * (state.Temperature - state.CoreTemperature);
+        var clampedWaterDepth = MathF.Max(surface.WaterDepth, 0f);
         var roadCoolingRate = RoadHeatTransferRate * (1f + surface.Macrotexture * 0.5f
-            + MathF.Max(surface.WaterDepth, 0f) * WaterCoolingGain);
-        var roadSinkTemperature = AmbientTemperature - MathF.Min(MathF.Max(surface.WaterDepth, 0f) * 5000f, 12f);
+            + clampedWaterDepth * WaterCoolingGain);
+        var roadSinkTemperature = AmbientTemperature - MathF.Min(
+            clampedWaterDepth * WaterDepthRoadCoolingScale,
+            MaxWaterRoadTemperatureOffset);
         var surfaceAirPower = CoolingRate * (state.Temperature - AmbientTemperature);
         var surfaceRoadPower = roadCoolingRate * (state.Temperature - roadSinkTemperature);
         var coreAmbientPower = CoreCoolingRate * (state.CoreTemperature - AmbientTemperature);
@@ -1022,6 +1032,14 @@ public sealed class TyreModel
         }
     }
 
+    /// <summary>
+    /// Applies explicit combined-slip coupling between longitudinal and lateral tyre forces.
+    /// Each force channel is attenuated by a smooth function of the other channel's utilization,
+    /// approximating friction-ellipse interaction before the final hard clamp.
+    /// </summary>
+    /// <param name="longitudinalForce">Current longitudinal tyre force Fx (N), updated in-place.</param>
+    /// <param name="lateralForce">Current lateral tyre force Fy (N), updated in-place.</param>
+    /// <param name="peakForce">Peak longitudinal force capacity µ·Fz (N).</param>
     private void ApplyCombinedSlipInteraction(ref float longitudinalForce, ref float lateralForce, float peakForce)
     {
         const float forceEpsilon = 1e-6f;
