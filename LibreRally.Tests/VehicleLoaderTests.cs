@@ -1,6 +1,10 @@
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Numerics;
 using LibreRally.Vehicle;
+using LibreRally.Vehicle.JBeam;
+using LibreRally.Vehicle.Physics;
 using LibreRally.Vehicle.Rendering;
 using Xunit;
 
@@ -8,6 +12,23 @@ namespace LibreRally.Tests;
 
 public class VehicleLoaderTests
 {
+    private static string GetVehicleFolder()
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory != null)
+        {
+            string candidate = Path.Combine(directory.FullName, "LibreRally.sln");
+            if (File.Exists(candidate))
+            {
+                return Path.Combine(directory.FullName, "LibreRally", "Resources", "BeamNG Vehicles", "basic_car");
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new DirectoryNotFoundException("Could not locate the repository root for the basic_car tests.");
+    }
+
     [Fact]
     public void SelectChassisMeshes_ForDtsSources_KeepsOnlyActiveNonWheelFlexbodies()
     {
@@ -118,5 +139,39 @@ public class VehicleLoaderTests
         ];
 
         Assert.True(VehicleLoader.ShouldTreatWheelGeometryAsPrePositioned(sourceMeshes, expectedPosition));
+    }
+
+    [Theory]
+    [InlineData("autobello_upperarm_wide_F", true)]
+    [InlineData("autobello_coilover_R", true)]
+    [InlineData("autobello_halfshaft_R", true)]
+    [InlineData("autobello_brakedisk_track_FR", false)]
+    [InlineData("steelwheel_11a_13x5", false)]
+    public void IsSuspensionKinematicFlexBody_ClassifiesMovingLinkMeshes(string meshName, bool expected)
+    {
+        var flexBody = new AssembledFlexBody(meshName, []);
+
+        Assert.Equal(expected, SuspensionVisualKinematicsRigBuilder.IsSuspensionKinematicFlexBody(flexBody));
+    }
+
+    [Fact]
+    public void BuildLinkSpecs_BasicCarCreatesSuspensionAndRearHalfshaftLinks()
+    {
+        PcConfig config = PcConfigLoader.Load(Path.Combine(GetVehicleFolder(), "basic_car.pc"));
+        VehicleDefinition definition = JBeamAssembler.Assemble(GetVehicleFolder(), config);
+        VehicleBuilderResult result = VehiclePhysicsBuilder.Build(definition);
+
+        var specs = SuspensionVisualKinematicsRigBuilder.BuildLinkSpecs(definition, result);
+
+        Assert.Contains(specs, spec => spec.Name == "front_upperarm_wheel_FL");
+        Assert.Contains(specs, spec => spec.Name == "front_upperarm_wheel_FR");
+        Assert.Contains(specs, spec => spec.Name == "front_coilover_wheel_FL");
+        Assert.Contains(specs, spec => spec.Name == "rear_trailingarm_wheel_RL");
+        Assert.Contains(specs, spec => spec.Name == "rear_trailingarm_wheel_RR");
+        Assert.Contains(specs, spec => spec.Name == "rear_halfshaft_wheel_RL");
+        Assert.Contains(specs, spec => spec.Name == "rear_halfshaft_wheel_RR");
+        Assert.All(specs, spec => Assert.True(spec.Radius > 0f));
+        Assert.All(specs.Where(spec => spec.StartEntity == result.ChassisEntity), spec =>
+            Assert.NotEqual(spec.StartLocalPosition, spec.EndLocalPosition));
     }
 }
