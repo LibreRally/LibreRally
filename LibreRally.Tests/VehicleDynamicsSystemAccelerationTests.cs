@@ -50,4 +50,40 @@ public class VehicleDynamicsSystemAccelerationTests
 
         Assert.Equal(Vector2.Zero, acceleration);
     }
+
+    [Fact]
+    public void EstimateWorldAccelerationFromNetForce_NearZeroMassReturnsZero()
+    {
+        var acceleration = VehicleDynamicsSystem.EstimateWorldAccelerationFromNetForce(
+            new Vector3(1000f, 0f, 1000f),
+            vehicleMass: 0f);
+
+        Assert.Equal(Vector3.Zero, acceleration);
+    }
+
+    [Fact]
+    public void PlanarProjection_ReprojectsSameWorldAccelerationAcrossFrameRotation()
+    {
+        var netForce = new Vector3(1000f, 0f, 0f);
+        var worldAcceleration = VehicleDynamicsSystem.EstimateWorldAccelerationFromNetForce(
+            netForce,
+            vehicleMass: 1000f);
+
+        var step1 = VehicleDynamicsSystem.EstimatePlanarAccelerationFromNetForce(
+            netForce,
+            Vector3.UnitZ,
+            Vector3.UnitX,
+            vehicleMass: 1000f);
+
+        var step2Forward = Vector3.UnitX;
+        var step2Right = -Vector3.UnitZ;
+        var step2 = new Vector2(
+            Vector3.Dot(worldAcceleration, step2Forward),
+            Vector3.Dot(worldAcceleration, step2Right));
+
+        Assert.Equal(0f, step1.X, 4);
+        Assert.Equal(1f, step1.Y, 4);
+        Assert.Equal(1f, step2.X, 4);
+        Assert.Equal(0f, step2.Y, 4);
+    }
 }

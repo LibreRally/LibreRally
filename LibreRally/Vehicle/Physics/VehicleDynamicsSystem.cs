@@ -145,8 +145,7 @@ public sealed class VehicleDynamicsSystem
     public readonly float[] WheelDriveTorques = new float[WheelCount];
 
     // ── Force-derived acceleration state (cached for next step) ──────────────
-    private float _forceEstimatedLongitudinalAccel;
-    private float _forceEstimatedLateralAccel;
+    private Vector3 _forceEstimatedAccelerationWorld;
     private bool _hasForceEstimatedAcceleration;
 
     /// <summary>Initializes a new dynamics system with default tyre state and tarmac surfaces.</summary>
@@ -204,8 +203,12 @@ public sealed class VehicleDynamicsSystem
         // Note: chassisWorld.Backward = local +Z = car nose direction (Stride coordinate convention).
         var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
         var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        var longitudinalAccel = _hasForceEstimatedAcceleration ? _forceEstimatedLongitudinalAccel : 0f;
-        var lateralAccel = _hasForceEstimatedAcceleration ? _forceEstimatedLateralAccel : 0f;
+        var longitudinalAccel = _hasForceEstimatedAcceleration
+            ? Vector3.Dot(_forceEstimatedAccelerationWorld, forwardDir)
+            : 0f;
+        var lateralAccel = _hasForceEstimatedAcceleration
+            ? Vector3.Dot(_forceEstimatedAccelerationWorld, rightDir)
+            : 0f;
 
         // ── 2. Compute load transfer ─────────────────────────────────────────
         ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
@@ -244,7 +247,7 @@ public sealed class VehicleDynamicsSystem
         ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorque, camberAngles, dt);
 
         // ── 6. Update force-derived acceleration estimate for next physics step ─
-        UpdateForceBasedAccelerationEstimate(in chassisWorld, wheelOrientations, wheelContactScales);
+        UpdateForceBasedAccelerationEstimate(wheelOrientations);
 
         // ── 7. Apply all forces as impulses to the chassis at the wheel contact locations ─
         ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
@@ -569,13 +572,11 @@ public sealed class VehicleDynamicsSystem
     }
 
     /// <summary>
-    /// Estimates chassis longitudinal/lateral acceleration from the current modelled tyre forces.
-    /// This estimate is cached and used on the next update for load transfer/body attitude.
+    /// Estimates world-space chassis acceleration from the current modelled tyre forces.
+    /// This estimate is cached and projected to chassis axes on the next update.
     /// </summary>
     private void UpdateForceBasedAccelerationEstimate(
-        in Matrix chassisWorld,
-        ReadOnlySpan<Matrix> wheelOrientations,
-        ReadOnlySpan<float> wheelContactScales)
+        ReadOnlySpan<Matrix> wheelOrientations)
     {
         var netForceWorld = Vector3.Zero;
 
@@ -586,33 +587,25 @@ public sealed class VehicleDynamicsSystem
                 continue;
             }
 
-            var contactScale = i < wheelContactScales.Length
-                ? Math.Clamp(wheelContactScales[i], 0f, 1f)
-                : 1f;
-
-            if (contactScale <= 1e-4f)
-            {
-                continue;
-            }
-
             var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
             var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
             var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
             var wheelForceWorld = wheelForward * LongitudinalForces[i] + wheelRight * LateralForces[i];
-            netForceWorld += wheelForceWorld * contactScale;
+            netForceWorld += wheelForceWorld;
         }
 
-        var forwardDir = SafeNormalize(chassisWorld.Backward, Vector3.UnitZ);
-        var rightDir = SafeNormalize(chassisWorld.Right, Vector3.UnitX);
-        var planarAcceleration = EstimatePlanarAccelerationFromNetForce(
-            netForceWorld,
-            forwardDir,
-            rightDir,
-            VehicleMass);
-
-        _forceEstimatedLongitudinalAccel = planarAcceleration.X;
-        _forceEstimatedLateralAccel = planarAcceleration.Y;
+        _forceEstimatedAccelerationWorld = EstimateWorldAccelerationFromNetForce(netForceWorld, VehicleMass);
         _hasForceEstimatedAcceleration = true;
+    }
+
+    internal static Vector3 EstimateWorldAccelerationFromNetForce(Vector3 netForceWorld, float vehicleMass)
+    {
+        if (vehicleMass <= 1e-4f)
+        {
+            return Vector3.Zero;
+        }
+
+        return netForceWorld / vehicleMass;
     }
 
     /// <summary>
@@ -632,12 +625,7 @@ public sealed class VehicleDynamicsSystem
         Vector3 chassisRight,
         float vehicleMass)
     {
-        if (vehicleMass <= 1e-4f)
-        {
-            return Vector2.Zero;
-        }
-
-        var accelerationWorld = netForceWorld / vehicleMass;
+        var accelerationWorld = EstimateWorldAccelerationFromNetForce(netForceWorld, vehicleMass);
         return new Vector2(
             Vector3.Dot(accelerationWorld, chassisForward),
             Vector3.Dot(accelerationWorld, chassisRight));
