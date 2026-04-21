@@ -369,6 +369,93 @@ public class TyreModelTests
         Assert.InRange(ellipseValue, 0.995f, 1.005f);
     }
 
+    [Fact]
+    public void CombinedSlipInteraction_ReducesLongitudinalForceUnderCornering()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            FrictionEllipseRatio = 1.0f,
+            CombinedSlipCoupling = 1.2f,
+            CombinedSlipExponent = 2.0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+            CoolingRate = 0f,
+            CoreCoolingRate = 0f,
+            RoadHeatTransferRate = 0f,
+        };
+
+        var straightState = TyreState.CreateDefault();
+        var corneringState = TyreState.CreateDefault();
+        const float longitudinalVelocity = 20f;
+        const float normalLoad = 3000f;
+        const float slipRatioTarget = 0.12f;
+        float angularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / model.Radius;
+        straightState.AngularVelocity = angularVelocity;
+        corneringState.AngularVelocity = angularVelocity;
+
+        model.Update(ref straightState, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
+            Tarmac, 0.01f, out float straightFx, out _, out _);
+        model.Update(ref corneringState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
+            Tarmac, 0.01f, out float corneringFx, out float corneringFy, out _);
+
+        Assert.True(MathF.Abs(corneringFy) > 0f);
+        Assert.True(MathF.Abs(corneringFx) < MathF.Abs(straightFx));
+    }
+
+    [Fact]
+    public void ThermalModel_TracksSurfaceAndCoreWithLagDuringHeatAndCooldown()
+    {
+        var model = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+            CoolingRate = 18f,
+            CoreCoolingRate = 3.5f,
+            RoadHeatTransferRate = 25f,
+            SurfaceToCoreConductance = 45f,
+            ThermalMass = 7000f,
+            CoreThermalMass = 28000f,
+        };
+
+        var state = TyreState.CreateDefault();
+        const float longitudinalVelocity = 20f;
+        const float normalLoad = 3000f;
+        const float dt = 0.01f;
+
+        for (int i = 0; i < 800; i++)
+        {
+            state.AngularVelocity = longitudinalVelocity * 1.25f / model.Radius;
+            model.Update(ref state, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
+                Tarmac, dt, out _, out _, out _);
+        }
+
+        float heatedSurface = state.Temperature;
+        float heatedCore = state.CoreTemperature;
+
+        for (int i = 0; i < 1200; i++)
+        {
+            state.AngularVelocity = longitudinalVelocity / model.Radius;
+            model.Update(ref state, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
+                Tarmac, dt, out _, out _, out _);
+        }
+
+        Assert.True(heatedSurface > model.AmbientTemperature);
+        Assert.True(heatedCore > model.AmbientTemperature);
+        Assert.True(heatedSurface > heatedCore);
+        Assert.True(state.Temperature < heatedSurface);
+        Assert.True(state.CoreTemperature < heatedCore);
+        Assert.True(state.CoreTemperature > state.Temperature);
+    }
+
     // ── Pneumatic trail tests ────────────────────────────────────────────────
 
     [Fact]
