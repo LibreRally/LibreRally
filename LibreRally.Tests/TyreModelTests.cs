@@ -369,6 +369,9 @@ public class TyreModelTests
         Assert.InRange(ellipseValue, 0.995f, 1.005f);
     }
 
+    /// <summary>
+    /// Verifies explicit combined-slip coupling: adding lateral slip reduces available longitudinal force.
+    /// </summary>
     [Fact]
     public void CombinedSlipInteraction_ReducesLongitudinalForceUnderCornering()
     {
@@ -408,6 +411,9 @@ public class TyreModelTests
         Assert.True(MathF.Abs(corneringFx) < MathF.Abs(straightFx));
     }
 
+    /// <summary>
+    /// Verifies two-node tyre thermals: surface heats first, then core lags and remains warmer during cooldown.
+    /// </summary>
     [Fact]
     public void ThermalModel_TracksSurfaceAndCoreWithLagDuringHeatAndCooldown()
     {
@@ -430,8 +436,10 @@ public class TyreModelTests
         const float longitudinalVelocity = 20f;
         const float normalLoad = 3000f;
         const float dt = 0.01f;
+        const int heatupIterations = 800;
+        const int cooldownIterations = 1200;
 
-        for (int i = 0; i < 800; i++)
+        for (int i = 0; i < heatupIterations; i++)
         {
             state.AngularVelocity = longitudinalVelocity * 1.25f / model.Radius;
             model.Update(ref state, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
@@ -441,7 +449,7 @@ public class TyreModelTests
         float heatedSurface = state.Temperature;
         float heatedCore = state.CoreTemperature;
 
-        for (int i = 0; i < 1200; i++)
+        for (int i = 0; i < cooldownIterations; i++)
         {
             state.AngularVelocity = longitudinalVelocity / model.Radius;
             model.Update(ref state, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
