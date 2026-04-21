@@ -375,12 +375,29 @@ public class TyreModelTests
     [Fact]
     public void CombinedSlipInteraction_ReducesLongitudinalForceUnderCornering()
     {
-        var model = new TyreModel(0.305f)
+        var noCouplingModel = new TyreModel(0.305f)
         {
             PeakFrictionCoefficient = 1.0f,
             LoadSensitivity = 0f,
             ContactAreaGripExponent = 0f,
-            FrictionEllipseRatio = 1.0f,
+            FrictionEllipseRatio = 4.0f,
+            CombinedSlipCoupling = 0f,
+            CombinedSlipExponent = 2.0f,
+            OptimalTemperature = 30f,
+            TemperatureWindow = 100f,
+            WornGripFraction = 1.0f,
+            RollingResistanceCoefficient = 0f,
+            CarcassShearCoefficient = 0f,
+            CoolingRate = 0f,
+            CoreCoolingRate = 0f,
+            RoadHeatTransferRate = 0f,
+        };
+        var couplingModel = new TyreModel(0.305f)
+        {
+            PeakFrictionCoefficient = 1.0f,
+            LoadSensitivity = 0f,
+            ContactAreaGripExponent = 0f,
+            FrictionEllipseRatio = 4.0f,
             CombinedSlipCoupling = 1.2f,
             CombinedSlipExponent = 2.0f,
             OptimalTemperature = 30f,
@@ -393,22 +410,24 @@ public class TyreModelTests
             RoadHeatTransferRate = 0f,
         };
 
-        var straightState = TyreState.CreateDefault();
-        var corneringState = TyreState.CreateDefault();
+        var noCouplingState = TyreState.CreateDefault();
+        var couplingState = TyreState.CreateDefault();
         const float longitudinalVelocity = 20f;
         const float normalLoad = 3000f;
         const float slipRatioTarget = 0.12f;
-        float angularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / model.Radius;
-        straightState.AngularVelocity = angularVelocity;
-        corneringState.AngularVelocity = angularVelocity;
+        float noCouplingAngularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / noCouplingModel.Radius;
+        float couplingAngularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / couplingModel.Radius;
+        noCouplingState.AngularVelocity = noCouplingAngularVelocity;
+        couplingState.AngularVelocity = couplingAngularVelocity;
 
-        model.Update(ref straightState, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
-            Tarmac, 0.01f, out float straightFx, out _, out _);
-        model.Update(ref corneringState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
-            Tarmac, 0.01f, out float corneringFx, out float corneringFy, out _);
+        noCouplingModel.Update(ref noCouplingState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
+            Tarmac, 0.01f, out float noCouplingFx, out float noCouplingFy, out _);
+        couplingModel.Update(ref couplingState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
+            Tarmac, 0.01f, out float couplingFx, out float couplingFy, out _);
 
-        Assert.True(MathF.Abs(corneringFy) > 0f);
-        Assert.True(MathF.Abs(corneringFx) < MathF.Abs(straightFx));
+        Assert.True(MathF.Abs(noCouplingFy) > 0f);
+        Assert.True(MathF.Abs(couplingFy) > 0f);
+        Assert.True(MathF.Abs(couplingFx) < MathF.Abs(noCouplingFx));
     }
 
     /// <summary>

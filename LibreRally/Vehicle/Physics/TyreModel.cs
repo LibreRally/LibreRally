@@ -537,8 +537,9 @@ public sealed class TyreModel
         // ── Effective friction coefficient ───────────────────────────────────
         // Combines surface µ, load sensitivity, temperature, wear, wet grip,
         // hydroplaning, and road roughness noise effects.
-        var gripTemperature = Math.Clamp(GripTemperatureSurfaceWeight, 0f, 1f) * state.Temperature
-                              + (1f - Math.Clamp(GripTemperatureSurfaceWeight, 0f, 1f)) * state.CoreTemperature;
+        var gripTemperatureSurfaceWeight = Math.Clamp(GripTemperatureSurfaceWeight, 0f, 1f);
+        var gripTemperature = gripTemperatureSurfaceWeight * state.Temperature
+                              + (1f - gripTemperatureSurfaceWeight) * state.CoreTemperature;
         var mu = ComputeEffectiveFriction(normalLoad, surface, gripTemperature,
             state.TreadLife, absVx: MathF.Abs(longitudinalVelocity), dt: dt);
 
@@ -764,8 +765,9 @@ public sealed class TyreModel
             / MathF.Max(ThermalMass, 1f);
         state.CoreTemperature += (surfaceToCorePower - coreAmbientPower) * dt
             / MathF.Max(CoreThermalMass, 1f);
-        state.Temperature = MathF.Max(state.Temperature, AmbientTemperature - 10f);
-        state.CoreTemperature = MathF.Max(state.CoreTemperature, AmbientTemperature - 10f);
+        var minimumTemperature = AmbientTemperature - MaxWaterRoadTemperatureOffset;
+        state.Temperature = MathF.Max(state.Temperature, minimumTemperature);
+        state.CoreTemperature = MathF.Max(state.CoreTemperature, minimumTemperature);
 
         // ── Wear model ───────────────────────────────────────────────────────
         // Tread life decreases proportionally to slip energy.
