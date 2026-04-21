@@ -86,4 +86,43 @@ public class VehicleDynamicsSystemAccelerationTests
         Assert.Equal(1f, step2.X, 4);
         Assert.Equal(0f, step2.Y, 4);
     }
+
+    [Fact]
+    public void EffectivePitchTransferHeight_AppliesAntiDiveAndAntiSquat()
+    {
+        var brakingHeight = VehicleDynamicsSystem.ComputeEffectivePitchTransferHeight(
+            cgHeight: 0.5f,
+            longitudinalAccel: -4f,
+            antiDiveFactor: 0.2f,
+            antiSquatFactor: 0.4f);
+        var accelerationHeight = VehicleDynamicsSystem.ComputeEffectivePitchTransferHeight(
+            cgHeight: 0.5f,
+            longitudinalAccel: 4f,
+            antiDiveFactor: 0.2f,
+            antiSquatFactor: 0.4f);
+
+        Assert.Equal(0.4f, brakingHeight, 4);
+        Assert.Equal(0.3f, accelerationHeight, 4);
+    }
+
+    [Fact]
+    public void AxleLateralTransfer_DecreasesAsRollCenterRises()
+    {
+        var lowRollCenterTransfer = VehicleDynamicsSystem.ComputeAxleLateralTransfer(
+            vehicleMass: 1200f,
+            axleLoadFraction: 0.55f,
+            lateralAccel: 5f,
+            cgHeight: 0.5f,
+            rollCenterHeight: 0.08f,
+            trackWidth: 1.5f);
+        var highRollCenterTransfer = VehicleDynamicsSystem.ComputeAxleLateralTransfer(
+            vehicleMass: 1200f,
+            axleLoadFraction: 0.55f,
+            lateralAccel: 5f,
+            cgHeight: 0.5f,
+            rollCenterHeight: 0.22f,
+            trackWidth: 1.5f);
+
+        Assert.True(highRollCenterTransfer < lowRollCenterTransfer);
+    }
 }
