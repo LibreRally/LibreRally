@@ -36,6 +36,8 @@ namespace LibreRally
 		VehicleSelect,
 		/// <summary>Open the physics calibration menu.</summary>
 		PhysicsCalibration,
+		/// <summary>Open the telemetry controls menu.</summary>
+		Telemetry,
 	}
 
 	/// <summary>
@@ -44,6 +46,21 @@ namespace LibreRally
 	/// <param name="Item">The UI item descriptor.</param>
 	/// <param name="Action">The action to execute when selected.</param>
 	public readonly record struct PauseMenuEntry(PauseMenuItem Item, PauseMenuAction Action);
+
+	/// <summary>
+	/// Defines the available actions in the telemetry menu.
+	/// </summary>
+	internal enum TelemetryMenuAction
+	{
+		ToggleOutGauge,
+		ConnectOutGauge,
+		DisconnectOutGauge,
+		ReconnectOutGauge,
+		ToggleOutSim,
+		ConnectOutSim,
+		DisconnectOutSim,
+		ReconnectOutSim,
+	}
 
 	/// <summary>
 	/// Main script responsible for spawning vehicles, managing UI overlays, and handling telemetry.
@@ -71,7 +88,7 @@ namespace LibreRally
 		/// <summary>
 		/// Gets or sets a value indicating whether OutGauge telemetry is enabled.
 		/// </summary>
-		public bool OutGaugeEnabled { get; set; }
+		public bool OutGaugeEnabled { get; set; } = true;
 
 		/// <summary>
 		/// Gets or sets the delay between OutGauge packets in centiseconds.
@@ -125,15 +142,18 @@ namespace LibreRally
 		private SetupUiShellOverlay? _setupUiShellOverlay;
 		private VehicleSelectionOverlay? _vehicleSelectionOverlay;
 		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
+		private TelemetryOverlay? _telemetryOverlay;
 		private BeamNgVehicleCatalog? _vehicleCatalog;
 		private List<BeamNgVehicleDescriptor> _availableVehicles = [];
 		private readonly VehicleSetupOverrides _setupOverrides = new();
 		private int _selectedVehicleIndex;
 		private int _pauseMenuSelectedIndex;
+		private int _telemetryMenuSelectedIndex;
 		private bool _vehicleSelectionOpenedFromPauseMenu;
 		private MenuScreen _activeMenuScreen;
 		private LoadedVehicle? _loadedVehicle;
 		private UdpClient? _outGaugeClient;
+		private bool _outGaugeConnectionRequested = true;
 		private string? _outGaugeTargetHost;
 		private int _outGaugeTargetPort;
 		private const double FailureLogIntervalSeconds = 5d;
@@ -141,6 +161,7 @@ namespace LibreRally
 		private double _outGaugeNextFailureLogTimeSeconds;
 		private float _outGaugeElapsed;
 		private UdpClient? _outSimClient;
+		private bool _outSimConnectionRequested = true;
 		private string? _outSimTargetHost;
 		private int _outSimTargetPort;
 		private bool _outSimSendFailed;
@@ -162,7 +183,9 @@ namespace LibreRally
 		private const int PauseMenuGarageSetupIndex = 2;
 		private const int PauseMenuVehicleSelectIndex = 3;
 		private const int PauseMenuPhysicsCalibrationIndex = 4;
-		private const int PauseMenuItemCount = 5;
+		private const int PauseMenuTelemetryIndex = 5;
+		private const int PauseMenuItemCount = 6;
+		private const int TelemetryMenuItemCount = 8;
 		private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
 		[
 			new(new PauseMenuItem("Resume Driving", "Return to the stage and hand control back to the driver."), PauseMenuAction.ResumeDriving),
@@ -170,6 +193,7 @@ namespace LibreRally
 			new(new PauseMenuItem("Garage Setup", "Open the restored Myra tuning shell for stage prep changes."), PauseMenuAction.GarageSetup),
 			new(new PauseMenuItem("Vehicle Select", "Load a different bundled vehicle from the current catalog."), PauseMenuAction.VehicleSelect),
 			new(new PauseMenuItem("Physics Calibration", "Isolate tyre model contributions and tune anti-slip parameters live."), PauseMenuAction.PhysicsCalibration),
+			new(new PauseMenuItem("Telemetry", "Enable or disable OutGauge/OutSim, then connect, disconnect, or reconnect their UDP sockets."), PauseMenuAction.Telemetry),
 		];
 
 		internal enum MenuScreen
@@ -179,6 +203,7 @@ namespace LibreRally
 			GarageSetup,
 			VehicleSelection,
 			PhysicsCalibration,
+			Telemetry,
 		}
 
 		/// <summary>
@@ -216,6 +241,7 @@ namespace LibreRally
 			EnsureSetupUiShellOverlay();
 			EnsureVehicleSelectionOverlay();
 			EnsurePhysicsCalibrationOverlay();
+			EnsureTelemetryOverlay();
 
 			try
 			{
@@ -287,6 +313,7 @@ namespace LibreRally
 			AttachDrivingHud(vehicle.CarComponent);
 			BindGarageSetupOverlay();
 			BindPhysicsCalibrationOverlay();
+			RefreshTelemetryOverlay();
 		}
 
 		private void UnloadVehicle()
@@ -427,6 +454,32 @@ namespace LibreRally
 			((Game)Game).GameSystems.Add(_physicsCalibrationOverlay);
 		}
 
+		private void EnsureTelemetryOverlay()
+		{
+			if (_telemetryOverlay != null)
+			{
+				return;
+			}
+
+			_telemetryOverlay = new TelemetryOverlay(Services)
+			{
+				Items = BuildTelemetryMenuItems(),
+				SelectedIndex = _telemetryMenuSelectedIndex,
+				OverlayVisible = _activeMenuScreen == MenuScreen.Telemetry,
+				VehicleName = GetCurrentVehicleName(),
+				StatusText = _status,
+				OutGaugeSummary = BuildOutGaugeSummary(),
+				OutSimSummary = BuildOutSimSummary(),
+			};
+			_telemetryOverlay.ItemActivated = selectedIndex =>
+			{
+				_telemetryMenuSelectedIndex = Math.Clamp(selectedIndex, 0, TelemetryMenuItemCount - 1);
+				ExecuteTelemetryMenuAction(ResolveTelemetryMenuAction(_telemetryMenuSelectedIndex));
+			};
+
+			((Game)Game).GameSystems.Add(_telemetryOverlay);
+		}
+
 		private void BindPhysicsCalibrationOverlay()
 		{
 			if (_physicsCalibrationOverlay == null)
@@ -509,6 +562,9 @@ namespace LibreRally
 		internal static bool IsVehicleMenuCancelRequested(bool keyboardCancelPressed, bool controllerCancelPressed) =>
 			keyboardCancelPressed || controllerCancelPressed;
 
+		internal static TelemetryMenuAction ResolveTelemetryMenuAction(int selectedIndex) =>
+			(TelemetryMenuAction)Math.Clamp(selectedIndex, 0, TelemetryMenuItemCount - 1);
+
 		private void HandlePauseAndVehicleSelectionInput()
 		{
 			var pad = Input.GamePads.FirstOrDefault();
@@ -529,6 +585,27 @@ namespace LibreRally
 
 			if (_activeMenuScreen == MenuScreen.PhysicsCalibration)
 			{
+				if (_car != null)
+				{
+					_car.PlayerInputEnabled = false;
+				}
+
+				return;
+			}
+
+			if (_activeMenuScreen == MenuScreen.Telemetry)
+			{
+				if (IsVehicleMenuCancelRequested(
+					    Input.IsKeyPressed(Keys.Escape) || pauseMenuToggleRequested,
+					    (pad?.IsButtonPressed(GamePadButton.B) ?? false) || (pad?.IsButtonPressed(GamePadButton.Start) ?? false)))
+				{
+					CloseTelemetryMenu();
+				}
+				else
+				{
+					HandleTelemetryMenuInput(pad);
+				}
+
 				if (_car != null)
 				{
 					_car.PlayerInputEnabled = false;
@@ -674,7 +751,38 @@ namespace LibreRally
 				case PauseMenuPhysicsCalibrationIndex:
 					ExecutePauseMenuAction(PauseMenuAction.PhysicsCalibration);
 					break;
+				case PauseMenuTelemetryIndex:
+					ExecutePauseMenuAction(PauseMenuAction.Telemetry);
+					break;
 			}
+		}
+
+		private void HandleTelemetryMenuInput(IGamePadDevice? pad)
+		{
+			if (IsVehicleMenuMoveUpRequested(
+				    Input.IsKeyPressed(Keys.Up),
+				    pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
+			{
+				_telemetryMenuSelectedIndex = (_telemetryMenuSelectedIndex - 1 + TelemetryMenuItemCount) % TelemetryMenuItemCount;
+				RefreshTelemetryOverlay();
+			}
+
+			if (IsVehicleMenuMoveDownRequested(
+				    Input.IsKeyPressed(Keys.Down),
+				    pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
+			{
+				_telemetryMenuSelectedIndex = (_telemetryMenuSelectedIndex + 1) % TelemetryMenuItemCount;
+				RefreshTelemetryOverlay();
+			}
+
+			if (!IsVehicleMenuConfirmRequested(
+				    Input.IsKeyPressed(Keys.Enter),
+				    pad?.IsButtonPressed(GamePadButton.A) ?? false))
+			{
+				return;
+			}
+
+			ExecuteTelemetryMenuAction(ResolveTelemetryMenuAction(_telemetryMenuSelectedIndex));
 		}
 
 		private void ExecutePauseMenuAction(PauseMenuAction action)
@@ -695,6 +803,42 @@ namespace LibreRally
 					break;
 				case PauseMenuAction.PhysicsCalibration:
 					OpenPhysicsCalibration();
+					break;
+				case PauseMenuAction.Telemetry:
+					OpenTelemetryMenu();
+					break;
+			}
+		}
+
+		private void ExecuteTelemetryMenuAction(TelemetryMenuAction action)
+		{
+			switch (action)
+			{
+				case TelemetryMenuAction.ToggleOutGauge:
+					SetOutGaugeEnabled(!OutGaugeEnabled);
+					SetTelemetryStatus($"OutGauge telemetry {(OutGaugeEnabled ? "enabled" : "disabled")}.");
+					break;
+				case TelemetryMenuAction.ConnectOutGauge:
+					ConnectOutGauge();
+					break;
+				case TelemetryMenuAction.DisconnectOutGauge:
+					DisconnectOutGauge();
+					break;
+				case TelemetryMenuAction.ReconnectOutGauge:
+					ReconnectOutGauge();
+					break;
+				case TelemetryMenuAction.ToggleOutSim:
+					SetOutSimEnabled(!OutSimEnabled);
+					SetTelemetryStatus($"OutSim telemetry {(OutSimEnabled ? "enabled" : "disabled")}.");
+					break;
+				case TelemetryMenuAction.ConnectOutSim:
+					ConnectOutSim();
+					break;
+				case TelemetryMenuAction.DisconnectOutSim:
+					DisconnectOutSim();
+					break;
+				case TelemetryMenuAction.ReconnectOutSim:
+					ReconnectOutSim();
 					break;
 			}
 		}
@@ -750,6 +894,19 @@ namespace LibreRally
 		{
 			_activeMenuScreen = MenuScreen.Pause;
 			_pauseMenuSelectedIndex = PauseMenuPhysicsCalibrationIndex;
+		}
+
+		private void OpenTelemetryMenu()
+		{
+			RefreshTelemetryOverlay();
+			_activeMenuScreen = MenuScreen.Telemetry;
+		}
+
+		private void CloseTelemetryMenu()
+		{
+			_activeMenuScreen = MenuScreen.Pause;
+			_pauseMenuSelectedIndex = PauseMenuTelemetryIndex;
+			RefreshTelemetryOverlay();
 		}
 
 		private void ApplyGarageSetupChanges(SetupUiApplyPayload payload)
@@ -1079,6 +1236,16 @@ namespace LibreRally
 				_pauseMenuOverlay.StatusText = _status;
 			}
 
+			if (_telemetryOverlay != null)
+			{
+				_telemetryOverlay.SelectedIndex = _telemetryMenuSelectedIndex;
+				_telemetryOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.Telemetry;
+				_telemetryOverlay.VehicleName = GetCurrentVehicleName();
+				_telemetryOverlay.StatusText = _status;
+				_telemetryOverlay.OutGaugeSummary = BuildOutGaugeSummary();
+				_telemetryOverlay.OutSimSummary = BuildOutSimSummary();
+			}
+
 			if (_setupUiShellOverlay != null)
 			{
 				_setupUiShellOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup;
@@ -1101,10 +1268,10 @@ namespace LibreRally
 
 		private void SendOutGaugeTelemetry(float deltaTime)
 		{
-			if (!OutGaugeEnabled || _car == null)
+			if (!OutGaugeEnabled || !_outGaugeConnectionRequested || _car == null)
 			{
 				_outGaugeElapsed = 0f;
-				if (!OutGaugeEnabled)
+				if (!OutGaugeEnabled || !_outGaugeConnectionRequested)
 				{
 					DisposeOutGaugeClient();
 				}
@@ -1196,11 +1363,11 @@ namespace LibreRally
 
 		private void SendOutSimTelemetry(float deltaTime)
 		{
-			if (!OutSimEnabled || _car == null)
+			if (!OutSimEnabled || !_outSimConnectionRequested || _car == null)
 			{
 				_outSimElapsed = 0f;
 				_outSimHasPreviousLinearVelocity = false;
-				if (!OutSimEnabled)
+				if (!OutSimEnabled || !_outSimConnectionRequested)
 				{
 					DisposeOutSimClient();
 				}
@@ -1314,6 +1481,155 @@ namespace LibreRally
 			}
 
 			_outSimSendFailed = true;
+		}
+
+		private IReadOnlyList<PauseMenuItem> BuildTelemetryMenuItems() =>
+		[
+			new(OutGaugeEnabled ? "Disable OutGauge" : "Enable OutGauge", "Toggle Live for Speed OutGauge speed/RPM packets on or off."),
+			new("Connect OutGauge", "Open the OutGauge UDP socket without changing the enable toggle."),
+			new("Disconnect OutGauge", "Close the OutGauge UDP socket while keeping the configured target intact."),
+			new("Reconnect OutGauge", "Dispose and recreate the OutGauge UDP socket for the current endpoint."),
+			new(OutSimEnabled ? "Disable OutSim" : "Enable OutSim", "Toggle Live for Speed OutSim motion packets on or off."),
+			new("Connect OutSim", "Open the OutSim UDP socket without changing the enable toggle."),
+			new("Disconnect OutSim", "Close the OutSim UDP socket while keeping the configured target intact."),
+			new("Reconnect OutSim", "Dispose and recreate the OutSim UDP socket for the current endpoint."),
+		];
+
+		private void RefreshTelemetryOverlay()
+		{
+			if (_telemetryOverlay == null)
+			{
+				return;
+			}
+
+			_telemetryOverlay.Items = BuildTelemetryMenuItems();
+			_telemetryOverlay.SelectedIndex = _telemetryMenuSelectedIndex;
+			_telemetryOverlay.VehicleName = GetCurrentVehicleName();
+			_telemetryOverlay.StatusText = _status;
+			_telemetryOverlay.OutGaugeSummary = BuildOutGaugeSummary();
+			_telemetryOverlay.OutSimSummary = BuildOutSimSummary();
+		}
+
+		private string BuildOutGaugeSummary()
+		{
+			var endpoint = DescribeTelemetryEndpoint(OutGaugeIp, OutGaugePort);
+			var enabledState = OutGaugeEnabled ? "enabled" : "disabled";
+			var connectionState = DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed);
+			return $"OutGauge // {enabledState} // {endpoint} // {connectionState} // {(OutGaugeId == 0 ? "id=none" : $"id={OutGaugeId}")}";
+		}
+
+		private string BuildOutSimSummary()
+		{
+			var endpoint = DescribeTelemetryEndpoint(OutSimIp, OutSimPort);
+			var enabledState = OutSimEnabled ? "enabled" : "disabled";
+			var connectionState = DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed);
+			return $"OutSim // {enabledState} // {endpoint} // {connectionState} // {(OutSimId == 0 ? "id=none" : $"id={OutSimId}")}";
+		}
+
+		private static string DescribeTelemetryEndpoint(string? host, int port)
+		{
+			var trimmedHost = host?.Trim();
+			return string.IsNullOrWhiteSpace(trimmedHost) || port is < 1 or > 65535
+				? "endpoint not configured"
+				: $"{trimmedHost}:{port}";
+		}
+
+		private static string DescribeSocketState(bool connectionRequested, bool socketOpen, bool sendFailed)
+		{
+			if (!connectionRequested)
+			{
+				return "socket disconnected";
+			}
+
+			if (!socketOpen)
+			{
+				return "socket closed";
+			}
+
+			return sendFailed ? "socket open, last send failed" : "socket open";
+		}
+
+		private void SetOutGaugeEnabled(bool enabled)
+		{
+			OutGaugeEnabled = enabled;
+			_outGaugeElapsed = 0f;
+			if (!enabled)
+			{
+				DisposeOutGaugeClient();
+				return;
+			}
+
+			if (_outGaugeConnectionRequested)
+			{
+				EnsureOutGaugeClient();
+			}
+		}
+
+		private void SetOutSimEnabled(bool enabled)
+		{
+			OutSimEnabled = enabled;
+			_outSimElapsed = 0f;
+			_outSimHasPreviousLinearVelocity = false;
+			if (!enabled)
+			{
+				DisposeOutSimClient();
+				return;
+			}
+
+			if (_outSimConnectionRequested)
+			{
+				EnsureOutSimClient();
+			}
+		}
+
+		private void ConnectOutGauge()
+		{
+			_outGaugeConnectionRequested = true;
+			EnsureOutGaugeClient();
+			SetTelemetryStatus($"OutGauge socket connect requested ({DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed)}).");
+		}
+
+		private void DisconnectOutGauge()
+		{
+			_outGaugeConnectionRequested = false;
+			DisposeOutGaugeClient();
+			SetTelemetryStatus("OutGauge socket disconnected.");
+		}
+
+		private void ReconnectOutGauge()
+		{
+			_outGaugeConnectionRequested = true;
+			DisposeOutGaugeClient();
+			EnsureOutGaugeClient();
+			SetTelemetryStatus($"OutGauge socket reconnected ({DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed)}).");
+		}
+
+		private void ConnectOutSim()
+		{
+			_outSimConnectionRequested = true;
+			EnsureOutSimClient();
+			SetTelemetryStatus($"OutSim socket connect requested ({DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed)}).");
+		}
+
+		private void DisconnectOutSim()
+		{
+			_outSimConnectionRequested = false;
+			DisposeOutSimClient();
+			SetTelemetryStatus("OutSim socket disconnected.");
+		}
+
+		private void ReconnectOutSim()
+		{
+			_outSimConnectionRequested = true;
+			DisposeOutSimClient();
+			EnsureOutSimClient();
+			SetTelemetryStatus($"OutSim socket reconnected ({DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed)}).");
+		}
+
+		private void SetTelemetryStatus(string message)
+		{
+			_status = $"Telemetry: {message}";
+			RefreshTelemetryOverlay();
 		}
 	}
 }

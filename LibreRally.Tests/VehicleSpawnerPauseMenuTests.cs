@@ -23,7 +23,13 @@ namespace LibreRally.Tests
 					Assert.Contains("spawn point", entry.Item.Description, StringComparison.OrdinalIgnoreCase);
 				},
 				entry => Assert.Equal(PauseMenuAction.GarageSetup, entry.Action),
-				entry => Assert.Equal(PauseMenuAction.VehicleSelect, entry.Action));
+				entry => Assert.Equal(PauseMenuAction.VehicleSelect, entry.Action),
+				entry => Assert.Equal(PauseMenuAction.PhysicsCalibration, entry.Action),
+				entry =>
+				{
+					Assert.Equal(PauseMenuAction.Telemetry, entry.Action);
+					Assert.Equal("Telemetry", entry.Item.Title);
+				});
 		}
 
 		[Fact]
@@ -32,6 +38,14 @@ namespace LibreRally.Tests
 			var action = VehicleSpawner.ResolvePauseMenuAction(2);
 
 			Assert.Equal(PauseMenuAction.GarageSetup, action);
+		}
+
+		[Fact]
+		public void ResolvePauseMenuAction_ReturnsTelemetryForSixthSlot()
+		{
+			var action = VehicleSpawner.ResolvePauseMenuAction(5);
+
+			Assert.Equal(PauseMenuAction.Telemetry, action);
 		}
 	}
 }
