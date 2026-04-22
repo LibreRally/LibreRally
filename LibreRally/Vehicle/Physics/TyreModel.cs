@@ -8,7 +8,7 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public enum TyreModelMode
 	{
-		/// <summary>Default blended behaviour: brush model at low speed/slip, Pacejka at high speed/slip.</summary>
+		/// <summary>Default blended behaviour: brush transients remain active while Pacejka provides the steady-state force curve.</summary>
 		Auto,
 		/// <summary>Exclusively use the contact-patch brush model. Pacejka forces are ignored.</summary>
 		BrushOnly,
@@ -649,7 +649,7 @@ namespace LibreRally.Vehicle.Physics
 
 			// Blend brush-model transient force with steady-state Pacejka.
 			// ActiveMode overrides the blend: BrushOnly forces blendAlpha=0 (pure brush),
-			// PacejkaOnly forces blendAlpha=1 (pure Pacejka), Auto uses speed/slip heuristic.
+			// PacejkaOnly forces blendAlpha=1 (pure Pacejka), Auto uses slip-velocity heuristic.
 			var brushForce = -effectiveBrushStiffness * state.LateralDeflection;
 			float blendAlphaLat;
 			if (ActiveMode == TyreModelMode.BrushOnly)
