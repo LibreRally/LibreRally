@@ -1,0 +1,402 @@
+using System;
+using System.Collections.Generic;
+using Myra;
+using Myra.Graphics2D.Brushes;
+using Myra.Graphics2D.UI;
+using Stride.Core;
+using Stride.Core.Mathematics;
+using Stride.Engine;
+using Stride.Games;
+
+namespace LibreRally.HUD
+{
+	/// <summary>
+	/// UI overlay for in-game telemetry control.
+	/// </summary>
+	public sealed class TelemetryOverlay : GameSystemBase
+	{
+		private static readonly Color BackdropColor = new(5, 8, 14, 180);
+		private static readonly Color ShellColor = new(16, 22, 30, 242);
+		private static readonly Color AccentSoftColor = new(214, 148, 78, 84);
+		private static readonly Color PanelColor = new(26, 32, 43, 236);
+		private static readonly Color TitleColor = new(240, 243, 247, 255);
+		private static readonly Color CopyColor = new(183, 193, 205, 255);
+		private static readonly Color ValueColor = new(255, 230, 204, 255);
+		private static readonly SolidBrush BackdropBrush = new(BackdropColor);
+		private static readonly SolidBrush ShellBrush = new(ShellColor);
+		private static readonly SolidBrush PanelBrush = new(PanelColor);
+		private static readonly SolidBrush SelectedItemBrush = new(AccentSoftColor);
+		private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
+
+		private readonly List<(Button Button, Label Title, Label Description)> _buttons = [];
+		private IReadOnlyList<PauseMenuItem> _items = [];
+		private string _vehicleName = string.Empty;
+		private string _statusText = string.Empty;
+		private string _outGaugeSummary = string.Empty;
+		private string _outSimSummary = string.Empty;
+		private int _selectedIndex;
+		private bool _overlayVisible;
+		private Game? _game;
+		private Desktop? _desktop;
+		private Label? _vehicleNameLabel;
+		private Label? _statusLabel;
+		private Label? _outGaugeSummaryLabel;
+		private Label? _outSimSummaryLabel;
+
+		/// <summary>
+		/// Gets or sets the telemetry menu items to display.
+		/// </summary>
+		public IReadOnlyList<PauseMenuItem> Items
+		{
+			get => _items;
+			set
+			{
+				_items = value;
+				RebuildRoot();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the selected telemetry item index.
+		/// </summary>
+		public int SelectedIndex
+		{
+			get => _selectedIndex;
+			set
+			{
+				_selectedIndex = value;
+				UpdateSelectionStyles();
+				FocusSelectedButton();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets a value indicating whether this overlay is visible.
+		/// </summary>
+		public bool OverlayVisible
+		{
+			get => _overlayVisible;
+			set
+			{
+				_overlayVisible = value;
+				FocusSelectedButton();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the vehicle name shown in the header.
+		/// </summary>
+		public string VehicleName
+		{
+			get => _vehicleName;
+			set
+			{
+				_vehicleName = value ?? string.Empty;
+				UpdateLabels();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the status text shown at the bottom of the overlay.
+		/// </summary>
+		public string StatusText
+		{
+			get => _statusText;
+			set
+			{
+				_statusText = value ?? string.Empty;
+				UpdateLabels();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the OutGauge telemetry summary.
+		/// </summary>
+		public string OutGaugeSummary
+		{
+			get => _outGaugeSummary;
+			set
+			{
+				_outGaugeSummary = value ?? string.Empty;
+				UpdateLabels();
+			}
+		}
+
+		/// <summary>
+		/// Gets or sets the OutSim telemetry summary.
+		/// </summary>
+		public string OutSimSummary
+		{
+			get => _outSimSummary;
+			set
+			{
+				_outSimSummary = value ?? string.Empty;
+				UpdateLabels();
+			}
+		}
+
+		/// <summary>
+		/// Raised when a telemetry item is activated.
+		/// </summary>
+		public Action<int>? ItemActivated { get; set; }
+
+		/// <summary>
+		/// Initializes a new instance of the <see cref="TelemetryOverlay"/> class.
+		/// </summary>
+		/// <param name="services">The Stride service registry.</param>
+		public TelemetryOverlay(IServiceRegistry services) : base(services)
+		{
+			Enabled = true;
+			Visible = true;
+			DrawOrder = 9997;
+			UpdateOrder = 9997;
+		}
+
+		/// <summary>
+		/// Initializes the telemetry overlay desktop UI.
+		/// </summary>
+		public override void Initialize()
+		{
+			base.Initialize();
+
+			_game = (Game?)Services.GetService<IGame>();
+			if (_game == null)
+			{
+				return;
+			}
+
+			MyraEnvironment.Game = _game;
+			_desktop = new Desktop
+			{
+				Root = BuildRoot(),
+			};
+			FocusSelectedButton();
+		}
+
+		protected override void Destroy()
+		{
+			_desktop?.Dispose();
+			base.Destroy();
+		}
+
+		/// <summary>
+		/// Draws the telemetry overlay when it is visible.
+		/// </summary>
+		/// <param name="gameTime">Stride timing data for the current frame.</param>
+		public override void Draw(GameTime gameTime)
+		{
+			if (!OverlayVisible || _game == null || _desktop == null)
+			{
+				return;
+			}
+
+			var presenter = _game.GraphicsDevice.Presenter;
+			if (presenter?.BackBuffer == null)
+			{
+				return;
+			}
+
+			var context = _game.GraphicsContext;
+			context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
+			_desktop.Render();
+		}
+
+		private Widget BuildRoot()
+		{
+			_buttons.Clear();
+
+			var root = new Panel
+			{
+				Background = BackdropBrush,
+			};
+
+			var shellFrame = new Panel
+			{
+				Width = 900,
+				Height = 690,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center,
+				Background = ShellBrush,
+			};
+
+			var shell = new VerticalStackPanel
+			{
+				Width = 840,
+				Height = 630,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Center,
+				Spacing = 12,
+			};
+
+			shell.Widgets.Add(new Label
+			{
+				Text = "Telemetry",
+				TextColor = TitleColor,
+			});
+
+			_vehicleNameLabel = new Label
+			{
+				TextColor = ValueColor,
+			};
+			shell.Widgets.Add(_vehicleNameLabel);
+
+			shell.Widgets.Add(new Label
+			{
+				Text = "D-Pad Up/Down select  •  A activate  •  B/Esc/Start back out",
+				TextColor = CopyColor,
+				Wrap = true,
+			});
+
+			_outGaugeSummaryLabel = new Label
+			{
+				TextColor = ValueColor,
+				Wrap = true,
+			};
+			shell.Widgets.Add(_outGaugeSummaryLabel);
+
+			_outSimSummaryLabel = new Label
+			{
+				TextColor = ValueColor,
+				Wrap = true,
+			};
+			shell.Widgets.Add(_outSimSummaryLabel);
+
+			var list = new VerticalStackPanel
+			{
+				Width = 780,
+				Spacing = 8,
+				HorizontalAlignment = HorizontalAlignment.Center,
+				VerticalAlignment = VerticalAlignment.Top,
+			};
+
+			for (var index = 0; index < _items.Count; index++)
+			{
+				list.Widgets.Add(CreateMenuButton(_items[index], index));
+			}
+
+			shell.Widgets.Add(new Panel
+			{
+				Height = 410,
+				Background = PanelBrush,
+				Widgets =
+				{
+					new ScrollViewer
+					{
+						Content = list,
+						Height = 382,
+						VerticalAlignment = VerticalAlignment.Stretch,
+					},
+				},
+			});
+
+			_statusLabel = new Label
+			{
+				TextColor = CopyColor,
+				Wrap = true,
+			};
+			shell.Widgets.Add(_statusLabel);
+
+			shellFrame.Widgets.Add(shell);
+			root.Widgets.Add(shellFrame);
+
+			UpdateSelectionStyles();
+			UpdateLabels();
+			return root;
+		}
+
+		private Button CreateMenuButton(PauseMenuItem item, int index)
+		{
+			var titleLabel = new Label
+			{
+				Text = item.Title,
+				TextColor = TitleColor,
+			};
+			var descriptionLabel = new Label
+			{
+				Text = item.Description,
+				TextColor = CopyColor,
+				Wrap = true,
+			};
+
+			var content = new VerticalStackPanel
+			{
+				Spacing = 4,
+			};
+			content.Widgets.Add(titleLabel);
+			content.Widgets.Add(descriptionLabel);
+
+			var button = new Button
+			{
+				Height = 78,
+				HorizontalAlignment = HorizontalAlignment.Stretch,
+				Content = content,
+			};
+			button.Click += (_, _) =>
+			{
+				SelectedIndex = index;
+				ItemActivated?.Invoke(index);
+			};
+
+			_buttons.Add((button, titleLabel, descriptionLabel));
+			return button;
+		}
+
+		private void RebuildRoot()
+		{
+			if (_desktop == null)
+			{
+				return;
+			}
+
+			_desktop.Root = BuildRoot();
+			FocusSelectedButton();
+		}
+
+		private void UpdateSelectionStyles()
+		{
+			var clampedIndex = _buttons.Count == 0 ? 0 : Math.Clamp(SelectedIndex, 0, _buttons.Count - 1);
+			for (var i = 0; i < _buttons.Count; i++)
+			{
+				var isSelected = i == clampedIndex;
+				var (button, title, description) = _buttons[i];
+				button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
+				title.TextColor = isSelected ? ValueColor : TitleColor;
+				description.TextColor = isSelected ? ValueColor : CopyColor;
+			}
+		}
+
+		private void UpdateLabels()
+		{
+			if (_vehicleNameLabel != null)
+			{
+				_vehicleNameLabel.Text = string.IsNullOrWhiteSpace(_vehicleName) ? "LibreRally" : _vehicleName;
+			}
+
+			if (_outGaugeSummaryLabel != null)
+			{
+				_outGaugeSummaryLabel.Text = _outGaugeSummary;
+			}
+
+			if (_outSimSummaryLabel != null)
+			{
+				_outSimSummaryLabel.Text = _outSimSummary;
+			}
+
+			if (_statusLabel != null)
+			{
+				_statusLabel.Text = _statusText;
+			}
+		}
+
+		private void FocusSelectedButton()
+		{
+			if (!_overlayVisible || _desktop == null || _buttons.Count == 0)
+			{
+				return;
+			}
+
+			var clampedIndex = Math.Clamp(_selectedIndex, 0, _buttons.Count - 1);
+			_desktop.FocusedKeyboardWidget = _buttons[clampedIndex].Button;
+		}
+	}
+}

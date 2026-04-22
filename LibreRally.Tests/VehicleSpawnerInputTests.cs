@@ -37,6 +37,15 @@ namespace LibreRally.Tests
 		}
 
 		[Fact]
+		public void ResolveTelemetryMenuAction_MapsIndexesToExpectedActions()
+		{
+			Assert.Equal(TelemetryMenuAction.ToggleOutGauge, VehicleSpawner.ResolveTelemetryMenuAction(0));
+			Assert.Equal(TelemetryMenuAction.ReconnectOutGauge, VehicleSpawner.ResolveTelemetryMenuAction(3));
+			Assert.Equal(TelemetryMenuAction.ToggleOutSim, VehicleSpawner.ResolveTelemetryMenuAction(4));
+			Assert.Equal(TelemetryMenuAction.ReconnectOutSim, VehicleSpawner.ResolveTelemetryMenuAction(7));
+		}
+
+		[Fact]
 		public void IsVehicleMenuConfirmRequested_AcceptsControllerA()
 		{
 			bool requested = VehicleSpawner.IsVehicleMenuConfirmRequested(
