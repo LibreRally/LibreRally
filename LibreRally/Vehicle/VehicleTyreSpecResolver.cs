@@ -13,7 +13,11 @@ namespace LibreRally.Vehicle
 		float RollingResistanceCoefficient,
 		float? BeamNgNoLoadFrictionCoefficient = null,
 		float? BeamNgFullLoadFrictionCoefficient = null,
-		float? BeamNgLoadSensitivitySlope = null);
+		float? BeamNgLoadSensitivitySlope = null,
+		float? BeamNgFrictionCoefficient = null,
+		float? BeamNgSlidingFrictionCoefficient = null,
+		float? BeamNgTreadCoefficient = null,
+		float? BeamNgSoftnessCoefficient = null);
 
 	internal static class VehicleTyreSpecResolver
 	{
@@ -52,9 +56,12 @@ namespace LibreRally.Vehicle
 			var width = ResolveLastPositive(options.Select(option => option.TireWidth), DefaultWidth);
 			var pressurePsi = ResolveLastPositive(options.Select(option => option.PressurePsi), DefaultPressureKpa / PsiToKpa);
 			var frictionCoef = ResolveLastPositive(options.Select(option => option.FrictionCoef), 1f);
+			var slidingFrictionCoef = ResolveLastPositive(options.Select(option => option.SlidingFrictionCoef));
+			var treadCoef = ResolveLastPositive(options.Select(option => option.TreadCoef));
 			var noLoadCoef = ResolveLastPositive(options.Select(option => option.NoLoadCoef));
 			var fullLoadCoef = ResolveLastPositive(options.Select(option => option.FullLoadCoef));
 			var loadSensitivitySlope = ResolveLastPositive(options.Select(option => option.LoadSensitivitySlope));
+			var softnessCoef = ResolveLastPositive(options.Select(option => option.SoftnessCoef));
 
 			var peakFrictionCoefficient = DefaultPeakFrictionCoefficient * frictionCoef;
 			if (noLoadCoef.HasValue && fullLoadCoef.HasValue && loadSensitivitySlope.HasValue)
@@ -74,7 +81,11 @@ namespace LibreRally.Vehicle
 				RollingResistanceCoefficient: DefaultRollingResistanceCoefficient,
 				BeamNgNoLoadFrictionCoefficient: noLoadCoef,
 				BeamNgFullLoadFrictionCoefficient: fullLoadCoef,
-				BeamNgLoadSensitivitySlope: loadSensitivitySlope);
+				BeamNgLoadSensitivitySlope: loadSensitivitySlope,
+				BeamNgFrictionCoefficient: frictionCoef,
+				BeamNgSlidingFrictionCoefficient: slidingFrictionCoef,
+				BeamNgTreadCoefficient: treadCoef,
+				BeamNgSoftnessCoefficient: softnessCoef);
 		}
 
 		public static float ResolveDrivenWheelRadius(

@@ -143,34 +143,40 @@ namespace LibreRally.Tests
 			{
 				PressureWheelOptions = new List<AssembledPressureWheelOptions>
 				{
-					new(
-						"tire_F_225_35_19_sport",
-						"tire_F_19x8",
-						new JBeamPressureWheelOptions
-						{
+						new(
+							"tire_F_225_35_19_sport",
+							"tire_F_19x8",
+							new JBeamPressureWheelOptions
+							{
 							HasTire = true,
 							Radius = 0.32f,
 							TireWidth = 0.200f,
 							PressurePsi = 30f,
-							FrictionCoef = 1.0f,
-							NoLoadCoef = 1.6f,
-							LoadSensitivitySlope = 0.000165f,
-							FullLoadCoef = 0.5f,
-						}),
-					new(
-						"tire_R_225_45_17_sport",
-						"tire_R_17x8",
+								FrictionCoef = 1.0f,
+								SlidingFrictionCoef = 0.9f,
+								TreadCoef = 0.8f,
+								NoLoadCoef = 1.6f,
+								LoadSensitivitySlope = 0.000165f,
+								FullLoadCoef = 0.5f,
+								SoftnessCoef = 0.9f,
+							}),
+						new(
+							"tire_R_225_45_17_sport",
+							"tire_R_17x8",
 						new JBeamPressureWheelOptions
 						{
 							HasTire = true,
 							Radius = 0.315f,
 							TireWidth = 0.205f,
 							PressurePsi = 32f,
-							FrictionCoef = 1.0f,
-							NoLoadCoef = 1.51f,
-							LoadSensitivitySlope = 0.000175f,
-							FullLoadCoef = 0.5f,
-						}),
+								FrictionCoef = 1.0f,
+								SlidingFrictionCoef = 0.85f,
+								TreadCoef = 0.7f,
+								NoLoadCoef = 1.51f,
+								LoadSensitivitySlope = 0.000175f,
+								FullLoadCoef = 0.5f,
+								SoftnessCoef = 1.1f,
+							}),
 				},
 			};
 
@@ -181,11 +187,45 @@ namespace LibreRally.Tests
 			Assert.Equal(0.200f, frontSpec.Width, 3);
 			Assert.Equal(30f * 6.894757f, frontSpec.PressureKpa, 3);
 			Assert.Equal(TyreModel.ComputeBeamNgLoadCoefficient(3000f, 1.6f, 0.5f, 0.000165f), frontSpec.PeakFrictionCoefficient, 3);
+			Assert.Equal(1.0f, frontSpec.BeamNgFrictionCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.9f, frontSpec.BeamNgSlidingFrictionCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.8f, frontSpec.BeamNgTreadCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.9f, frontSpec.BeamNgSoftnessCoefficient.GetValueOrDefault(), 3);
 
 			Assert.Equal(0.315f, rearSpec.Radius, 3);
 			Assert.Equal(0.205f, rearSpec.Width, 3);
 			Assert.Equal(32f * 6.894757f, rearSpec.PressureKpa, 3);
 			Assert.Equal(TyreModel.ComputeBeamNgLoadCoefficient(3000f, 1.51f, 0.5f, 0.000175f), rearSpec.PeakFrictionCoefficient, 3);
+			Assert.Equal(1.0f, rearSpec.BeamNgFrictionCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.85f, rearSpec.BeamNgSlidingFrictionCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.7f, rearSpec.BeamNgTreadCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(1.1f, rearSpec.BeamNgSoftnessCoefficient.GetValueOrDefault(), 3);
+		}
+
+		[Fact]
+		public void CreateTyreModel_MapsBeamNgTyreCoefficientsToPhysicsParameters()
+		{
+			var spec = new VehicleTyreSpec(
+				Radius: 0.32f,
+				Width: 0.205f,
+				PressureKpa: 220f,
+				PeakFrictionCoefficient: 1.05f,
+				RollingResistanceCoefficient: 0.012f,
+				BeamNgNoLoadFrictionCoefficient: null,
+				BeamNgFullLoadFrictionCoefficient: null,
+				BeamNgLoadSensitivitySlope: null,
+				BeamNgFrictionCoefficient: 1.0f,
+				BeamNgSlidingFrictionCoefficient: 0.85f,
+				BeamNgTreadCoefficient: 0.7f,
+				BeamNgSoftnessCoefficient: 0.8f);
+
+			var tyre = VehicleLoader.CreateTyreModel(spec);
+
+			Assert.Equal(0.85f, tyre.HighSlipForceRetention, 4);
+			Assert.Equal(1.25f, tyre.CarcassStiffness, 4);
+			Assert.Equal(1.25f, tyre.SidewallStiffness, 4);
+			Assert.Equal(65000f * 1.25f, tyre.ContactPatchStiffness, 2);
+			Assert.Equal(0.035f, tyre.ContactAreaGripExponent, 4);
 		}
 	}
 }
