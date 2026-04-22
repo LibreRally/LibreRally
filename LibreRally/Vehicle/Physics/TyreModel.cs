@@ -3,6 +3,21 @@ using System;
 namespace LibreRally.Vehicle.Physics
 {
 	/// <summary>
+	/// Selects which tyre force model is active during physics simulation.
+	/// Used by the physics calibration overlay to isolate and compare model contributions.
+	/// </summary>
+	public enum TyreModelMode
+	{
+		/// <summary>Default blended behaviour: brush model at low speed/slip, Pacejka at high speed/slip.</summary>
+		Auto,
+		/// <summary>Exclusively use the contact-patch brush model. Pacejka forces are ignored.</summary>
+		BrushOnly,
+		/// <summary>Exclusively use the Pacejka Magic Formula. Brush model transients are bypassed.</summary>
+		PacejkaOnly,
+	}
+
+
+	/// <summary>
 	/// Mutable per-wheel thermal and wear state.
 	/// Updated every physics step by <see cref="TyreModel.Update"/>.
 	///
@@ -79,6 +94,19 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public sealed class TyreModel
 	{
+		// ── Model selection ──────────────────────────────────────────────────────
+
+		/// <summary>
+		/// Selects the active tyre force model.
+		/// <list type="bullet">
+		///   <item><see cref="TyreModelMode.Auto"/> — default blended brush+Pacejka behaviour.</item>
+		///   <item><see cref="TyreModelMode.BrushOnly"/> — bypass Pacejka; use only contact-patch brush forces.</item>
+		///   <item><see cref="TyreModelMode.PacejkaOnly"/> — bypass brush transients; use only Magic Formula forces.</item>
+		/// </list>
+		/// Changed at runtime via the physics calibration overlay.
+		/// </summary>
+		public TyreModelMode ActiveMode { get; set; } = TyreModelMode.Auto;
+
 		// ── Tyre geometry ────────────────────────────────────────────────────────
 
 		/// <summary>Unloaded tyre radius (m).</summary>
@@ -620,11 +648,25 @@ namespace LibreRally.Vehicle.Physics
 			state.LateralDeflection = Math.Clamp(state.LateralDeflection, -maxLateralDeflection, maxLateralDeflection);
 
 			// Blend brush-model transient force with steady-state Pacejka.
+			// ActiveMode overrides the blend: BrushOnly forces blendAlpha=0 (pure brush),
+			// PacejkaOnly forces blendAlpha=1 (pure Pacejka), Auto uses speed/slip heuristic.
 			var brushForce = -effectiveBrushStiffness * state.LateralDeflection;
-			var speedBlend = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
-			var latSlipVel = MathF.Abs(lateralVelocity);
-			var latSlideBlend = Math.Clamp(latSlipVel - 1f, 0f, 1f);
-			var blendAlphaLat = MathF.Max(speedBlend, latSlideBlend);
+			float blendAlphaLat;
+			if (ActiveMode == TyreModelMode.BrushOnly)
+			{
+				blendAlphaLat = 0f;
+			}
+			else if (ActiveMode == TyreModelMode.PacejkaOnly)
+			{
+				blendAlphaLat = 1f;
+			}
+			else
+			{
+				var speedBlend = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
+				var latSlipVel = MathF.Abs(lateralVelocity);
+				var latSlideBlend = Math.Clamp(latSlipVel - 1f, 0f, 1f);
+				blendAlphaLat = MathF.Max(speedBlend, latSlideBlend);
+			}
 			var blendedFy = blendAlphaLat * rawFy + (1f - blendAlphaLat) * brushForce;
 
 			// ── Contact-patch brush model (longitudinal transient) ───────────────
@@ -648,8 +690,21 @@ namespace LibreRally.Vehicle.Physics
 
 			var brushFx = effectiveBrushStiffness * state.LongitudinalDeflection;
 			var longSlipVelMag = MathF.Abs(wheelLinearSpeed - longitudinalVelocity);
-			var longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
-			var blendAlphaLong = MathF.Max(speedBlend, longSlideBlend);
+			float blendAlphaLong;
+			if (ActiveMode == TyreModelMode.BrushOnly)
+			{
+				blendAlphaLong = 0f;
+			}
+			else if (ActiveMode == TyreModelMode.PacejkaOnly)
+			{
+				blendAlphaLong = 1f;
+			}
+			else
+			{
+				var speedBlendLong = Math.Clamp(absVx / 5f, 0f, 1f);
+				var longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
+				blendAlphaLong = MathF.Max(speedBlendLong, longSlideBlend);
+			}
 			var blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
 			ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, peakForce);
 

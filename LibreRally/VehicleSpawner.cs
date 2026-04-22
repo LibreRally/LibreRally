@@ -34,6 +34,8 @@ namespace LibreRally
 		GarageSetup,
 		/// <summary>Open the vehicle selection menu.</summary>
 		VehicleSelect,
+		/// <summary>Open the physics calibration menu.</summary>
+		PhysicsCalibration,
 	}
 
 	/// <summary>
@@ -122,6 +124,7 @@ namespace LibreRally
 		private PauseMenuOverlay? _pauseMenuOverlay;
 		private SetupUiShellOverlay? _setupUiShellOverlay;
 		private VehicleSelectionOverlay? _vehicleSelectionOverlay;
+		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
 		private BeamNgVehicleCatalog? _vehicleCatalog;
 		private List<BeamNgVehicleDescriptor> _availableVehicles = [];
 		private readonly VehicleSetupOverrides _setupOverrides = new();
@@ -158,13 +161,15 @@ namespace LibreRally
 		private const int PauseMenuResetVehicleIndex = 1;
 		private const int PauseMenuGarageSetupIndex = 2;
 		private const int PauseMenuVehicleSelectIndex = 3;
-		private const int PauseMenuItemCount = 4;
+		private const int PauseMenuPhysicsCalibrationIndex = 4;
+		private const int PauseMenuItemCount = 5;
 		private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
 		[
 			new(new PauseMenuItem("Resume Driving", "Return to the stage and hand control back to the driver."), PauseMenuAction.ResumeDriving),
 			new(new PauseMenuItem("Reset Vehicle", "Respawn the current car back at the spawn point."), PauseMenuAction.ResetVehicle),
 			new(new PauseMenuItem("Garage Setup", "Open the restored Myra tuning shell for stage prep changes."), PauseMenuAction.GarageSetup),
 			new(new PauseMenuItem("Vehicle Select", "Load a different bundled vehicle from the current catalog."), PauseMenuAction.VehicleSelect),
+			new(new PauseMenuItem("Physics Calibration", "Isolate tyre model contributions and tune anti-slip parameters live."), PauseMenuAction.PhysicsCalibration),
 		];
 
 		internal enum MenuScreen
@@ -173,6 +178,7 @@ namespace LibreRally
 			Pause,
 			GarageSetup,
 			VehicleSelection,
+			PhysicsCalibration,
 		}
 
 		/// <summary>
@@ -209,6 +215,7 @@ namespace LibreRally
 			EnsurePauseMenuOverlay();
 			EnsureSetupUiShellOverlay();
 			EnsureVehicleSelectionOverlay();
+			EnsurePhysicsCalibrationOverlay();
 
 			try
 			{
@@ -279,6 +286,7 @@ namespace LibreRally
 			AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
 			AttachDrivingHud(vehicle.CarComponent);
 			BindGarageSetupOverlay();
+			BindPhysicsCalibrationOverlay();
 		}
 
 		private void UnloadVehicle()
@@ -401,6 +409,34 @@ namespace LibreRally
 			((Game)Game).GameSystems.Add(_setupUiShellOverlay);
 		}
 
+		private void EnsurePhysicsCalibrationOverlay()
+		{
+			if (_physicsCalibrationOverlay != null)
+			{
+				return;
+			}
+
+			_physicsCalibrationOverlay = new PhysicsCalibrationOverlay(Services)
+			{
+				OverlayVisible = _activeMenuScreen == MenuScreen.PhysicsCalibration,
+				VehicleName = GetCurrentVehicleName(),
+				StatusText = _status,
+			};
+			_physicsCalibrationOverlay.CloseRequested = ClosePhysicsCalibration;
+
+			((Game)Game).GameSystems.Add(_physicsCalibrationOverlay);
+		}
+
+		private void BindPhysicsCalibrationOverlay()
+		{
+			if (_physicsCalibrationOverlay == null)
+			{
+				return;
+			}
+
+			_physicsCalibrationOverlay.BindVehicle(_loadedVehicle?.CarComponent);
+		}
+
 		private void BindGarageSetupOverlay()
 		{
 			if (_setupUiShellOverlay == null)
@@ -482,6 +518,16 @@ namespace LibreRally
 			var vehicleMenuShortcutRequested = IsVehicleMenuShortcutRequested(Input.IsKeyPressed(Keys.F2));
 
 			if (_activeMenuScreen == MenuScreen.GarageSetup)
+			{
+				if (_car != null)
+				{
+					_car.PlayerInputEnabled = false;
+				}
+
+				return;
+			}
+
+			if (_activeMenuScreen == MenuScreen.PhysicsCalibration)
 			{
 				if (_car != null)
 				{
@@ -625,6 +671,9 @@ namespace LibreRally
 				case PauseMenuVehicleSelectIndex:
 					ExecutePauseMenuAction(PauseMenuAction.VehicleSelect);
 					break;
+				case PauseMenuPhysicsCalibrationIndex:
+					ExecutePauseMenuAction(PauseMenuAction.PhysicsCalibration);
+					break;
 			}
 		}
 
@@ -643,6 +692,9 @@ namespace LibreRally
 					break;
 				case PauseMenuAction.VehicleSelect:
 					OpenVehicleSelection(fromPauseMenu: true);
+					break;
+				case PauseMenuAction.PhysicsCalibration:
+					OpenPhysicsCalibration();
 					break;
 			}
 		}
@@ -686,6 +738,18 @@ namespace LibreRally
 		{
 			_activeMenuScreen = MenuScreen.Pause;
 			_pauseMenuSelectedIndex = PauseMenuGarageSetupIndex;
+		}
+
+		private void OpenPhysicsCalibration()
+		{
+			BindPhysicsCalibrationOverlay();
+			_activeMenuScreen = MenuScreen.PhysicsCalibration;
+		}
+
+		private void ClosePhysicsCalibration()
+		{
+			_activeMenuScreen = MenuScreen.Pause;
+			_pauseMenuSelectedIndex = PauseMenuPhysicsCalibrationIndex;
 		}
 
 		private void ApplyGarageSetupChanges(SetupUiApplyPayload payload)
@@ -1020,6 +1084,13 @@ namespace LibreRally
 				_setupUiShellOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup;
 				_setupUiShellOverlay.VehicleName = GetCurrentVehicleName();
 				_setupUiShellOverlay.StatusText = _status;
+			}
+
+			if (_physicsCalibrationOverlay != null)
+			{
+				_physicsCalibrationOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.PhysicsCalibration;
+				_physicsCalibrationOverlay.VehicleName = GetCurrentVehicleName();
+				_physicsCalibrationOverlay.StatusText = _status;
 			}
 
 			if (_car == null)
