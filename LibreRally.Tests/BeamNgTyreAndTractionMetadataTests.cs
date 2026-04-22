@@ -220,12 +220,40 @@ namespace LibreRally.Tests
 				BeamNgSoftnessCoefficient: 0.8f);
 
 			var tyre = VehicleLoader.CreateTyreModel(spec);
+			var baselineTyre = VehicleLoader.CreateTyreModel(spec with { BeamNgSoftnessCoefficient = null });
 
 			Assert.Equal(0.85f, tyre.HighSlipForceRetention, 4);
 			Assert.Equal(1.25f, tyre.CarcassStiffness, 4);
 			Assert.Equal(1.25f, tyre.SidewallStiffness, 4);
-			Assert.Equal(65000f * 1.25f, tyre.ContactPatchStiffness, 2);
+			Assert.Equal(baselineTyre.ContactPatchStiffness * 1.25f, tyre.ContactPatchStiffness, 2);
 			Assert.Equal(0.035f, tyre.ContactAreaGripExponent, 4);
+		}
+
+		[Fact]
+		public void ResolveTyreSpec_LeavesFrictionNullableWhenJBeamFrictionIsMissing()
+		{
+			var definition = new VehicleDefinition
+			{
+				PressureWheelOptions = new List<AssembledPressureWheelOptions>
+				{
+					new(
+						"tire_F",
+						"tire_F",
+						new JBeamPressureWheelOptions
+						{
+							HasTire = true,
+							Radius = 0.32f,
+							TireWidth = 0.205f,
+							PressurePsi = 30f,
+							SlidingFrictionCoef = 0.9f,
+						}),
+				},
+			};
+
+			var spec = VehicleTyreSpecResolver.Resolve(definition, front: true);
+
+			Assert.Null(spec.BeamNgFrictionCoefficient);
+			Assert.Equal(0.9f, spec.BeamNgSlidingFrictionCoefficient.GetValueOrDefault(), 3);
 		}
 	}
 }

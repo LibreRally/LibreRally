@@ -6,6 +6,16 @@ namespace LibreRally.Tests
 	{
 		private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
+		private static readonly SurfaceProperties DeterministicPacejkaSurface = new()
+		{
+			FrictionCoefficient = 1.0f,
+			Microtexture = 0.8f,
+			Macrotexture = 0.6f,
+			WaterDepth = 0f,
+			RollingResistance = 0f,
+			DeformationFactor = 0f,
+			NoiseFactor = 0f,
+		};
 		private const int ForceToleranceDecimalPlaces = 1;
 
 		private static float MagicFormula(float x, float b, float c, float d, float e)
@@ -37,10 +47,10 @@ namespace LibreRally.Tests
 			state.AngularVelocity = longitudinalVelocity * 1.12f / rollingRadius;
 
 			model.Update(ref state, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float actualFx, out _, out _);
+				DeterministicPacejkaSurface, 0.01f, out float actualFx, out _, out _);
 
 			var slipRatio = state.SlipRatio;
-			var peakForce = normalLoad;
+			var peakForce = normalLoad * model.ComputeEffectiveFriction(normalLoad, DeterministicPacejkaSurface, 30f, 1f);
 			var expectedFx = MagicFormula(slipRatio, model.LongitudinalB, model.LongitudinalC, peakForce, model.LongitudinalE);
 
 			Assert.Equal(expectedFx, actualFx, ForceToleranceDecimalPlaces);
@@ -72,12 +82,13 @@ namespace LibreRally.Tests
 			state.AngularVelocity = longitudinalVelocity / rollingRadius;
 
 			model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float actualFy, out _);
+				DeterministicPacejkaSurface, 0.01f, out _, out float actualFy, out _);
 
 			var slipAngle = state.SlipAngle;
-			var peakForce = normalLoad;
-			var pressureStiffnessFactor = MathF.Sqrt(model.TyrePressure / 220f);
-			var effectiveLatB = model.LateralB * model.SidewallStiffness * pressureStiffnessFactor;
+			var peakForce = normalLoad * model.ComputeEffectiveFriction(normalLoad, DeterministicPacejkaSurface, 30f, 1f);
+			var pressureStiffnessFactor = MathF.Sqrt(MathF.Max(model.TyrePressure, 50f) / 220f);
+			var effectiveLatB = model.LateralB * model.SidewallStiffness * pressureStiffnessFactor
+			                    * (1f - DeterministicPacejkaSurface.DeformationFactor * 0.2f);
 			var expectedFy = MagicFormula(slipAngle, effectiveLatB, model.LateralC, peakForce, model.LateralE);
 
 			Assert.Equal(expectedFy, actualFy, ForceToleranceDecimalPlaces);

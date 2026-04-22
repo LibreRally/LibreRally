@@ -56,6 +56,7 @@ namespace LibreRally.Vehicle
 			var width = ResolveLastPositive(options.Select(option => option.TireWidth), DefaultWidth);
 			var pressurePsi = ResolveLastPositive(options.Select(option => option.PressurePsi), DefaultPressureKpa / PsiToKpa);
 			var frictionCoef = ResolveLastPositive(options.Select(option => option.FrictionCoef), 1f);
+			var rawFrictionCoef = ResolveLastPositive(options.Select(option => option.FrictionCoef));
 			var slidingFrictionCoef = ResolveLastPositive(options.Select(option => option.SlidingFrictionCoef));
 			var treadCoef = ResolveLastPositive(options.Select(option => option.TreadCoef));
 			var noLoadCoef = ResolveLastPositive(options.Select(option => option.NoLoadCoef));
@@ -82,7 +83,7 @@ namespace LibreRally.Vehicle
 				BeamNgNoLoadFrictionCoefficient: noLoadCoef,
 				BeamNgFullLoadFrictionCoefficient: fullLoadCoef,
 				BeamNgLoadSensitivitySlope: loadSensitivitySlope,
-				BeamNgFrictionCoefficient: frictionCoef,
+				BeamNgFrictionCoefficient: rawFrictionCoef,
 				BeamNgSlidingFrictionCoefficient: slidingFrictionCoef,
 				BeamNgTreadCoefficient: treadCoef,
 				BeamNgSoftnessCoefficient: softnessCoef);
