@@ -35,7 +35,8 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public sealed class VehicleDynamicsSystem
 	{
-		private const float MinimumWakeForce = 1f;
+		private const float MinimumWakeForce = 0.01f;
+		private const float MinimumGroundContactScale = 0.01f;
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
 		/// <summary>Front-left wheel index.</summary>
@@ -346,7 +347,7 @@ namespace LibreRally.Vehicle.Physics
 				var contactScale = i < wheelContactScales.Length
 					? Math.Clamp(wheelContactScales[i], 0f, 1f)
 					: wheelGrounded[i] ? 1f : 0f;
-				WheelGrounded[i] = wheelGrounded[i] || contactScale > 0.05f;
+				WheelGrounded[i] = wheelGrounded[i] && contactScale > MinimumGroundContactScale;
 			}
 
 			// Longitudinal: acceleration shifts load rearward (front loses, rear gains)
@@ -605,9 +606,7 @@ namespace LibreRally.Vehicle.Physics
 
 				// Decompose wheel velocity into longitudinal and lateral components
 				// in the wheel's local frame.
-				var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
-				var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-				var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out _, out var wheelForward);
 
 				var vel = wheelVelocities[i];
 				var longVel = Vector3.Dot(vel, wheelForward);
@@ -678,9 +677,7 @@ namespace LibreRally.Vehicle.Physics
 					continue;
 				}
 
-				var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
-				var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-				var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out _, out var wheelForward);
 				var wheelForceWorld = wheelForward * LongitudinalForces[i] + wheelRight * LateralForces[i];
 				netForceWorld += wheelForceWorld;
 			}
@@ -790,9 +787,7 @@ namespace LibreRally.Vehicle.Physics
 				}
 
 				// Build force vector in world space using wheel orientation
-				var wheelRight = SafeNormalize(wheelOrientations[i].Right, Vector3.UnitX);
-				var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-				var wheelForward = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), Vector3.UnitZ);
+				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out var wheelUp, out var wheelForward);
 
 				var forceWorld = wheelForward * fx + wheelRight * fy;
 				var impulse = forceWorld * dt;
@@ -851,6 +846,24 @@ namespace LibreRally.Vehicle.Physics
 			}
 
 			return value / MathF.Sqrt(lengthSq);
+		}
+
+		private static void ResolveWheelBasis(
+			in Matrix wheelOrientation,
+			out Vector3 wheelRight,
+			out Vector3 wheelUp,
+			out Vector3 wheelForward)
+		{
+			// Stride's local +Z axis maps to Matrix.Backward.
+			wheelForward = SafeNormalize(wheelOrientation.Backward, Vector3.UnitZ);
+			wheelRight = SafeNormalize(wheelOrientation.Right, Vector3.UnitX);
+
+			// Re-orthonormalize to keep force directions stable under small matrix skew.
+			wheelRight = SafeNormalize(
+				wheelRight - wheelForward * Vector3.Dot(wheelRight, wheelForward),
+				Vector3.UnitX);
+			wheelUp = SafeNormalize(Vector3.Cross(wheelForward, wheelRight), Vector3.UnitY);
+			wheelRight = SafeNormalize(Vector3.Cross(wheelUp, wheelForward), Vector3.UnitX);
 		}
 	}
 }
