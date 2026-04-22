@@ -26,7 +26,12 @@ namespace LibreRally.Camera
 		/// <summary>
 		/// Base offset for the follow camera behind the car.
 		/// </summary>
-		public Vector3 FollowOffset { get; set; } = new Vector3(0, 3f, -12f);
+		public Vector3 FollowOffset { get; set; } = new Vector3(0f, 3.6f, -11.5f);
+
+		/// <summary>
+		/// Local-space point the chase camera aims at so the chassis does not fill the whole frame.
+		/// </summary>
+		public Vector3 FollowLookTargetOffset { get; set; } = new Vector3(0f, 1.1f, 0f);
 
 		/// <summary>
 		/// Speed at which the follow camera catches up with the target.
@@ -65,9 +70,11 @@ namespace LibreRally.Camera
 				return;
 			}
 
-			var worldPos = ComputeApproximateWorldPos(Target);
-			Entity.Transform.Position = worldPos + FollowOffset;
-			ApplyCameraRotation(worldPos);
+			var targetTransform = Target.Transform;
+			var targetWorldPos = targetTransform.WorldMatrix.TranslationVector;
+			var yawOnly = GetYawOnlyRotation(targetTransform);
+			Entity.Transform.Position = targetWorldPos + Vector3.Transform(FollowOffset, yawOnly);
+			ApplyCameraRotation(GetFollowLookTarget(targetWorldPos, yawOnly));
 		}
 
 		/// <summary>Sums local positions up the parent chain (valid when all ancestors have identity rotation).</summary>
@@ -142,15 +149,7 @@ namespace LibreRally.Camera
 		{
 			var targetTransform = Target!.Transform;
 			var targetWorldPos = targetTransform.WorldMatrix.TranslationVector;
-
-			// Use only the car's yaw so the camera stays level even when the chassis pitches/rolls.
-			// WorldMatrix.Backward = local +Z in world space = car nose direction for this car.
-			var carNoseDir = targetTransform.WorldMatrix.Backward;
-			carNoseDir.Y = 0f;
-			var yaw = carNoseDir.LengthSquared() > 0.001f
-				? MathF.Atan2(carNoseDir.X, carNoseDir.Z)
-				: 0f;
-			var yawOnly = Quaternion.RotationY(yaw);
+			var yawOnly = GetYawOnlyRotation(targetTransform);
 
 			var orbitOffset = Vector3.Transform(
 				FollowOffset,
@@ -161,7 +160,27 @@ namespace LibreRally.Camera
 			Entity.Transform.Position = Vector3.Lerp(
 				Entity.Transform.Position, desiredPos, MathF.Min(1f, FollowLerpSpeed * dt));
 
-			ApplyCameraRotation(targetWorldPos);
+			ApplyCameraRotation(GetFollowLookTarget(targetWorldPos, yawOnly));
+		}
+
+		private Quaternion GetYawOnlyRotation(TransformComponent targetTransform)
+		{
+			// Keep the chase camera level and only inherit the car's planar heading.
+			var carNoseDir = targetTransform.WorldMatrix.Backward;
+			carNoseDir.Y = 0f;
+			if (carNoseDir.LengthSquared() <= 0.001f)
+			{
+				return Quaternion.Identity;
+			}
+
+			carNoseDir.Normalize();
+			var yaw = MathF.Atan2(carNoseDir.X, carNoseDir.Z);
+			return Quaternion.RotationY(yaw);
+		}
+
+		private Vector3 GetFollowLookTarget(Vector3 targetWorldPos, Quaternion yawOnly)
+		{
+			return targetWorldPos + Vector3.Transform(FollowLookTargetOffset, yawOnly);
 		}
 
 		/// <summary>

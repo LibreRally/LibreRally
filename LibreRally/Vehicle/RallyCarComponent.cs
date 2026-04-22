@@ -50,6 +50,8 @@ namespace LibreRally.Vehicle
 		private const float TarmacVfxSlipRampFull = 0.90f;
 		private const float GravelVfxSlipRampStart = 0.06f;
 		private const float GravelVfxSlipRampFull = 0.40f;
+		private const float SnowVfxSlipRampStart = 0.04f;
+		private const float SnowVfxSlipRampFull = 0.28f;
 		private const float WheelSurfaceVfxIntensityClampMax = 1f;
 		private const float WheelSurfaceVfxMaxLoadScale = 1.25f;
 		private const float WheelSurfaceVfxContactPatchRadiusScale = 0.82f;
@@ -78,6 +80,11 @@ namespace LibreRally.Vehicle
 		private const float TarmacVfxBlue = 0.42f;
 		private const float TarmacVfxBaseAlpha = 0.16f;
 		private const float TarmacVfxIntensityAlphaScale = 0.38f;
+		private const float SnowVfxRed = 0.92f;
+		private const float SnowVfxGreen = 0.94f;
+		private const float SnowVfxBlue = 0.98f;
+		private const float SnowVfxBaseAlpha = 0.24f;
+		private const float SnowVfxIntensityAlphaScale = 0.46f;
 		private static readonly Color4 TransparentColor = new(0f, 0f, 0f, 0f);
 		/// <summary>Fraction of heat generated at idle (no throttle).</summary>
 		private const float IdleHeatFraction = 0.15f;
@@ -1734,6 +1741,7 @@ namespace LibreRally.Vehicle
 			{
 				SurfaceType.Tarmac or SurfaceType.WetTarmac => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: TarmacVfxSlipRampStart, full: TarmacVfxSlipRampFull),
 				SurfaceType.Gravel => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: GravelVfxSlipRampStart, full: GravelVfxSlipRampFull),
+				SurfaceType.Snow => ComputeWheelSurfaceVfxSlipRamp(absSlipSignal, start: SnowVfxSlipRampStart, full: SnowVfxSlipRampFull),
 				_ => 0f,
 			};
 
@@ -1878,6 +1886,7 @@ namespace LibreRally.Vehicle
 			{
 				SurfaceType.Gravel => new Color4(GravelVfxRed, GravelVfxGreen, GravelVfxBlue, GravelVfxBaseAlpha + clampedIntensity * GravelVfxIntensityAlphaScale),
 				SurfaceType.Tarmac or SurfaceType.WetTarmac => new Color4(TarmacVfxRed, TarmacVfxGreen, TarmacVfxBlue, TarmacVfxBaseAlpha + clampedIntensity * TarmacVfxIntensityAlphaScale),
+				SurfaceType.Snow => new Color4(SnowVfxRed, SnowVfxGreen, SnowVfxBlue, SnowVfxBaseAlpha + clampedIntensity * SnowVfxIntensityAlphaScale),
 				_ => TransparentColor,
 			};
 		}

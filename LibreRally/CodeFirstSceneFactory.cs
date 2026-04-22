@@ -1,8 +1,10 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Graphics;
+using Stride.Particles.Rendering;
 using Stride.Rendering;
 using Stride.Rendering.Compositing;
 using Stride.Rendering.Lights;
@@ -104,11 +106,11 @@ namespace LibreRally
 			skyboxEntity.Add(new LightComponent { Type = skyboxLight });
 			scene.Entities.Add(skyboxEntity);
 
-			var graphicsCompositor = LoadAsset<GraphicsCompositor>(game, "GraphicsCompositor") ??
-			                         GraphicsCompositorHelper.CreateDefault(
-				                         enablePostEffects: true,
-				                         camera: cameraComponent,
-				                         graphicsProfile: GraphicsProfile.Level_11_2);
+			var graphicsCompositor = GraphicsCompositorHelper.CreateDefault(
+				enablePostEffects: true,
+				camera: cameraComponent,
+				graphicsProfile: GraphicsProfile.Level_11_2);
+			EnsureParticleRenderFeature(graphicsCompositor);
 
 			if (graphicsCompositor.Cameras.Count > 0)
 			{
@@ -117,6 +119,29 @@ namespace LibreRally
 			}
 
 			return new CodeFirstSceneSetup(scene, cameraComponent, graphicsCompositor);
+		}
+
+		private static void EnsureParticleRenderFeature(GraphicsCompositor graphicsCompositor)
+		{
+			if (graphicsCompositor.RenderFeatures.OfType<ParticleEmitterRenderFeature>().Any())
+			{
+				return;
+			}
+
+			var opaqueStage = graphicsCompositor.RenderStages.FirstOrDefault(stage => stage.Name == "Opaque");
+			var transparentStage = graphicsCompositor.RenderStages.FirstOrDefault(stage => stage.Name == "Transparent");
+			if (opaqueStage == null || transparentStage == null)
+			{
+				return;
+			}
+
+			var particleFeature = new ParticleEmitterRenderFeature();
+			particleFeature.RenderStageSelectors.Add(new ParticleEmitterTransparentRenderStageSelector
+			{
+				OpaqueRenderStage = opaqueStage,
+				TransparentRenderStage = transparentStage,
+			});
+			graphicsCompositor.RenderFeatures.Add(particleFeature);
 		}
 
 		private static T? LoadAsset<T>(Game? game, string assetName)

@@ -12,8 +12,6 @@ namespace LibreRally
 {
 	internal sealed class TrackSurfaceMaterialLibrary
 	{
-		// Keep displacement subtle on procedural track quads to avoid visible mesh popping.
-		private const float TrackDisplacementIntensity = 0.01f;
 		private readonly GraphicsDevice _graphicsDevice;
 		private readonly string _materialsRoot;
 		private readonly Dictionary<SurfaceType, TrackSurfaceTextureSet> _textureSets = [];
@@ -46,24 +44,11 @@ namespace LibreRally
 				{
 					Diffuse = new MaterialDiffuseMapFeature(diffuse),
 					DiffuseModel = new MaterialDiffuseLambertModelFeature(),
-					Surface = textureSet.NormalTexture != null
-						? new MaterialNormalMapFeature(CreateColorMap(textureSet.NormalTexture, tiledScale))
-						: null,
+					// Procedural track quads currently provide position/normal/uv only, so keep the
+					// shader path to texture-safe features until they have a tangent basis.
 					MicroSurface = microSurface,
 					Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = fallbackMetalness }),
 					SpecularModel = new MaterialSpecularMicrofacetModelFeature(),
-					Occlusion = textureSet.AmbientOcclusionTexture != null
-						? new MaterialOcclusionMapFeature
-						{
-							AmbientOcclusionMap = CreateScalarMap(textureSet.AmbientOcclusionTexture, tiledScale),
-						}
-						: null,
-					Displacement = textureSet.DisplacementTexture != null
-						? new MaterialDisplacementMapFeature(CreateScalarMap(textureSet.DisplacementTexture, tiledScale))
-						{
-							Intensity = new ComputeFloat { Value = TrackDisplacementIntensity },
-						}
-						: null,
 				},
 			};
 
@@ -80,11 +65,11 @@ namespace LibreRally
 			var descriptor = ResolveDescriptor(surfaceType);
 			var folder = Path.Combine(_materialsRoot, descriptor.FolderName);
 			var textureSet = new TrackSurfaceTextureSet(
-				TryLoadTexture(Path.Combine(folder, descriptor.ColorFileName)),
-				TryLoadTexture(Path.Combine(folder, descriptor.NormalFileName)),
-				TryLoadTexture(Path.Combine(folder, descriptor.RoughnessFileName)),
-				TryLoadTexture(Path.Combine(folder, descriptor.AmbientOcclusionFileName)),
-				TryLoadTexture(Path.Combine(folder, descriptor.DisplacementFileName)));
+				TryLoadTexture(folder, descriptor.ColorFileNames),
+				TryLoadTexture(folder, descriptor.NormalFileNames),
+				TryLoadTexture(folder, descriptor.RoughnessFileNames),
+				TryLoadTexture(folder, descriptor.AmbientOcclusionFileNames),
+				TryLoadTexture(folder, descriptor.DisplacementFileNames));
 
 			_textureSets[surfaceType] = textureSet;
 			return textureSet;
@@ -94,25 +79,25 @@ namespace LibreRally
 		{
 			SurfaceType.Gravel => new TrackSurfaceDescriptor(
 				"Ground079S",
-				"Ground079S_1K-JPG_Color.jpg",
-				"Ground079S_1K-JPG_NormalDX.jpg",
-				"Ground079S_1K-JPG_Roughness.jpg",
-				"Ground079S_1K-JPG_AmbientOcclusion.jpg",
-				"Ground079S_1K-JPG_Displacement.jpg"),
+				["Ground079S_1K-JPG_Color.jpg"],
+				["Ground079S_1K-JPG_NormalDX.jpg"],
+				["Ground079S_1K-JPG_Roughness.jpg"],
+				["Ground079S_1K-JPG_AmbientOcclusion.jpg"],
+				["Ground079S_1K-JPG_Displacement.jpg"]),
 			SurfaceType.Snow => new TrackSurfaceDescriptor(
 				"Snow010A",
-				"Snow010A_1K-JPG_Color.jpg",
-				"Snow010A_1K-JPG_NormalDX.jpg",
-				"Snow010A_1K-JPG_Roughness.jpg",
-				"Snow010A_1K-JPG_AmbientOcclusion.jpg",
-				"Snow010A_1K-JPG_Displacement.jpg"),
+				["Snow010A_1K-PNG_Color.png", "Snow010A_1K-JPG_Color.jpg"],
+				["Snow010A_1K-PNG_NormalDX.png", "Snow010A_1K-JPG_NormalDX.jpg"],
+				["Snow010A_1K-PNG_Roughness.png", "Snow010A_1K-JPG_Roughness.jpg"],
+				["Snow010A_1K-PNG_AmbientOcclusion.png", "Snow010A_1K-JPG_AmbientOcclusion.jpg"],
+				["Snow010A_1K-PNG_Displacement.png", "Snow010A_1K-JPG_Displacement.jpg"]),
 			_ => new TrackSurfaceDescriptor(
 				"Road012A",
-				"Road012A_1K-JPG_Color.jpg",
-				"Road012A_1K-JPG_NormalDX.jpg",
-				"Road012A_1K-JPG_Roughness.jpg",
-				"Road012A_1K-JPG_AmbientOcclusion.jpg",
-				"Road012A_1K-JPG_Displacement.jpg"),
+				["Road012A_1K-JPG_Color.jpg"],
+				["Road012A_1K-JPG_NormalDX.jpg"],
+				["Road012A_1K-JPG_Roughness.jpg"],
+				["Road012A_1K-JPG_AmbientOcclusion.jpg"],
+				["Road012A_1K-JPG_Displacement.jpg"]),
 		};
 
 		private static ComputeTextureColor CreateColorMap(Texture texture, Vector2 scale) => new(texture)
@@ -130,6 +115,21 @@ namespace LibreRally
 			AddressModeU = TextureAddressMode.Wrap,
 			AddressModeV = TextureAddressMode.Wrap,
 		};
+
+		private Texture? TryLoadTexture(string folderPath, IReadOnlyList<string> candidateFileNames)
+		{
+			foreach (var fileName in candidateFileNames)
+			{
+				var absolutePath = Path.Combine(folderPath, fileName);
+				var texture = TryLoadTexture(absolutePath);
+				if (texture != null)
+				{
+					return texture;
+				}
+			}
+
+			return null;
+		}
 
 		private Texture? TryLoadTexture(string absolutePath)
 		{
@@ -153,11 +153,11 @@ namespace LibreRally
 
 		private readonly record struct TrackSurfaceDescriptor(
 			string FolderName,
-			string ColorFileName,
-			string NormalFileName,
-			string RoughnessFileName,
-			string AmbientOcclusionFileName,
-			string DisplacementFileName);
+			IReadOnlyList<string> ColorFileNames,
+			IReadOnlyList<string> NormalFileNames,
+			IReadOnlyList<string> RoughnessFileNames,
+			IReadOnlyList<string> AmbientOcclusionFileNames,
+			IReadOnlyList<string> DisplacementFileNames);
 
 		private sealed record TrackSurfaceTextureSet(
 			Texture? ColorTexture,

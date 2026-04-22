@@ -66,7 +66,6 @@ namespace LibreRally.HUD
 		private Label? _assistSummaryLabel;
 		private Label? _inputSummaryLabel;
 		private Label? _hudStatusLabel;
-		private Label? _hudTelemetryLabel;
 		private Label? _timerLabel;
 		private Label? _speedValueLabel;
 		private Label? _rpmValueLabel;
@@ -114,6 +113,7 @@ namespace LibreRally.HUD
 			MyraEnvironment.Game = _game;
 			_desktop = new Desktop
 			{
+				Background = null,
 				Root = BuildRoot(),
 			};
 			UpdateWidgets();
@@ -252,7 +252,6 @@ namespace LibreRally.HUD
 			};
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-			header.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
 			_timerLabel = new Label
 			{
@@ -265,16 +264,8 @@ namespace LibreRally.HUD
 				TextColor = CopyColor,
 				HorizontalAlignment = HorizontalAlignment.Right,
 			};
-			Grid.SetColumn(_hudStatusLabel, 2);
+			Grid.SetColumn(_hudStatusLabel, 1);
 			header.Widgets.Add(_hudStatusLabel);
-
-			_hudTelemetryLabel = new Label
-			{
-				TextColor = ValueColor,
-				HorizontalAlignment = HorizontalAlignment.Right,
-			};
-			Grid.SetColumn(_hudTelemetryLabel, 1);
-			header.Widgets.Add(_hudTelemetryLabel);
 
 			Grid.SetColumnSpan(header, 2);
 			layout.Widgets.Add(header);
@@ -478,14 +469,9 @@ namespace LibreRally.HUD
 
 			if (_hudStatusLabel != null)
 			{
-				_hudStatusLabel.Text = Car == null ? "No vehicle" : "Myra HUD";
-			}
-
-			if (_hudTelemetryLabel != null)
-			{
-				_hudTelemetryLabel.Text = Car == null
-					? "-- km/h  |  -- rpm"
-					: $"{Car.SpeedKmh:F0} km/h  |  {Car.EngineRpm:F0} rpm";
+				_hudStatusLabel.Text = Car == null
+					? "No vehicle  |  -- km/h  |  -- rpm"
+					: $"Myra HUD  |  {Car.SpeedKmh:F0} km/h  |  {Car.EngineRpm:F0} rpm";
 			}
 
 			if (Car == null)
@@ -573,11 +559,6 @@ namespace LibreRally.HUD
 			if (_speedValueLabel != null)
 			{
 				_speedValueLabel.Text = "--";
-			}
-
-			if (_hudTelemetryLabel != null)
-			{
-				_hudTelemetryLabel.Text = "-- km/h  |  -- rpm";
 			}
 
 			if (_speedUnitLabel != null)
