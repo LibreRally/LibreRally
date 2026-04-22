@@ -252,7 +252,7 @@ namespace LibreRally.Vehicle.Physics
 		/// Lateral relaxation length (m) for the brush tyre transient model.
 		/// Tuned shorter than before because loose-surface scaling now lengthens it dynamically.
 		/// </summary>
-		public float RelaxationLength { get; set; } = 0.45f;
+		public float RelaxationLength { get; set; } = 0.30f;
 
 		/// <summary>
 		/// Longitudinal relaxation length (m) for the brush tyre transient model.
@@ -328,7 +328,7 @@ namespace LibreRally.Vehicle.Physics
 		public float WornGripFraction { get; set; } = 0.65f;
 
 		/// <summary>Combined-slip interaction coupling strength. Higher values reduce Fx/Fy more when both slips are high.</summary>
-		public float CombinedSlipCoupling { get; set; } = 1.0f;
+		public float CombinedSlipCoupling { get; set; } = 0.6f;
 
 		/// <summary>Combined-slip interaction exponent controlling transition sharpness.</summary>
 		public float CombinedSlipExponent { get; set; } = 2.0f;
@@ -381,7 +381,7 @@ namespace LibreRally.Vehicle.Physics
 
 		// ── Constants ────────────────────────────────────────────────────────────
 
-		private const float MinSpeed = 0.5f;       // velocity floor for slip calculations (m/s)
+		private const float MinSpeed = 0.05f;      // velocity floor for slip calculations (m/s)
 		private const float MaxSlipRatio = 1.5f;    // clamp slip ratio to prevent numerical blow-up
 		private const float MaxSlipAngle = 1.2f;    // ~69° — beyond this we clamp
 		/// <summary>
@@ -393,7 +393,7 @@ namespace LibreRally.Vehicle.Physics
 		/// </summary>
 		private const float InertiaScalar = 1.2f;
 		private const float ReferenceTyreWidth = 0.205f;
-		private const float ReferenceContactPatchStiffness = 65000f;
+		private const float ReferenceContactPatchStiffness = 40000f;
 		private const float KilopascalsToPascals = 1000f;
 		private const float RollingRadiusDeflectionDivisor = 3f;
 		private const float SurfaceDeformationBrushSoftening = 0.15f;
@@ -651,8 +651,6 @@ namespace LibreRally.Vehicle.Physics
 			// ActiveMode overrides the blend: BrushOnly forces blendAlpha=0 (pure brush),
 			// PacejkaOnly forces blendAlpha=1 (pure Pacejka), Auto uses speed/slip heuristic.
 			var brushForce = -effectiveBrushStiffness * state.LateralDeflection;
-			// speedBlend is shared by lateral and longitudinal Auto blending (same formula).
-			var speedBlend = ActiveMode == TyreModelMode.Auto ? Math.Clamp(absVx / 5f, 0f, 1f) : 0f;
 			float blendAlphaLat;
 			if (ActiveMode == TyreModelMode.BrushOnly)
 			{
@@ -666,7 +664,7 @@ namespace LibreRally.Vehicle.Physics
 			{
 				var latSlipVel = MathF.Abs(lateralVelocity);
 				var latSlideBlend = Math.Clamp(latSlipVel - 1f, 0f, 1f);
-				blendAlphaLat = MathF.Max(speedBlend, latSlideBlend);
+				blendAlphaLat = MathF.Min(latSlideBlend, 0.85f);
 			}
 			var blendedFy = blendAlphaLat * rawFy + (1f - blendAlphaLat) * brushForce;
 
@@ -703,7 +701,7 @@ namespace LibreRally.Vehicle.Physics
 			else
 			{
 				var longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
-				blendAlphaLong = MathF.Max(speedBlend, longSlideBlend);
+				blendAlphaLong = MathF.Min(longSlideBlend, 0.85f);
 			}
 			var blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
 			ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, peakForce);
@@ -744,12 +742,12 @@ namespace LibreRally.Vehicle.Physics
 				carcassShearForce = longitudinalVelocity > 0f ? -shearMagnitude : shearMagnitude;
 			}
 
-			longitudinalForce = blendedFx + rrForce + carcassShearForce;
-			lateralForce = totalFy;
+			var tyreLongitudinalForce = blendedFx;
+			var tyreLateralForce = totalFy;
+			ClampToFrictionEllipse(ref tyreLongitudinalForce, ref tyreLateralForce, peakForce);
 
-			// Clamp the final applied force vector to a friction ellipse:
-			// (Fx/Fx_max)^2 + (Fy/Fy_max)^2 ≤ 1
-			ClampToFrictionEllipse(ref longitudinalForce, ref lateralForce, peakForce);
+			longitudinalForce = tyreLongitudinalForce + rrForce + carcassShearForce;
+			lateralForce = tyreLateralForce;
 
 			// ── Self-aligning torque (physically-derived pneumatic trail) ────────
 			// The pneumatic trail follows a characteristic rise-then-collapse curve from
