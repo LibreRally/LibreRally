@@ -36,7 +36,6 @@ namespace LibreRally.Vehicle.Physics
 	public sealed class VehicleDynamicsSystem
 	{
 		private const float MinimumWakeForce = 0.01f;
-		private const float MinimumGroundContactScale = 0.01f;
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
 		/// <summary>Front-left wheel index.</summary>
@@ -347,7 +346,7 @@ namespace LibreRally.Vehicle.Physics
 				var contactScale = i < wheelContactScales.Length
 					? Math.Clamp(wheelContactScales[i], 0f, 1f)
 					: wheelGrounded[i] ? 1f : 0f;
-				WheelGrounded[i] = wheelGrounded[i] && contactScale > MinimumGroundContactScale;
+				WheelGrounded[i] = wheelGrounded[i];
 			}
 
 			// Longitudinal: acceleration shifts load rearward (front loses, rear gains)
@@ -863,7 +862,6 @@ namespace LibreRally.Vehicle.Physics
 				wheelRight - wheelForward * Vector3.Dot(wheelRight, wheelForward),
 				Vector3.UnitX);
 			wheelUp = SafeNormalize(Vector3.Cross(wheelForward, wheelRight), Vector3.UnitY);
-			wheelRight = SafeNormalize(Vector3.Cross(wheelUp, wheelForward), Vector3.UnitX);
 		}
 	}
 }
