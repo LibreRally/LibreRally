@@ -441,6 +441,8 @@ namespace LibreRally.Vehicle
 			{
 				// BeamNG softnessCoef > 1 softens the tyre; < 1 stiffens it.
 				// Map this to our transient carcass/sidewall stiffness multipliers.
+				// Bounds keep handling changes realistic for common BeamNG values (~0.7-1.3)
+				// and avoid extreme snap behaviour from malformed configs.
 				var stiffnessScale = Math.Clamp(1f / softnessCoef, 0.6f, 1.6f);
 				tyreModel.CarcassStiffness *= stiffnessScale;
 				tyreModel.SidewallStiffness *= stiffnessScale;
@@ -450,6 +452,8 @@ namespace LibreRally.Vehicle
 			if (spec.BeamNgTreadCoefficient is > 0f and var treadCoef)
 			{
 				// BeamNG treadCoef influences how strongly contact-patch behaviour affects grip.
+				// 0.05 is this model's neutral baseline exponent; clamp to a conservative band
+				// so tread-only changes do not dominate core friction/load sensitivity behaviour.
 				tyreModel.ContactAreaGripExponent = Math.Clamp(0.05f * treadCoef, 0.01f, 0.12f);
 			}
 
@@ -457,6 +461,8 @@ namespace LibreRally.Vehicle
 			    spec.BeamNgSlidingFrictionCoefficient is > 0f and var slidingFrictionCoef)
 			{
 				// Map BeamNG sliding friction ratio to the high-slip lateral force retention plateau.
+				// Clamp to [0.2, 1.1] to preserve controllable post-peak behaviour while allowing
+				// mildly >1 ratios from aggressive compounds without creating unstable force spikes.
 				var slidingRatio = slidingFrictionCoef / MathF.Max(frictionCoef, 1e-3f);
 				tyreModel.HighSlipForceRetention = Math.Clamp(slidingRatio, 0.2f, 1.1f);
 			}

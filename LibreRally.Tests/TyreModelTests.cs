@@ -6,6 +6,7 @@ namespace LibreRally.Tests
 	{
 		private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
+		private const int ForceToleranceDecimalPlaces = 1;
 
 		private static float MagicFormula(float x, float b, float c, float d, float e)
 		{
@@ -42,7 +43,7 @@ namespace LibreRally.Tests
 			var peakForce = normalLoad;
 			var expectedFx = MagicFormula(slipRatio, model.LongitudinalB, model.LongitudinalC, peakForce, model.LongitudinalE);
 
-			Assert.Equal(expectedFx, actualFx, 1);
+			Assert.Equal(expectedFx, actualFx, ForceToleranceDecimalPlaces);
 		}
 
 		[Fact]
@@ -79,7 +80,7 @@ namespace LibreRally.Tests
 			var effectiveLatB = model.LateralB * model.SidewallStiffness * pressureStiffnessFactor;
 			var expectedFy = MagicFormula(slipAngle, effectiveLatB, model.LateralC, peakForce, model.LateralE);
 
-			Assert.Equal(expectedFy, actualFy, 1);
+			Assert.Equal(expectedFy, actualFy, ForceToleranceDecimalPlaces);
 		}
 
 		[Fact]
