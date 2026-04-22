@@ -123,11 +123,42 @@ namespace LibreRally.HUD
 			}
 		}
 
+		private string _vehicleName = "LibreRally";
+		private string _statusText = string.Empty;
+
 		/// <summary>Gets or sets the vehicle name shown in the header.</summary>
-		public string VehicleName { get; set; } = "LibreRally";
+		public string VehicleName
+		{
+			get => _vehicleName;
+			set
+			{
+				var newValue = value ?? "LibreRally";
+				if (string.Equals(_vehicleName, newValue, StringComparison.Ordinal))
+				{
+					return;
+				}
+
+				_vehicleName = newValue;
+				UpdateStaticLabels();
+			}
+		}
 
 		/// <summary>Gets or sets the status text shown in the summary card.</summary>
-		public string StatusText { get; set; } = string.Empty;
+		public string StatusText
+		{
+			get => _statusText;
+			set
+			{
+				var newValue = value ?? string.Empty;
+				if (string.Equals(_statusText, newValue, StringComparison.Ordinal))
+				{
+					return;
+				}
+
+				_statusText = newValue;
+				UpdateStaticLabels();
+			}
+		}
 
 		/// <summary>Raised when the user requests to close this overlay (Esc / B / Start).</summary>
 		public Action? CloseRequested { get; set; }
@@ -1406,12 +1437,12 @@ namespace LibreRally.HUD
 		{
 			if (_vehicleNameLabel != null)
 			{
-				_vehicleNameLabel.Text = string.IsNullOrWhiteSpace(VehicleName) ? "LibreRally" : VehicleName;
+				_vehicleNameLabel.Text = string.IsNullOrWhiteSpace(_vehicleName) ? "LibreRally" : _vehicleName;
 			}
 
 			if (_statusLabel != null)
 			{
-				_statusLabel.Text = StatusText;
+				_statusLabel.Text = _statusText;
 			}
 		}
 
@@ -1517,7 +1548,7 @@ namespace LibreRally.HUD
 			{
 				var clampedField = Math.Clamp(_selectedFieldIndex, 0, fieldCount - 1);
 				var field = category.Fields[clampedField];
-				var step = right ? field.Step : -field.Step;
+				var step = left ? -field.Step : field.Step;
 				var newValue = Math.Clamp(field.GetValue() + step, field.Minimum, field.Maximum);
 				field.SetValue(newValue);
 				RefreshCategoryContent();
@@ -1537,10 +1568,10 @@ namespace LibreRally.HUD
 			return brush;
 		}
 
-		private static Panel CreateCardPanel(int width, Color background) => new()
+		private Panel CreateCardPanel(int width, Color background) => new()
 		{
 			Width = width,
-			Background = new SolidBrush(background),
+			Background = Brush(background),
 		};
 
 		private static VerticalStackPanel CreateCardContent() => new()
