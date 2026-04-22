@@ -437,6 +437,30 @@ namespace LibreRally.Vehicle
 				tyreModel.BeamNgLoadSensitivitySlope = spec.BeamNgLoadSensitivitySlope.GetValueOrDefault();
 			}
 
+			if (spec.BeamNgSoftnessCoefficient is > 0f and var softnessCoef)
+			{
+				// BeamNG softnessCoef > 1 softens the tyre; < 1 stiffens it.
+				// Map this to our transient carcass/sidewall stiffness multipliers.
+				var stiffnessScale = Math.Clamp(1f / softnessCoef, 0.6f, 1.6f);
+				tyreModel.CarcassStiffness *= stiffnessScale;
+				tyreModel.SidewallStiffness *= stiffnessScale;
+				tyreModel.ContactPatchStiffness *= stiffnessScale;
+			}
+
+			if (spec.BeamNgTreadCoefficient is > 0f and var treadCoef)
+			{
+				// BeamNG treadCoef influences how strongly contact-patch behaviour affects grip.
+				tyreModel.ContactAreaGripExponent = Math.Clamp(0.05f * treadCoef, 0.01f, 0.12f);
+			}
+
+			if (spec.BeamNgFrictionCoefficient is > 0f and var frictionCoef &&
+			    spec.BeamNgSlidingFrictionCoefficient is > 0f and var slidingFrictionCoef)
+			{
+				// Map BeamNG sliding friction ratio to the high-slip lateral force retention plateau.
+				var slidingRatio = slidingFrictionCoef / MathF.Max(frictionCoef, 1e-3f);
+				tyreModel.HighSlipForceRetention = Math.Clamp(slidingRatio, 0.2f, 1.1f);
+			}
+
 			return tyreModel;
 		}
 

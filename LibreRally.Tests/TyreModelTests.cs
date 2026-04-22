@@ -7,6 +7,81 @@ namespace LibreRally.Tests
 		private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
 
+		private static float MagicFormula(float x, float b, float c, float d, float e)
+		{
+			var bx = b * x;
+			return d * MathF.Sin(c * MathF.Atan(bx - e * (bx - MathF.Atan(bx))));
+		}
+
+		[Fact]
+		public void PacejkaOnly_LongitudinalForce_FollowsMagicFormulaEquation()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				ActiveMode = TyreModelMode.PacejkaOnly,
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+			};
+
+			var state = TyreState.CreateDefault();
+			const float normalLoad = 3000f;
+			const float longitudinalVelocity = 20f;
+			var rollingRadius = model.ComputeEffectiveRollingRadius(normalLoad);
+			state.AngularVelocity = longitudinalVelocity * 1.12f / rollingRadius;
+
+			model.Update(ref state, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out float actualFx, out _, out _);
+
+			var slipRatio = state.SlipRatio;
+			var peakForce = normalLoad;
+			var expectedFx = MagicFormula(slipRatio, model.LongitudinalB, model.LongitudinalC, peakForce, model.LongitudinalE);
+
+			Assert.Equal(expectedFx, actualFx, 1);
+		}
+
+		[Fact]
+		public void PacejkaOnly_LateralForce_FollowsMagicFormulaEquationWhenHighSlipExtensionIsDisabled()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				ActiveMode = TyreModelMode.PacejkaOnly,
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				HighSlipTransitionStart = 2f,
+				HighSlipTransitionEnd = 2.1f,
+			};
+
+			var state = TyreState.CreateDefault();
+			const float normalLoad = 3000f;
+			const float longitudinalVelocity = 20f;
+			const float lateralVelocity = 1.2f;
+			var rollingRadius = model.ComputeEffectiveRollingRadius(normalLoad);
+			state.AngularVelocity = longitudinalVelocity / rollingRadius;
+
+			model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out _, out float actualFy, out _);
+
+			var slipAngle = state.SlipAngle;
+			var peakForce = normalLoad;
+			var pressureStiffnessFactor = MathF.Sqrt(model.TyrePressure / 220f);
+			var effectiveLatB = model.LateralB * model.SidewallStiffness * pressureStiffnessFactor;
+			var expectedFy = MagicFormula(slipAngle, effectiveLatB, model.LateralC, peakForce, model.LateralE);
+
+			Assert.Equal(expectedFy, actualFy, 1);
+		}
+
 		[Fact]
 		public void ContactPatchLength_GrowsWithLoad_AndShrinksWithPressure()
 		{
