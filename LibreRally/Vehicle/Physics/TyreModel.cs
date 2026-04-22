@@ -651,6 +651,8 @@ namespace LibreRally.Vehicle.Physics
 			// ActiveMode overrides the blend: BrushOnly forces blendAlpha=0 (pure brush),
 			// PacejkaOnly forces blendAlpha=1 (pure Pacejka), Auto uses speed/slip heuristic.
 			var brushForce = -effectiveBrushStiffness * state.LateralDeflection;
+			// speedBlend is shared by lateral and longitudinal Auto blending (same formula).
+			var speedBlend = ActiveMode == TyreModelMode.Auto ? Math.Clamp(absVx / 5f, 0f, 1f) : 0f;
 			float blendAlphaLat;
 			if (ActiveMode == TyreModelMode.BrushOnly)
 			{
@@ -662,7 +664,6 @@ namespace LibreRally.Vehicle.Physics
 			}
 			else
 			{
-				var speedBlend = Math.Clamp(absVx / 5f, 0f, 1f); // transition from brush to Pacejka
 				var latSlipVel = MathF.Abs(lateralVelocity);
 				var latSlideBlend = Math.Clamp(latSlipVel - 1f, 0f, 1f);
 				blendAlphaLat = MathF.Max(speedBlend, latSlideBlend);
@@ -701,9 +702,8 @@ namespace LibreRally.Vehicle.Physics
 			}
 			else
 			{
-				var speedBlendLong = Math.Clamp(absVx / 5f, 0f, 1f);
 				var longSlideBlend = Math.Clamp((longSlipVelMag - 1f) / 2f, 0f, 1f);
-				blendAlphaLong = MathF.Max(speedBlendLong, longSlideBlend);
+				blendAlphaLong = MathF.Max(speedBlend, longSlideBlend);
 			}
 			var blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
 			ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, peakForce);
