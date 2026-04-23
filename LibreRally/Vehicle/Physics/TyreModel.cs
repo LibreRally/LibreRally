@@ -1115,7 +1115,7 @@ namespace LibreRally.Vehicle.Physics
 			}
 
 			var rollingDirection = ResolveRotationDirection(angularVelocity, longitudinalVelocity, driveTorque, rollingRadius);
-			return rollingDirection == 0f ? 0f : brakeTorque * rollingDirection;
+			return MathF.Abs(rollingDirection) < 1e-6f ? 0f : brakeTorque * rollingDirection;
 		}
 
 		private static void IntegrateWheelAngularVelocity(
