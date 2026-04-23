@@ -1132,7 +1132,7 @@ namespace LibreRally.Vehicle.Physics
 			var netTorque = driveTorque - brakeReactionTorque - tyreReactionTorque;
 			state.AngularVelocity += (netTorque / MathF.Max(wheelInertia, 1e-3f)) * dt;
 
-			if (brakeReactionTorque == 0f)
+			if (MathF.Abs(brakeReactionTorque) <= 1e-6f)
 			{
 				return;
 			}
