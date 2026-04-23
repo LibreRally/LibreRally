@@ -85,6 +85,50 @@ namespace LibreRally.Tests
 		}
 
 		[Fact]
+		public void SplitTorque_OpenDifferential_LimitsBothOutputsToLeastTractionWheel()
+		{
+			var config = DifferentialConfig.CreateOpen();
+
+			DifferentialSolver.SplitTorque(
+				in config,
+				300f,
+				omegaLeft: 12f,
+				omegaRight: 18f,
+				tractionLimitLeft: 140f,
+				tractionLimitRight: 60f,
+				out var torqueLeft,
+				out var torqueRight);
+
+			Assert.Equal(60f, torqueLeft, 3);
+			Assert.Equal(60f, torqueRight, 3);
+		}
+
+		[Fact]
+		public void SplitTorque_LimitedSlip_ClampsBiasAndConservesDeliveredTorque()
+		{
+			var config = DifferentialConfig.CreateLimitedSlip(
+				biasRatio: 3f,
+				lockingCoeff: 0.85f,
+				coastLockingCoeff: 0.4f,
+				preloadTorque: 20f);
+
+			DifferentialSolver.SplitTorque(
+				in config,
+				400f,
+				omegaLeft: 24f,
+				omegaRight: 8f,
+				tractionLimitLeft: 70f,
+				tractionLimitRight: 400f,
+				out var torqueLeft,
+				out var torqueRight);
+
+			Assert.Equal(280f, torqueLeft + torqueRight, 3);
+			Assert.True(torqueLeft >= 0f);
+			Assert.True(torqueRight >= 0f);
+			Assert.True(torqueRight / torqueLeft <= 3.0001f);
+		}
+
+		[Fact]
 		public void ResolveFinalDrive_UsesSelectedFinalDrivePartRatioWhenIntermediateDevicesStayAtUnitRatio()
 		{
 			var definition = new VehicleDefinition

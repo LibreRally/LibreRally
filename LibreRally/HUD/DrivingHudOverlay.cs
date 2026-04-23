@@ -208,7 +208,7 @@ namespace LibreRally.HUD
 			_debugBrakeBar = CreateBarRow(content, "Brake", 260);
 			_debugSteerBar = CreateBarRow(content, "Steer", 260);
 
-			content.Widgets.Add(CreateSectionBody("g=grounded  sr=slip  load/Fx/Fy=kN  tq=Nm  om=rad/s"));
+			content.Widgets.Add(CreateSectionBody("g=grounded  sr=slip  load/Fx/Fy=kN  dt/bt/rt=Nm  om=rad/s"));
 			for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
 			{
 				var label = CreateBodyLabel(string.Empty);
@@ -538,7 +538,8 @@ namespace LibreRally.HUD
 
 			if (_assistSummaryLabel != null)
 			{
-				_assistSummaryLabel.Text = $"Slip {Car.DrivenWheelSlipRatio:F2}  |  ABS {FormatAssistState(Car.AbsEnabled, Car.AbsActive)}  |  TCS {FormatTcsState(Car)}  |  scale {Car.TractionControlTorqueScale:F2}";
+				_assistSummaryLabel.Text =
+					$"Slip {Car.DrivenWheelSlipRatio:F2}  |  ABS {FormatAssistState(Car.AbsEnabled, Car.AbsActive)}  |  TCS {FormatTcsState(Car)}  |  scale {Car.TractionControlTorqueScale:F2}  |  drv {Car.Dynamics?.DeliveredDrivetrainTorque ?? 0f,6:F0}/{Car.Dynamics?.RequestedDrivetrainTorque ?? 0f,6:F0}";
 			}
 
 			if (_inputSummaryLabel != null)
@@ -667,7 +668,9 @@ namespace LibreRally.HUD
 					$"load:{dynamics.CurrentNormalLoads[i] / 1000f,5:F2} " +
 					$"fx:{dynamics.LongitudinalForces[i] / 1000f,6:F2} " +
 					$"fy:{dynamics.LateralForces[i] / 1000f,6:F2} " +
-					$"tq:{dynamics.WheelDriveTorques[i],6:F0} " +
+					$"dt:{dynamics.WheelDriveTorques[i],6:F0} " +
+					$"bt:{dynamics.WheelBrakeTorques[i],6:F0} " +
+					$"rt:{dynamics.WheelTyreReactionTorques[i],6:F0} " +
 					$"om:{dynamics.WheelStates[i].AngularVelocity,6:F1}";
 			}
 		}

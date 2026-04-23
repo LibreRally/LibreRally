@@ -1415,6 +1415,77 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, factor);
 		}
 
+		[Fact]
+		public void Update_UsesAppliedDriveTorqueBeforeSlipForceCalculation()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				ActiveMode = TyreModelMode.PacejkaOnly,
+				WheelInertia = 1.0f,
+			};
+			var state = TyreState.CreateDefault();
+
+			model.Update(
+				ref state,
+				longitudinalVelocity: 0f,
+				lateralVelocity: 0f,
+				normalLoad: 3000f,
+				driveTorque: 120f,
+				brakeTorque: 0f,
+				camberAngle: 0f,
+				in Tarmac,
+				dt: 0.01f,
+				out _,
+				out _,
+				out _);
+
+			Assert.True(state.SlipRatio > 0f);
+			Assert.True(state.DriveTorque > 0f);
+		}
+
+		[Fact]
+		public void Update_StoresTyreReactionTorqueAndKeepsBrakeFromReversingWheel()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				ActiveMode = TyreModelMode.PacejkaOnly,
+				WheelInertia = 1.0f,
+			};
+			var state = TyreState.CreateDefault();
+			state.AngularVelocity = 1f;
+
+			model.Update(
+				ref state,
+				longitudinalVelocity: 0.2f,
+				lateralVelocity: 0f,
+				normalLoad: 3000f,
+				driveTorque: 0f,
+				brakeTorque: 400f,
+				camberAngle: 0f,
+				in Tarmac,
+				dt: 0.02f,
+				out _,
+				out _,
+				out _);
+
+			Assert.True(state.TyreReactionTorque >= 0f);
+			Assert.True(state.AngularVelocity >= 0f);
+		}
+
 		// ── Default surface calibration tests ────────────────────────────────────
 
 		/// <summary>
