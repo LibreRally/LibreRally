@@ -119,6 +119,7 @@ namespace LibreRally.Vehicle.Physics
 	{
 		private const float MinimumTorqueMagnitude = 1e-4f;
 		private const float TractionEpsilon = 1e-3f;
+		private const float LockingReferenceOmega = 5f;
 
 		/// <summary>
 		/// Splits <paramref name="inputTorque"/> into two output torques based on the
@@ -292,8 +293,7 @@ namespace LibreRally.Vehicle.Physics
 				? config.CoastLockingCoefficient
 				: config.LockingCoefficient;
 
-			const float ReferenceOmega = 5f; // rad/s normalisation for tanh
-			var lockScale = MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
+			var lockScale = MathF.Tanh(MathF.Abs(deltaOmega) / LockingReferenceOmega);
 			var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * deliveredMagnitude;
 			var lockingTorque = (preloadTorque + dynamicLockingTorque) * lockScale;
 
