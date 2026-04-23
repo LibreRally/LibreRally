@@ -103,6 +103,7 @@ namespace LibreRally.HUD
 		private Label? _categoryTaglineLabel;
 		private Label? _categoryDescriptionLabel;
 		private Label? _fieldWindowLabel;
+		private Label? _suspensionTelemetryLabel;
 		private readonly List<(Button Button, Label Label)> _categoryButtons = [];
 
 		private const int MaxVisibleFields = 3;
@@ -224,6 +225,7 @@ namespace LibreRally.HUD
 			}
 
 			HandleNavigationInput();
+			UpdateLiveTelemetryLabels();
 		}
 
 		/// <summary>Draws the overlay when visible.</summary>
@@ -1362,6 +1364,11 @@ namespace LibreRally.HUD
 			content.Widgets.Add(_vehicleNameLabel);
 			content.Widgets.Add(_statusLabel);
 			content.Widgets.Add(CreateSpacer(10));
+			content.Widgets.Add(CreateSectionTitle("Suspension telemetry"));
+			_suspensionTelemetryLabel = CreateSectionBody(string.Empty);
+			_suspensionTelemetryLabel.Wrap = true;
+			content.Widgets.Add(_suspensionTelemetryLabel);
+			content.Widgets.Add(CreateSpacer(10));
 			content.Widgets.Add(new Label
 			{
 				Text = "D-Pad Up/Down moves list.\nLeft/Right adjusts or changes pane.\nEsc/B/Start goes back.",
@@ -1598,6 +1605,27 @@ namespace LibreRally.HUD
 			{
 				_statusLabel.Text = _statusText;
 			}
+		}
+
+		private void UpdateLiveTelemetryLabels()
+		{
+			if (_suspensionTelemetryLabel == null)
+			{
+				return;
+			}
+
+			var dynamics = _car?.Dynamics;
+			if (dynamics == null)
+			{
+				_suspensionTelemetryLabel.Text = "Suspension telemetry unavailable.";
+				return;
+			}
+
+			_suspensionTelemetryLabel.Text =
+				$"FL c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.FL] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.FL],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.FL] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.FL] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.FL] / 1000f,5:F2}\n" +
+				$"FR c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.FR] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.FR],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.FR] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.FR] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.FR] / 1000f,5:F2}\n" +
+				$"RL c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.RL] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.RL],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.RL] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.RL] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.RL] / 1000f,5:F2}\n" +
+				$"RR c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.RR] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.RR],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.RR] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.RR] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.RR] / 1000f,5:F2}";
 		}
 
 		// ── Input handling ────────────────────────────────────────────────────────

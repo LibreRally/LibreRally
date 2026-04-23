@@ -39,6 +39,10 @@ namespace LibreRally.Vehicle.Physics
 		private const float MinimumWakeForce = 0.01f;
 		private const float TorqueConservationTolerance = 0.25f;
 		private const int DiagnosticCooldownFrames = 120;
+		private const float MaximumSuspensionVelocity = 12f;
+		private const float SuspensionForceGuardMultiplier = 4.5f;
+		private const float BumpStopStartFraction = 0.8f;
+		private const float BumpStopProgressiveStiffnessMultiplier = 6f;
 		private static readonly Logger Log = GlobalLogger.GetLogger("VehicleDynamicsSystem");
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
@@ -126,8 +130,29 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Signed suspension travel per wheel (m). Positive = compressed, negative = rebound.</summary>
 		public readonly float[] SuspensionCompression = new float[WheelCount];
 
+		/// <summary>Suspension compression velocity per wheel (m/s). Positive = compressing into bump.</summary>
+		public readonly float[] SuspensionVelocity = new float[WheelCount];
+
+		/// <summary>Hooke-law spring support force per wheel (N). Positive values increase tyre normal load.</summary>
+		public readonly float[] SpringForces = new float[WheelCount];
+
+		/// <summary>Directional damper support force per wheel (N). Positive values oppose bump, negative oppose rebound.</summary>
+		public readonly float[] DamperForces = new float[WheelCount];
+
+		/// <summary>Progressive bump-stop support force per wheel (N). Only active near maximum compression.</summary>
+		public readonly float[] BumpStopForces = new float[WheelCount];
+
 		/// <summary>Whether each wheel currently has ground contact.</summary>
 		public readonly bool[] WheelGrounded = new bool[WheelCount];
+
+		/// <summary>Per-wheel spring stiffness (N/m), used when translating suspension compression into tyre load.</summary>
+		public readonly float[] SpringStiffness = new float[WheelCount];
+
+		/// <summary>Maximum bump/compression travel per wheel (m).</summary>
+		public readonly float[] SuspensionMaximumCompression = new float[WheelCount];
+
+		/// <summary>Maximum droop/rebound travel magnitude per wheel (m).</summary>
+		public readonly float[] SuspensionMaximumDroop = new float[WheelCount];
 
 		// ── Asymmetric damping (bump/rebound) ─────────────────────────────────────
 
@@ -145,6 +170,7 @@ namespace LibreRally.Vehicle.Physics
 
 		/// <summary>Previous frame's suspension compression per wheel, used to compute suspension velocity.</summary>
 		private readonly float[] _previousSuspensionCompression = new float[WheelCount];
+		private readonly float[] _averageDamperForces = new float[WheelCount];
 
 		/// <summary>Reusable snapshot buffer so the predictor pass can evaluate tyre forces without advancing wheel state twice.</summary>
 		private readonly TyreState[] _predictionWheelStates = new TyreState[WheelCount];
@@ -213,7 +239,9 @@ namespace LibreRally.Vehicle.Physics
 		/// </summary>
 		/// <param name="chassisBody">BEPU rigid body for the chassis.</param>
 		/// <param name="chassisWorld">Chassis world transform matrix.</param>
-		/// <param name="wheelPositions">World-space position of each wheel contact point.</param>
+		/// <param name="wheelContactPoints">World-space tyre contact patch position for each wheel.</param>
+		/// <param name="suspensionAttachmentPoints">World-space chassis-side suspension attachment point for each wheel.</param>
+		/// <param name="suspensionAxes">World-space suspension axis for each wheel. Positive travel points toward bump/compression.</param>
 		/// <param name="wheelVelocities">World-space linear velocity at each wheel.</param>
 		/// <param name="wheelOrientations">World-space orientation frames for each wheel (Right, Up, Forward).</param>
 		/// <param name="wheelContactScales">Per-wheel contact confidence/load scales in the range [0, 1].</param>
@@ -226,7 +254,9 @@ namespace LibreRally.Vehicle.Physics
 		public void Update(
 			BodyComponent chassisBody,
 			in Matrix chassisWorld,
-			ReadOnlySpan<Vector3> wheelPositions,
+			ReadOnlySpan<Vector3> wheelContactPoints,
+			ReadOnlySpan<Vector3> suspensionAttachmentPoints,
+			ReadOnlySpan<Vector3> suspensionAxes,
 			ReadOnlySpan<Vector3> wheelVelocities,
 			ReadOnlySpan<Matrix> wheelOrientations,
 			ReadOnlySpan<float> wheelContactScales,
@@ -241,6 +271,8 @@ namespace LibreRally.Vehicle.Physics
 			{
 				return;
 			}
+
+			PrepareSuspensionState(suspensionCompressions, dt);
 
 			// ── 1. Use force-derived chassis acceleration for load transfer ───────
 			// Acceleration is estimated from summed tyre forces at the end of each
@@ -261,7 +293,6 @@ namespace LibreRally.Vehicle.Physics
 			var instantaneousAccelerationWorld = RunForcePredictionPass(
 				wheelGrounded,
 				wheelContactScales,
-				suspensionCompressions,
 				engineTorqueAtWheels,
 				wheelOrientations,
 				wheelVelocities,
@@ -281,7 +312,6 @@ namespace LibreRally.Vehicle.Physics
 			instantaneousAccelerationWorld = RunForcePredictionPass(
 				wheelGrounded,
 				wheelContactScales,
-				suspensionCompressions,
 				engineTorqueAtWheels,
 				wheelOrientations,
 				wheelVelocities,
@@ -311,7 +341,7 @@ namespace LibreRally.Vehicle.Physics
 				chassisBody,
 				forwardDir,
 				rightDir,
-				suspensionCompressions,
+				SuspensionCompression,
 				rollAccelerationTorque,
 				pitchAccelerationTorque,
 				dt);
@@ -322,10 +352,53 @@ namespace LibreRally.Vehicle.Physics
 			// ── 7. Apply chassis impulses after the force prediction is complete ──
 			// The damping correction mutates chassisBody directly, so it must run after the tyre-force
 			// prediction passes that used the current wheel-velocity snapshot.
-			ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, suspensionCompressions, dt);
+			ApplyAsymmetricDampingCorrection(chassisBody, in chassisWorld, suspensionAttachmentPoints, suspensionAxes, dt);
 
 			// ── 8. Apply all forces as impulses to the chassis at the wheel contact locations ─
-			ApplyForces(chassisBody, in chassisWorld, wheelPositions, wheelOrientations, dt);
+			ApplyForces(chassisBody, in chassisWorld, wheelContactPoints, wheelOrientations, dt);
+		}
+
+		private void PrepareSuspensionState(ReadOnlySpan<float> suspensionCompressions, float dt)
+		{
+			for (var i = 0; i < WheelCount; i++)
+			{
+				var maxCompression = MathF.Max(SuspensionMaximumCompression[i], 0f);
+				var maxDroop = MathF.Max(SuspensionMaximumDroop[i], 0f);
+				var rawCompression = i < suspensionCompressions.Length ? suspensionCompressions[i] : 0f;
+
+				// Compression sign convention used everywhere in vehicle dynamics:
+				// positive = wheel moved toward the chassis (bump), negative = droop/rebound.
+				var clampedCompression = float.IsFinite(rawCompression)
+					? Math.Clamp(rawCompression, -maxDroop, maxCompression)
+					: 0f;
+				SuspensionCompression[i] = clampedCompression;
+
+				var velocity = dt > 1e-6f
+					? (clampedCompression - _previousSuspensionCompression[i]) / dt
+					: 0f;
+				velocity = float.IsFinite(velocity)
+					? Math.Clamp(velocity, -MaximumSuspensionVelocity, MaximumSuspensionVelocity)
+					: 0f;
+				SuspensionVelocity[i] = velocity;
+				_previousSuspensionCompression[i] = clampedCompression;
+
+				var springStiffness = MathF.Max(SpringStiffness[i], 0f);
+				var springCompression = Math.Clamp(clampedCompression, 0f, maxCompression);
+				var springForceLimit = ComputeSuspensionForceLimit(i, springStiffness, maxCompression);
+				var springForce = springStiffness * springCompression;
+				var bumpStopForce = ComputeBumpStopForce(i, springCompression, maxCompression, springStiffness, springForceLimit);
+				var directionDamping = velocity >= 0f
+					? MathF.Max(BumpDamping[i], 0f)
+					: MathF.Max(ReboundDamping[i], 0f);
+				var averageDamping = MathF.Max(BepuAverageDamping[i], 0f);
+				var damperForce = directionDamping * velocity;
+				var averageDamperForce = averageDamping * velocity;
+
+				SpringForces[i] = SanitizeForce(springForce, springForceLimit);
+				BumpStopForces[i] = SanitizeForce(bumpStopForce, springForceLimit);
+				DamperForces[i] = SanitizeSignedForce(damperForce, springForceLimit);
+				_averageDamperForces[i] = SanitizeSignedForce(averageDamperForce, springForceLimit);
+			}
 		}
 
 		/// <summary>
@@ -376,9 +449,6 @@ namespace LibreRally.Vehicle.Physics
 			for (var i = 0; i < WheelCount; i++)
 			{
 				CurrentNormalLoads[i] = StaticNormalLoads[i];
-				var contactScale = i < wheelContactScales.Length
-					? Math.Clamp(wheelContactScales[i], 0f, 1f)
-					: wheelGrounded[i] ? 1f : 0f;
 				WheelGrounded[i] = wheelGrounded[i];
 			}
 
@@ -394,6 +464,11 @@ namespace LibreRally.Vehicle.Physics
 			CurrentNormalLoads[RL] += rearLatTransfer * 0.5f;
 			CurrentNormalLoads[RR] -= rearLatTransfer * 0.5f;
 
+			for (var i = 0; i < WheelCount; i++)
+			{
+				CurrentNormalLoads[i] += SpringForces[i] + DamperForces[i] + BumpStopForces[i];
+			}
+
 			// Clamp — wheel cannot push up (negative load means wheel has lifted)
 			for (var i = 0; i < WheelCount; i++)
 			{
@@ -407,7 +482,7 @@ namespace LibreRally.Vehicle.Physics
 				}
 				else
 				{
-					CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f) * contactScale;
+					CurrentNormalLoads[i] = Math.Clamp(CurrentNormalLoads[i], 0f, ComputeNormalLoadLimit(i)) * contactScale;
 				}
 			}
 		}
@@ -425,34 +500,23 @@ namespace LibreRally.Vehicle.Physics
 		///
 		/// Reference: Milliken, RCVD §17.6, anti-roll bar mechanics.
 		/// </summary>
-		private void ComputeAntiRollForces(ReadOnlySpan<float> suspensionCompressions)
+		private void ComputeAntiRollForces()
 		{
-			// Cache suspension compression
-			for (var i = 0; i < WheelCount && i < suspensionCompressions.Length; i++)
-				SuspensionCompression[i] = suspensionCompressions[i];
-
 			// Front axle anti-roll bar
 			if (FrontAntiRollStiffness > 0f)
 			{
-				var deltaFront = SuspensionCompression[FL] - SuspensionCompression[FR];
-				var rollForce = deltaFront * FrontAntiRollStiffness;
-				// Opposing forces: push down compressed side, push up extended side
-				CurrentNormalLoads[FL] += rollForce;
-				CurrentNormalLoads[FR] -= rollForce;
+				ApplyAntiRollLoadTransfer(FL, FR, FrontAntiRollStiffness);
 			}
 
 			// Rear axle anti-roll bar
 			if (RearAntiRollStiffness > 0f)
 			{
-				var deltaRear = SuspensionCompression[RL] - SuspensionCompression[RR];
-				var rollForce = deltaRear * RearAntiRollStiffness;
-				CurrentNormalLoads[RL] += rollForce;
-				CurrentNormalLoads[RR] -= rollForce;
+				ApplyAntiRollLoadTransfer(RL, RR, RearAntiRollStiffness);
 			}
 
 			// Re-clamp after anti-roll adjustments
 			for (var i = 0; i < WheelCount; i++)
-				CurrentNormalLoads[i] = MathF.Max(CurrentNormalLoads[i], 0f);
+				CurrentNormalLoads[i] = Math.Clamp(CurrentNormalLoads[i], 0f, ComputeNormalLoadLimit(i));
 		}
 
 		/// <summary>
@@ -476,9 +540,8 @@ namespace LibreRally.Vehicle.Physics
 		private void ApplyAsymmetricDampingCorrection(
 			BodyComponent chassisBody,
 			in Matrix chassisWorld,
-			ReadOnlySpan<Vector3> wheelPositions,
-			ReadOnlySpan<Matrix> wheelOrientations,
-			ReadOnlySpan<float> suspensionCompressions,
+			ReadOnlySpan<Vector3> suspensionAttachmentPoints,
+			ReadOnlySpan<Vector3> suspensionAxes,
 			float dt)
 		{
 			var chassisPosition = chassisWorld.TranslationVector;
@@ -487,41 +550,26 @@ namespace LibreRally.Vehicle.Physics
 			{
 				if (!WheelGrounded[i])
 				{
-					_previousSuspensionCompression[i] = i < suspensionCompressions.Length
-						? suspensionCompressions[i]
-						: 0f;
 					continue;
 				}
 
-				var currentCompression = i < suspensionCompressions.Length ? suspensionCompressions[i] : 0f;
-				var suspensionVelocity = (currentCompression - _previousSuspensionCompression[i]) / dt;
-				_previousSuspensionCompression[i] = currentCompression;
-
-				var averageDamping = BepuAverageDamping[i];
-				if (averageDamping <= 0f)
-					continue;
-
-				// Positive velocity = compressing (bump), negative = extending (rebound)
-				var directionDamping = suspensionVelocity >= 0f
-					? BumpDamping[i]
-					: ReboundDamping[i];
-
-				if (directionDamping <= 0f)
-					continue;
-
-				var correctionForce = (directionDamping - averageDamping) * suspensionVelocity;
+				var correctionForce = DamperForces[i] - _averageDamperForces[i];
 
 				// Clamp correction to avoid extreme transients (e.g. first frame or teleport)
-				const float maxCorrectionForce = 8000f;
+				var maxCorrectionForce = ComputeSuspensionForceLimit(i, SpringStiffness[i], SuspensionMaximumCompression[i]);
 				correctionForce = Math.Clamp(correctionForce, -maxCorrectionForce, maxCorrectionForce);
 
 				if (MathF.Abs(correctionForce) < 1f)
 					continue;
 
-				// Apply along the suspension axis (approximately wheel up direction)
-				var wheelUp = SafeNormalize(wheelOrientations[i].Up, Vector3.UnitY);
-				var impulse = wheelUp * (correctionForce * dt);
-				var contactOffset = wheelPositions[i] - chassisPosition;
+				var suspensionAxis = i < suspensionAxes.Length
+					? SafeNormalize(suspensionAxes[i], Vector3.UnitY)
+					: Vector3.UnitY;
+				var impulse = suspensionAxis * (correctionForce * dt);
+				var attachmentPoint = i < suspensionAttachmentPoints.Length
+					? suspensionAttachmentPoints[i]
+					: chassisPosition;
+				var contactOffset = attachmentPoint - chassisPosition;
 
 				chassisBody.Awake = true;
 				chassisBody.ApplyImpulse(impulse, contactOffset);
@@ -853,7 +901,6 @@ namespace LibreRally.Vehicle.Physics
 		private Vector3 RunForcePredictionPass(
 			ReadOnlySpan<bool> wheelGrounded,
 			ReadOnlySpan<float> wheelContactScales,
-			ReadOnlySpan<float> suspensionCompressions,
 			float engineTorqueAtWheels,
 			ReadOnlySpan<Matrix> wheelOrientations,
 			ReadOnlySpan<Vector3> wheelVelocities,
@@ -870,7 +917,7 @@ namespace LibreRally.Vehicle.Physics
 			}
 
 			ComputeLoadTransfer(longitudinalAccel, lateralAccel, wheelGrounded, wheelContactScales);
-			ComputeAntiRollForces(suspensionCompressions);
+			ComputeAntiRollForces();
 			ComputeDrivetrainTorque(engineTorqueAtWheels);
 			ComputeTyreForces(wheelOrientations, wheelVelocities, brakeTorques, camberAngles, dt);
 			var predictedAcceleration = EstimateForceBasedAcceleration(wheelOrientations);
@@ -987,7 +1034,7 @@ namespace LibreRally.Vehicle.Physics
 		private void ApplyForces(
 			BodyComponent chassisBody,
 			in Matrix chassisWorld,
-			ReadOnlySpan<Vector3> wheelPositions,
+			ReadOnlySpan<Vector3> wheelContactPoints,
 			ReadOnlySpan<Matrix> wheelOrientations,
 			float dt)
 		{
@@ -1014,7 +1061,7 @@ namespace LibreRally.Vehicle.Physics
 				}
 
 				// Build force vector in world space using wheel orientation
-				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out var wheelUp, out var wheelForward);
+				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out _, out var wheelForward);
 
 				var forceWorld = wheelForward * fx + wheelRight * fy;
 				var impulse = forceWorld * dt;
@@ -1024,8 +1071,9 @@ namespace LibreRally.Vehicle.Physics
 					overturningCouple,
 					rollingResistanceMoment,
 					dt);
-				var tyreRadius = TyreModels[i]?.Radius ?? 0.305f;
-				var contactPatchPosition = wheelPositions[i] - wheelUp * MathF.Max(tyreRadius, 0.1f);
+				var contactPatchPosition = i < wheelContactPoints.Length
+					? wheelContactPoints[i]
+					: chassisPosition;
 				var contactOffset = contactPatchPosition - chassisPosition;
 
 				chassisBody.Awake = true;
@@ -1082,6 +1130,75 @@ namespace LibreRally.Vehicle.Physics
 
 			frontAxleLoadFraction = frontAxleLoad / totalLoad;
 			rearAxleLoadFraction = rearAxleLoad / totalLoad;
+		}
+
+		private void ApplyAntiRollLoadTransfer(int leftIndex, int rightIndex, float antiRollStiffness)
+		{
+			var deltaCompression = SuspensionCompression[leftIndex] - SuspensionCompression[rightIndex];
+			var requestedTransfer = deltaCompression * antiRollStiffness;
+			var availableToRight = MathF.Max(CurrentNormalLoads[leftIndex], 0f);
+			var availableToLeft = MathF.Max(CurrentNormalLoads[rightIndex], 0f);
+			var clampedTransfer = Math.Clamp(requestedTransfer, -availableToRight, availableToLeft);
+
+			CurrentNormalLoads[leftIndex] += clampedTransfer;
+			CurrentNormalLoads[rightIndex] -= clampedTransfer;
+		}
+
+		private float ComputeNormalLoadLimit(int wheelIndex)
+		{
+			return MathF.Max(StaticNormalLoads[wheelIndex] * SuspensionForceGuardMultiplier,
+				StaticNormalLoads[wheelIndex] + ComputeSuspensionForceLimit(wheelIndex, SpringStiffness[wheelIndex], SuspensionMaximumCompression[wheelIndex]));
+		}
+
+		private float ComputeSuspensionForceLimit(int wheelIndex, float springStiffness, float maxCompression)
+		{
+			var effectiveCompression = MathF.Max(maxCompression, 0.05f);
+			var springForceAtLimit = MathF.Max(springStiffness, 1f) * effectiveCompression;
+			return MathF.Max(StaticNormalLoads[wheelIndex] * SuspensionForceGuardMultiplier, springForceAtLimit * 1.5f);
+		}
+
+		private float ComputeBumpStopForce(int wheelIndex, float springCompression, float maxCompression, float springStiffness, float forceLimit)
+		{
+			if (maxCompression <= 1e-4f || springCompression <= 0f)
+			{
+				return 0f;
+			}
+
+			var bumpStopStart = maxCompression * BumpStopStartFraction;
+			if (springCompression <= bumpStopStart)
+			{
+				return 0f;
+			}
+
+			var bumpStopTravel = MathF.Max(maxCompression - bumpStopStart, 0.01f);
+			var bumpStopCompression = springCompression - bumpStopStart;
+			var normalizedCompression = Math.Clamp(bumpStopCompression / bumpStopTravel, 0f, 1f);
+			var baseStiffness = springStiffness > 1f
+				? springStiffness
+				: MathF.Max(StaticNormalLoads[wheelIndex] / MathF.Max(maxCompression, 0.05f), 1f);
+			var progressiveStiffness = baseStiffness * (1f + BumpStopProgressiveStiffnessMultiplier * normalizedCompression * normalizedCompression);
+			return Math.Clamp(progressiveStiffness * bumpStopCompression, 0f, forceLimit);
+		}
+
+		private static float SanitizeForce(float value, float maxMagnitude)
+		{
+			if (!float.IsFinite(value))
+			{
+				return 0f;
+			}
+
+			return Math.Clamp(value, 0f, MathF.Max(maxMagnitude, 0f));
+		}
+
+		private static float SanitizeSignedForce(float value, float maxMagnitude)
+		{
+			if (!float.IsFinite(value))
+			{
+				return 0f;
+			}
+
+			var clampedMagnitude = MathF.Max(maxMagnitude, 0f);
+			return Math.Clamp(value, -clampedMagnitude, clampedMagnitude);
 		}
 
 		private static Vector3 SafeNormalize(Vector3 value, Vector3 fallback)

@@ -384,6 +384,9 @@ namespace LibreRally.Vehicle
 
 		// ── Cached arrays for VehicleDynamicsSystem (avoid per-frame allocations) ─
 		private readonly Vector3[] _wheelPositions = new Vector3[VehicleDynamicsSystem.WheelCount];
+		private readonly Vector3[] _wheelContactPoints = new Vector3[VehicleDynamicsSystem.WheelCount];
+		private readonly Vector3[] _suspensionAttachmentPoints = new Vector3[VehicleDynamicsSystem.WheelCount];
+		private readonly Vector3[] _suspensionAxes = new Vector3[VehicleDynamicsSystem.WheelCount];
 		private readonly Vector3[] _wheelVelocities = new Vector3[VehicleDynamicsSystem.WheelCount];
 		private readonly Matrix[] _wheelOrientations = new Matrix[VehicleDynamicsSystem.WheelCount];
 		private readonly float[] _wheelContactScales = new float[VehicleDynamicsSystem.WheelCount];
@@ -854,7 +857,9 @@ namespace LibreRally.Vehicle
 				dynamics.Update(
 					chassisBody,
 					in chassisWorld,
-					_wheelPositions,
+					_wheelContactPoints,
+					_suspensionAttachmentPoints,
+					_suspensionAxes,
 					_wheelVelocities,
 					_wheelOrientations,
 					_wheelContactScales,
@@ -912,6 +917,9 @@ namespace LibreRally.Vehicle
 
 				if (wheelBody == null || wheelSettings == null)
 				{
+					_wheelContactPoints[i] = Vector3.Zero;
+					_suspensionAttachmentPoints[i] = Vector3.Zero;
+					_suspensionAxes[i] = fallbackUp;
 					_wheelContactScales[i] = 0f;
 					_wheelGrounded[i] = false;
 					_suspensionCompressions[i] = 0f;
@@ -931,8 +939,11 @@ namespace LibreRally.Vehicle
 				var nonSpinUp = ProjectOnPlane(fallbackUp, wheelRight);
 				var wheelUp = SafeNormalize(nonSpinUp, fallbackUp);
 				var wheelFwd = SafeNormalize(Vector3.Cross(wheelRight, wheelUp), fallbackLongitudinal);
+				var suspensionAxis = TransformDirection(chassisWorld, wheelSettings.SuspensionLocalAxis, fallbackUp);
 
 				_wheelPositions[i] = wheelWorld.TranslationVector;
+				_suspensionAttachmentPoints[i] = Vector3.TransformCoordinate(wheelSettings.SuspensionLocalOffsetA, chassisWorld);
+				_suspensionAxes[i] = suspensionAxis;
 
 				var wheelPointOffset = _wheelPositions[i] - chassisWorld.TranslationVector;
 				_wheelVelocities[i] = ComputePointVelocity(
@@ -951,11 +962,11 @@ namespace LibreRally.Vehicle
 
 				// Measure suspension travel directly from the current chassis↔wheel relative offset
 				// on the same axis/anchors used by the BEPU suspension constraints.
-				_suspensionCompressions[i] = MeasureSuspensionCompression(chassisWorld, wheelWorld, wheelSettings, fallbackUp);
+				_suspensionCompressions[i] = MeasureSuspensionCompression(chassisWorld, wheelWorld, wheelSettings, suspensionAxis);
 
 				// Ground probe for contact detection. Use a soft contact scale so the tyre model
 				// fades load out near contact loss instead of flipping between full static load and zero.
-				var contactScale = ProbeWheelContactScale(chassisBody, wheelBody, wheelSettings, _wheelPositions[i], wheelUp);
+				var contactScale = ProbeWheelContactScale(chassisBody, wheelBody, wheelSettings, _wheelPositions[i], wheelUp, out _wheelContactPoints[i]);
 				_wheelContactScales[i] = contactScale;
 				_wheelGrounded[i] = contactScale > 0.05f;
 				var dynamicsIndex = wheelSettings.DynamicsIndex >= 0 ? wheelSettings.DynamicsIndex : i;
@@ -1649,22 +1660,26 @@ namespace LibreRally.Vehicle
 			BodyComponent wheelBody,
 			WheelSettings wheelSettings,
 			Vector3 wheelPosition,
-			Vector3 wheelUp)
+			Vector3 wheelUp,
+			out Vector3 contactPoint)
 		{
 			var simulation = wheelBody.Simulation;
 			var tyreModel = wheelSettings.TyreModel;
 			if (simulation == null || tyreModel == null)
 			{
+				contactPoint = wheelPosition - wheelUp * 0.35f;
 				return 0f;
 			}
 
 			var staticNormalLoad = Math.Max(wheelSettings.StaticNormalLoad, 0f);
 			if (staticNormalLoad <= 0f)
 			{
+				contactPoint = wheelPosition;
 				return 0f;
 			}
 
 			var wheelRadius = Math.Max(tyreModel.Radius, 0.1f);
+			contactPoint = wheelPosition - wheelUp * wheelRadius;
 			var rayOrigin = wheelPosition + wheelUp * (wheelRadius + GroundProbeMargin);
 			var rayDirection = -wheelUp;
 			var rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
@@ -1687,6 +1702,7 @@ namespace LibreRally.Vehicle
 					// the section actually in contact beneath the wheel.
 					bestDistance = hit.Distance;
 					bestSurfaceType = ResolveSurfaceType(hit.Collidable);
+					contactPoint = rayOrigin + rayDirection * hit.Distance;
 				}
 			}
 
@@ -1902,6 +1918,11 @@ namespace LibreRally.Vehicle
 
 		private Vector3 ComputeWheelSurfaceVfxPosition(int wheelIndex, float tyreRadius)
 		{
+			if (_wheelContactScales[wheelIndex] > 0.01f)
+			{
+				return _wheelContactPoints[wheelIndex];
+			}
+
 			var wheelUp = _wheelOrientations[wheelIndex].Up;
 			var verticalOffset = MathF.Max(tyreRadius * WheelSurfaceVfxContactPatchRadiusScale, WheelSurfaceVfxMinVerticalOffset);
 			return _wheelPositions[wheelIndex] - wheelUp * verticalOffset;
@@ -1911,12 +1932,14 @@ namespace LibreRally.Vehicle
 			in Matrix chassisWorld,
 			in Matrix wheelWorld,
 			WheelSettings wheelSettings,
-			Vector3 fallbackAxis)
+			Vector3 suspensionAxisWorld)
 		{
-			var suspensionAxisWorld = TransformDirection(chassisWorld, wheelSettings.SuspensionLocalAxis, fallbackAxis);
 			var suspensionAnchorA = Vector3.TransformCoordinate(wheelSettings.SuspensionLocalOffsetA, chassisWorld);
 			var suspensionAnchorB = Vector3.TransformCoordinate(wheelSettings.SuspensionLocalOffsetB, wheelWorld);
 			var axisOffset = Vector3.Dot(suspensionAnchorB - suspensionAnchorA, suspensionAxisWorld);
+
+			// Positive compression means the wheel has moved toward the chassis along the suspension axis.
+			// This matches the sign convention used by spring, damper, anti-roll, and telemetry code.
 			return axisOffset - wheelSettings.SuspensionTargetOffset;
 		}
 

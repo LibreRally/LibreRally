@@ -294,6 +294,7 @@ namespace LibreRally.Vehicle
 
 				// Asymmetric damping: store per-wheel bump/rebound/average coefficients
 				var isFront = i < 2;
+				dynamics.SpringStiffness[i] = isFront ? springRateFront : springRateRear;
 				dynamics.BumpDamping[i] = isFront ? dampBumpFront : dampBumpRear;
 				dynamics.ReboundDamping[i] = isFront ? dampReboundFront : dampReboundRear;
 				dynamics.BepuAverageDamping[i] = isFront ? averageDamperFront : averageDamperRear;
@@ -304,6 +305,8 @@ namespace LibreRally.Vehicle
 					ws.TyreModel = tyreModel;
 					ws.StaticNormalLoad = quarterLoad;
 					ws.DynamicsIndex = i;
+					dynamics.SuspensionMaximumCompression[i] = MathF.Max(ws.SuspensionMaximumOffset, 0f);
+					dynamics.SuspensionMaximumDroop[i] = MathF.Max(-ws.SuspensionMinimumOffset, 0f);
 				}
 			}
 
