@@ -775,8 +775,9 @@ namespace LibreRally.Vehicle.Physics
 				state.TreadLife, absVx: MathF.Abs(longitudinalVelocity), dt: dt);
 
 			var effectiveRollingRadius = ComputeEffectiveRollingRadius(normalLoad);
+			state.TyreReactionTorque = 0f;
 			var predictedAngularVelocity = state.AngularVelocity
-			                              + ((driveTorque - brakeReactionTorque - state.TyreReactionTorque) / wheelInertia) * dt;
+			                              + ((driveTorque - brakeReactionTorque) / wheelInertia) * dt;
 
 			// ── Slip ratio (longitudinal) ────────────────────────────────────────
 			// κ = (ω·R − Vx) / max(|Vx|, ε)
