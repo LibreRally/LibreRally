@@ -759,17 +759,13 @@ namespace LibreRally.Vehicle.Physics
 			var torqueError = outputMagnitude - inputMagnitude;
 			if (torqueError <= TorqueConservationTolerance)
 			{
-				if (_drivetrainDiagnosticCooldown > 0)
-				{
-					_drivetrainDiagnosticCooldown--;
-				}
-
+				DecrementDrivetrainDiagnosticCooldown();
 				return;
 			}
 
 			if (_drivetrainDiagnosticCooldown > 0)
 			{
-				_drivetrainDiagnosticCooldown--;
+				DecrementDrivetrainDiagnosticCooldown();
 				return;
 			}
 
@@ -781,6 +777,14 @@ namespace LibreRally.Vehicle.Physics
 		{
 			var shortfall = MathF.Max(0f, MathF.Abs(requestedTorque) - MathF.Abs(deliveredTorque));
 			return MathF.CopySign(shortfall, requestedTorque);
+		}
+
+		private void DecrementDrivetrainDiagnosticCooldown()
+		{
+			if (_drivetrainDiagnosticCooldown > 0)
+			{
+				_drivetrainDiagnosticCooldown--;
+			}
 		}
 
 		private Vector3 RunForcePredictionPass(

@@ -784,7 +784,8 @@ namespace LibreRally.Vehicle.Physics
 			// Reference: Pacejka, §2.2, Eq. 2.5.
 			var wheelLinearSpeed = predictedAngularVelocity * effectiveRollingRadius;
 			var absVx = MathF.Abs(longitudinalVelocity);
-			var denominator = MathF.Max(MathF.Max(absVx, MathF.Abs(wheelLinearSpeed)), MinSpeed);
+			var slipReferenceSpeed = MathF.Max(absVx, MathF.Abs(wheelLinearSpeed));
+			var denominator = MathF.Max(slipReferenceSpeed, MinSpeed);
 			var slipRatio = (wheelLinearSpeed - longitudinalVelocity) / denominator;
 			slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
 			state.SlipRatio = slipRatio;

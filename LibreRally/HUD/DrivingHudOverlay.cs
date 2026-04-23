@@ -539,7 +539,9 @@ namespace LibreRally.HUD
 			if (_assistSummaryLabel != null)
 			{
 				_assistSummaryLabel.Text =
-					$"Slip {Car.DrivenWheelSlipRatio:F2}  |  ABS {FormatAssistState(Car.AbsEnabled, Car.AbsActive)}  |  TCS {FormatTcsState(Car)}  |  scale {Car.TractionControlTorqueScale:F2}  |  drv {Car.Dynamics?.DeliveredDrivetrainTorque ?? 0f,6:F0}/{Car.Dynamics?.RequestedDrivetrainTorque ?? 0f,6:F0}";
+					$"Slip {Car.DrivenWheelSlipRatio:F2}  |  ABS {FormatAssistState(Car.AbsEnabled, Car.AbsActive)}  |  " +
+					$"TCS {FormatTcsState(Car)}  |  scale {Car.TractionControlTorqueScale:F2}  |  " +
+					$"{FormatDrivetrainTorque(Car.Dynamics)}";
 			}
 
 			if (_inputSummaryLabel != null)
@@ -713,6 +715,16 @@ namespace LibreRally.HUD
 			label.Text = car.AbsEnabled || car.TractionControlEnabled ? "ASSISTS RDY" : "ASSISTS OFF";
 			label.TextColor = CopyColor;
 			label.Background = Brush(PanelAltColor);
+		}
+
+		private static string FormatDrivetrainTorque(VehicleDynamicsSystem? dynamics)
+		{
+			if (dynamics == null)
+			{
+				return "drv --/--";
+			}
+
+			return $"drv {dynamics.DeliveredDrivetrainTorque,6:F0}/{dynamics.RequestedDrivetrainTorque,6:F0}";
 		}
 
 		private static void UpdateBar(HudBar? bar, float fraction, Color color, string valueText)
