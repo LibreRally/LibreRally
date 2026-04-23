@@ -305,8 +305,17 @@ namespace LibreRally.Vehicle
 					ws.TyreModel = tyreModel;
 					ws.StaticNormalLoad = quarterLoad;
 					ws.DynamicsIndex = i;
-					dynamics.SuspensionMaximumCompression[i] = MathF.Max(ws.SuspensionMaximumOffset, 0f);
-					dynamics.SuspensionMaximumDroop[i] = MathF.Max(-ws.SuspensionMinimumOffset, 0f);
+
+					// VehicleDynamicsSystem measures travel relative to SuspensionTargetOffset
+					// (current axis offset minus target). Convert the absolute BEPU limit offsets
+					// into bump/droop magnitudes around that target so clamping and spring support
+					// stay aligned with the same signed-compression convention.
+					dynamics.SuspensionMaximumCompression[i] = MathF.Max(
+						ws.SuspensionMaximumOffset - ws.SuspensionTargetOffset,
+						0f);
+					dynamics.SuspensionMaximumDroop[i] = MathF.Max(
+						ws.SuspensionTargetOffset - ws.SuspensionMinimumOffset,
+						0f);
 				}
 			}
 
