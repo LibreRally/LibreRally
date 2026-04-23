@@ -193,6 +193,9 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Rolling-resistance moment per wheel (N·m) about the wheel right axis.</summary>
 		public readonly float[] RollingResistanceMoments = new float[WheelCount];
 
+		/// <summary>Effective per-wheel peak friction coefficient after surface/load/temperature modifiers.</summary>
+		public readonly float[] EffectivePeakFrictionCoefficients = new float[WheelCount];
+
 		/// <summary>Drive torque delivered to each wheel after differential (N·m).</summary>
 		public readonly float[] WheelDriveTorques = new float[WheelCount];
 		private readonly float[] _wheelAngularDriveTorques = new float[WheelCount];
@@ -713,6 +716,7 @@ namespace LibreRally.Vehicle.Physics
 					SelfAligningTorques[i] = 0f;
 					OverturningCouples[i] = 0f;
 					RollingResistanceMoments[i] = 0f;
+					EffectivePeakFrictionCoefficients[i] = 0f;
 					WheelBrakeTorques[i] = brakeTorques[i];
 					WheelTyreReactionTorques[i] = 0f;
 					continue;
@@ -727,6 +731,7 @@ namespace LibreRally.Vehicle.Physics
 					SelfAligningTorques[i] = 0f;
 					OverturningCouples[i] = 0f;
 					RollingResistanceMoments[i] = 0f;
+					EffectivePeakFrictionCoefficients[i] = 0f;
 					WheelStates[i].LateralDeflection = 0f;
 
 					// Still call Update with normalLoad=0 so angular velocity integrates
@@ -740,9 +745,10 @@ namespace LibreRally.Vehicle.Physics
 						in WheelSurfaces[i],
 						dt,
 						out _, out _, out _);
-					WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
-					continue;
-				}
+				WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
+				EffectivePeakFrictionCoefficients[i] = 0f;
+				continue;
+			}
 
 				// Decompose wheel velocity into longitudinal and lateral components
 				// in the wheel's local frame.
@@ -768,7 +774,28 @@ namespace LibreRally.Vehicle.Physics
 					out OverturningCouples[i],
 					out RollingResistanceMoments[i]);
 				WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
+				EffectivePeakFrictionCoefficients[i] = ComputeWheelEffectivePeakFriction(tyreModel, i, MathF.Abs(longVel));
 			}
+		}
+
+		private float ComputeWheelEffectivePeakFriction(TyreModel tyreModel, int wheelIndex, float absLongitudinalVelocity)
+		{
+			var normalLoad = CurrentNormalLoads[wheelIndex];
+			if (normalLoad <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var wheelState = WheelStates[wheelIndex];
+			var gripTemperatureWeight = Math.Clamp(tyreModel.GripTemperatureSurfaceWeight, 0f, 1f);
+			var gripTemperature = gripTemperatureWeight * wheelState.Temperature
+			                      + (1f - gripTemperatureWeight) * wheelState.CoreTemperature;
+			return tyreModel.ComputeEffectiveFriction(
+				normalLoad,
+				in WheelSurfaces[wheelIndex],
+				gripTemperature,
+				wheelState.TreadLife,
+				absLongitudinalVelocity);
 		}
 
 		private float ComputeWheelTractionLimit(int wheelIndex)

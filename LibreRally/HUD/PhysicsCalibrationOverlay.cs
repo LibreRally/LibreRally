@@ -1366,7 +1366,7 @@ namespace LibreRally.HUD
 			content.Widgets.Add(_vehicleNameLabel);
 			content.Widgets.Add(_statusLabel);
 			content.Widgets.Add(CreateSpacer(10));
-			content.Widgets.Add(CreateSectionTitle("Suspension telemetry"));
+			content.Widgets.Add(CreateSectionTitle("Suspension + surface telemetry"));
 			_suspensionTelemetryLabel = CreateSectionBody(string.Empty);
 			_suspensionTelemetryLabel.Wrap = true;
 			content.Widgets.Add(_suspensionTelemetryLabel);
@@ -1630,9 +1630,17 @@ namespace LibreRally.HUD
 				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.RR, "RR")}";
 		}
 
-		private static string FormatSuspensionTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
+		private string FormatSuspensionTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
 		{
-			return $"{wheelLabel} c:{dynamics.SuspensionCompression[wheelIndex] * MetersToMillimeters,5:F0}mm " +
+			var wheelSettings = _car != null && wheelIndex < _car.Wheels.Count
+				? _car.Wheels[wheelIndex].Get<WheelSettings>()
+				: null;
+			var surfaceType = wheelSettings?.CurrentSurface ?? SurfaceType.Tarmac;
+			var surface = dynamics.WheelSurfaces[wheelIndex];
+			var effectivePeakFriction = dynamics.EffectivePeakFrictionCoefficients[wheelIndex];
+			return $"{wheelLabel} {surfaceType,-9} µs:{surface.FrictionCoefficient,4:F2} " +
+			       $"ss:{surface.SlipStiffnessScale,4:F2} µe:{effectivePeakFriction,4:F2} " +
+			       $"c:{dynamics.SuspensionCompression[wheelIndex] * MetersToMillimeters,5:F0}mm " +
 			       $"v:{dynamics.SuspensionVelocity[wheelIndex],5:F2} " +
 			       $"sf:{dynamics.SpringForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +
 			       $"df:{dynamics.DamperForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +

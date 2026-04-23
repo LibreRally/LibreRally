@@ -331,6 +331,50 @@ namespace LibreRally.Tests
 		}
 
 		/// <summary>
+		/// Verifies that surface blending only activates when two hits are close enough to matter.
+		/// </summary>
+		[Fact]
+		public void ComputeSurfaceBlendFactor_ActivatesOnlyInsideBlendWindow()
+		{
+			float blended = RallyCarComponent.ComputeSurfaceBlendFactor(
+				primaryDistance: 0.66f,
+				secondaryDistance: 0.69f,
+				blendDistance: 0.08f);
+			float isolated = RallyCarComponent.ComputeSurfaceBlendFactor(
+				primaryDistance: 0.66f,
+				secondaryDistance: 0.80f,
+				blendDistance: 0.08f);
+
+			Assert.InRange(blended, 0.01f, 0.5f);
+			Assert.Equal(0f, isolated, 3);
+		}
+
+		/// <summary>
+		/// Verifies that track-surface overrides flow into effective tyre-interaction properties.
+		/// </summary>
+		[Fact]
+		public void TrackSurfaceComponent_ResolveSurfaceProperties_AppliesOverrides()
+		{
+			var surface = new TrackSurfaceComponent
+			{
+				SurfaceType = SurfaceType.Gravel,
+				SurfaceFrictionCoefficient = 0.78f,
+				SurfaceSlipStiffnessScale = 0.46f,
+				SurfaceRelaxationLengthScale = 1.45f,
+				SurfaceSlipTolerance = 2.6f,
+				RollingResistanceCoefficient = 0.05f,
+			};
+
+			var resolved = surface.ResolveSurfaceProperties();
+
+			Assert.Equal(0.78f, resolved.FrictionCoefficient, 3);
+			Assert.Equal(0.46f, resolved.SlipStiffnessScale, 3);
+			Assert.Equal(1.45f, resolved.RelaxationLengthScale, 3);
+			Assert.Equal(2.6f, resolved.PeakSlipRatioScale, 3);
+			Assert.Equal(0.05f, resolved.RollingResistance, 3);
+		}
+
+		/// <summary>
 		/// Verifies that wheel-surface VFX intensity stays off for low-slip tarmac running.
 		/// </summary>
 		[Fact]

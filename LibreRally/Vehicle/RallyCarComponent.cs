@@ -23,6 +23,7 @@ namespace LibreRally.Vehicle
 	public class RallyCarComponent : SyncScript
 	{
 		private const float GroundProbeMargin = 0.05f;
+		private const float SurfaceBlendDistance = 0.08f;
 		private const float MinimumWheelContactPointScale = 0.01f;
 		private const float GamePadTriggerDeadzone = 0.08f;
 		private const float GamePadSteerDeadzone = 0.12f;
@@ -929,6 +930,11 @@ namespace LibreRally.Vehicle
 					{
 						dynamics.WheelSurfaces[i] = SurfaceProperties.ForType(SurfaceType.Tarmac);
 					}
+					if (wheelSettings != null)
+					{
+						wheelSettings.CurrentSurface = SurfaceType.Tarmac;
+						wheelSettings.CurrentSurfaceProperties = SurfaceProperties.ForType(SurfaceType.Tarmac);
+					}
 					continue;
 				}
 
@@ -974,7 +980,7 @@ namespace LibreRally.Vehicle
 				if (dynamics != null &&
 				    dynamicsIndex < dynamics.WheelSurfaces.Length)
 				{
-					dynamics.WheelSurfaces[dynamicsIndex] = SurfaceProperties.ForType(wheelSettings.CurrentSurface);
+					dynamics.WheelSurfaces[dynamicsIndex] = wheelSettings.CurrentSurfaceProperties;
 				}
 
 				var isFrontAxle = !IsRearWheel(wheel, wheelSettings);
@@ -1688,8 +1694,12 @@ namespace LibreRally.Vehicle
 			wheelSettings.GroundProbeHits.Clear();
 			simulation.RayCastPenetrating(in rayOrigin, in rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
 
-			var bestDistance = float.PositiveInfinity;
-			var bestSurfaceType = SurfaceType.Tarmac;
+			var primaryDistance = float.PositiveInfinity;
+			var secondaryDistance = float.PositiveInfinity;
+			var primarySurfaceType = SurfaceType.Tarmac;
+			var secondarySurfaceType = SurfaceType.Tarmac;
+			var primarySurfaceProperties = SurfaceProperties.ForType(SurfaceType.Tarmac);
+			var secondarySurfaceProperties = primarySurfaceProperties;
 			foreach (var hit in wheelSettings.GroundProbeHits)
 			{
 				if (hit.Collidable == null || hit.Collidable == wheelBody || hit.Collidable == chassisBody)
@@ -1697,24 +1707,38 @@ namespace LibreRally.Vehicle
 					continue;
 				}
 
-				if (hit.Distance < bestDistance)
+				ResolveSurfaceProperties(hit.Collidable, out var hitSurfaceType, out var hitSurfaceProperties);
+				if (hit.Distance < primaryDistance)
 				{
-					// Surface selection follows the closest valid ground hit so tyre grip reflects
-					// the section actually in contact beneath the wheel.
-					bestDistance = hit.Distance;
-					bestSurfaceType = ResolveSurfaceType(hit.Collidable);
+					secondaryDistance = primaryDistance;
+					secondarySurfaceType = primarySurfaceType;
+					secondarySurfaceProperties = primarySurfaceProperties;
+					primaryDistance = hit.Distance;
+					primarySurfaceType = hitSurfaceType;
+					primarySurfaceProperties = hitSurfaceProperties;
 					contactPoint = rayOrigin + rayDirection * hit.Distance;
+				}
+				else if (hit.Distance < secondaryDistance)
+				{
+					secondaryDistance = hit.Distance;
+					secondarySurfaceType = hitSurfaceType;
+					secondarySurfaceProperties = hitSurfaceProperties;
 				}
 			}
 
-			if (!float.IsFinite(bestDistance))
+			if (!float.IsFinite(primaryDistance))
 			{
 				wheelSettings.CurrentSurface = SurfaceType.Tarmac;
+				wheelSettings.CurrentSurfaceProperties = SurfaceProperties.ForType(SurfaceType.Tarmac);
 				return 0f;
 			}
 
-			wheelSettings.CurrentSurface = bestSurfaceType;
-			return ComputeGroundProbeContactScale(bestDistance, wheelRadius, GroundProbeMargin);
+			var blendFactor = ComputeSurfaceBlendFactor(primaryDistance, secondaryDistance, SurfaceBlendDistance);
+			wheelSettings.CurrentSurface = primarySurfaceType;
+			wheelSettings.CurrentSurfaceProperties = blendFactor > 0f
+				? SurfaceProperties.Lerp(primarySurfaceProperties, secondarySurfaceProperties, blendFactor)
+				: primarySurfaceProperties;
+			return ComputeGroundProbeContactScale(primaryDistance, wheelRadius, GroundProbeMargin);
 		}
 
 		private static SurfaceType ResolveSurfaceType(object collidable)
@@ -1729,6 +1753,49 @@ namespace LibreRally.Vehicle
 			}
 
 			return SurfaceType.Tarmac;
+		}
+
+		private static void ResolveSurfaceProperties(
+			object collidable,
+			out SurfaceType surfaceType,
+			out SurfaceProperties surfaceProperties)
+		{
+			if (collidable is EntityComponent entityComponent)
+			{
+				var surfaceTag = entityComponent.Entity.Get<TrackSurfaceComponent>();
+				if (surfaceTag != null)
+				{
+					surfaceType = surfaceTag.SurfaceType;
+					surfaceProperties = surfaceTag.ResolveSurfaceProperties();
+					return;
+				}
+			}
+
+			surfaceType = SurfaceType.Tarmac;
+			surfaceProperties = SurfaceProperties.ForType(surfaceType);
+		}
+
+		internal static float ComputeSurfaceBlendFactor(float primaryDistance, float secondaryDistance, float blendDistance)
+		{
+			if (!float.IsFinite(primaryDistance) ||
+			    !float.IsFinite(secondaryDistance) ||
+			    secondaryDistance <= primaryDistance)
+			{
+				return 0f;
+			}
+
+			var safeBlendDistance = MathF.Max(blendDistance, 1e-4f);
+			var distanceDelta = secondaryDistance - primaryDistance;
+			if (distanceDelta >= safeBlendDistance)
+			{
+				return 0f;
+			}
+
+			var primaryWeight = 1f / MathF.Max(primaryDistance, 1e-3f);
+			var secondaryWeight = 1f / MathF.Max(secondaryDistance, 1e-3f);
+			var inverseDistanceBlend = secondaryWeight / MathF.Max(primaryWeight + secondaryWeight, 1e-6f);
+			var transitionWeight = 1f - distanceDelta / safeBlendDistance;
+			return Math.Clamp(inverseDistanceBlend * transitionWeight, 0f, 0.5f);
 		}
 
 		internal static float ComputeGroundProbeContactScale(float hitDistance, float wheelRadius, float probeMargin)

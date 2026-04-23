@@ -1,3 +1,5 @@
+using System;
+
 namespace LibreRally.Vehicle.Physics
 {
 	/// <summary>
@@ -49,6 +51,12 @@ namespace LibreRally.Vehicle.Physics
 	///         Values above ~0.0025 m (2.5 mm) trigger hydroplaning risk at speed.
 	///         Reference: The Contact Patch, C1603, §Aqua-planing.</item>
 	///   <item><see cref="RollingResistance"/>: rolling-resistance force coefficient (N per N of load).</item>
+	///   <item><see cref="SlipStiffnessScale"/>: scales the tyre's pure-slip stiffness and brush stiffness.
+	///         Lower values make loose surfaces feel compliant rather than like low-grip asphalt.</item>
+	///   <item><see cref="RelaxationLengthScale"/>: scales carcass relaxation lengths.
+	///         Higher values delay force buildup on deformable or rough surfaces.</item>
+	///   <item><see cref="PeakSlipRatioScale"/>: scales the longitudinal slip ratio at which peak traction occurs.
+	///         Higher values allow more wheelspin before the tyre saturates.</item>
 	///   <item><see cref="DeformationFactor"/>: how much the surface deforms under load (0 = rigid, 1 = fully deformable).
 	///         Affects longitudinal slip behaviour — deformable surfaces tolerate higher slip before saturation.</item>
 	///   <item><see cref="NoiseFactor"/>: road roughness amplitude (0 = smooth, 1 = very rough).
@@ -89,6 +97,24 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Rolling-resistance force coefficient (N per N of load).</summary>
 		public float RollingResistance { get; init; }
 
+		/// <summary>
+		/// Slip-stiffness scale applied to the tyre force-curve slope and brush stiffness.
+		/// Dry asphalt ≈ 1.0, gravel ≈ 0.5, snow ≈ 0.3.
+		/// </summary>
+		public float SlipStiffnessScale { get; init; }
+
+		/// <summary>
+		/// Relaxation-length scale applied before tyre carcass and operating-point modifiers.
+		/// Higher values delay force buildup across the contact patch on loose or rough surfaces.
+		/// </summary>
+		public float RelaxationLengthScale { get; init; }
+
+		/// <summary>
+		/// Scale factor for the longitudinal slip ratio at peak traction.
+		/// Higher values allow more wheelspin before reaching peak force.
+		/// </summary>
+		public float PeakSlipRatioScale { get; init; }
+
 		/// <summary>Deformation factor (0 = rigid, 1 = fully deformable).</summary>
 		public float DeformationFactor { get; init; }
 
@@ -108,65 +134,109 @@ namespace LibreRally.Vehicle.Physics
 		{
 			SurfaceType.Tarmac => new SurfaceProperties
 			{
-				FrictionCoefficient = 1.0f,
+				FrictionCoefficient = 1.10f,
 				Microtexture = 0.8f,
 				Macrotexture = 0.6f,
 				WaterDepth = 0f,
 				RollingResistance = 0.012f,
-				DeformationFactor = 0.0f,
+				SlipStiffnessScale = 1.0f,
+				RelaxationLengthScale = 1.0f,
+				PeakSlipRatioScale = 1.0f,
+				DeformationFactor = 0.02f,
 				NoiseFactor = 0.02f,
 			},
 			SurfaceType.WetTarmac => new SurfaceProperties
 			{
-				FrictionCoefficient = 0.55f,
+				FrictionCoefficient = 0.72f,
 				Microtexture = 0.8f,
 				Macrotexture = 0.6f,
 				WaterDepth = 0.001f,
 				RollingResistance = 0.014f,
-				DeformationFactor = 0.0f,
+				SlipStiffnessScale = 0.88f,
+				RelaxationLengthScale = 1.08f,
+				PeakSlipRatioScale = 1.18f,
+				DeformationFactor = 0.04f,
 				NoiseFactor = 0.03f,
 			},
 			SurfaceType.Gravel => new SurfaceProperties
 			{
-				FrictionCoefficient = 0.65f,
+				FrictionCoefficient = 0.72f,
 				Microtexture = 0.5f,
 				Macrotexture = 0.9f,
 				WaterDepth = 0f,
-				RollingResistance = 0.025f,
-				DeformationFactor = 0.35f,
+				RollingResistance = 0.040f,
+				SlipStiffnessScale = 0.52f,
+				RelaxationLengthScale = 1.35f,
+				PeakSlipRatioScale = 2.30f,
+				DeformationFactor = 0.42f,
 				NoiseFactor = 0.10f,
 			},
 			SurfaceType.Mud => new SurfaceProperties
 			{
-				FrictionCoefficient = 0.45f,
+				FrictionCoefficient = 0.48f,
 				Microtexture = 0.3f,
 				Macrotexture = 0.2f,
 				WaterDepth = 0.002f,
-				RollingResistance = 0.045f,
-				DeformationFactor = 0.60f,
+				RollingResistance = 0.055f,
+				SlipStiffnessScale = 0.38f,
+				RelaxationLengthScale = 1.55f,
+				PeakSlipRatioScale = 2.70f,
+				DeformationFactor = 0.62f,
 				NoiseFactor = 0.15f,
 			},
 			SurfaceType.Snow => new SurfaceProperties
 			{
-				FrictionCoefficient = 0.35f,
+				FrictionCoefficient = 0.30f,
 				Microtexture = 0.2f,
 				Macrotexture = 0.3f,
 				WaterDepth = 0f,
-				RollingResistance = 0.030f,
-				DeformationFactor = 0.40f,
+				RollingResistance = 0.065f,
+				SlipStiffnessScale = 0.30f,
+				RelaxationLengthScale = 1.60f,
+				PeakSlipRatioScale = 3.10f,
+				DeformationFactor = 0.48f,
 				NoiseFactor = 0.08f,
 			},
 			SurfaceType.Ice => new SurfaceProperties
 			{
-				FrictionCoefficient = 0.15f,
+				FrictionCoefficient = 0.18f,
 				Microtexture = 0.05f,
 				Macrotexture = 0.05f,
 				WaterDepth = 0f,
 				RollingResistance = 0.008f,
-				DeformationFactor = 0.0f,
+				SlipStiffnessScale = 0.24f,
+				RelaxationLengthScale = 1.20f,
+				PeakSlipRatioScale = 3.40f,
+				DeformationFactor = 0.02f,
 				NoiseFactor = 0.03f,
 			},
 			_ => ForType(SurfaceType.Tarmac),
 		};
+
+		/// <summary>
+		/// Linearly interpolates two surface property sets for contact blending.
+		/// </summary>
+		/// <param name="a">Primary surface properties.</param>
+		/// <param name="b">Secondary surface properties.</param>
+		/// <param name="t">Blend factor in the range [0, 1].</param>
+		/// <returns>The blended surface properties.</returns>
+		public static SurfaceProperties Lerp(in SurfaceProperties a, in SurfaceProperties b, float t)
+		{
+			var blend = float.IsFinite(t) ? Math.Clamp(t, 0f, 1f) : 0f;
+			static float Interpolate(float from, float to, float alpha) => from + (to - from) * alpha;
+			return new SurfaceProperties
+			{
+				FrictionCoefficient = Interpolate(a.FrictionCoefficient, b.FrictionCoefficient, blend),
+				Microtexture = Interpolate(a.Microtexture, b.Microtexture, blend),
+				Macrotexture = Interpolate(a.Macrotexture, b.Macrotexture, blend),
+				WaterDepth = Interpolate(a.WaterDepth, b.WaterDepth, blend),
+				RollingResistance = Interpolate(a.RollingResistance, b.RollingResistance, blend),
+				SlipStiffnessScale = Interpolate(a.SlipStiffnessScale, b.SlipStiffnessScale, blend),
+				RelaxationLengthScale = Interpolate(a.RelaxationLengthScale, b.RelaxationLengthScale, blend),
+				PeakSlipRatioScale = Interpolate(a.PeakSlipRatioScale, b.PeakSlipRatioScale, blend),
+				DeformationFactor = Interpolate(a.DeformationFactor, b.DeformationFactor, blend),
+				NoiseFactor = Interpolate(a.NoiseFactor, b.NoiseFactor, blend),
+			};
+		}
 	}
 }
