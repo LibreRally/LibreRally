@@ -175,7 +175,7 @@ namespace LibreRally.HUD
 
 			_debugFrame = new Panel
 			{
-				Width = 720,
+				Width = 980,
 				Height = 360,
 				HorizontalAlignment = HorizontalAlignment.Left,
 				VerticalAlignment = VerticalAlignment.Top,
@@ -184,7 +184,7 @@ namespace LibreRally.HUD
 
 			var content = new VerticalStackPanel
 			{
-				Width = 688,
+				Width = 948,
 				Height = 328,
 				HorizontalAlignment = HorizontalAlignment.Center,
 				VerticalAlignment = VerticalAlignment.Center,
@@ -208,7 +208,7 @@ namespace LibreRally.HUD
 			_debugBrakeBar = CreateBarRow(content, "Brake", 260);
 			_debugSteerBar = CreateBarRow(content, "Steer", 260);
 
-			content.Widgets.Add(CreateSectionBody("g=grounded  sr=slip  load/Fx/Fy=kN  dt/bt/rt=Nm  om=rad/s"));
+			content.Widgets.Add(CreateSectionBody("g=grounded  c=mm  v=m/s  sf/df/bf=kN  load/Fx/Fy=kN  sr=slip  om=rad/s"));
 			for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
 			{
 				var label = CreateBodyLabel(string.Empty);
@@ -666,13 +666,15 @@ namespace LibreRally.HUD
 			{
 				_wheelDebugLabels[i].Text =
 					$"{WheelNames[i]} g:{(dynamics.WheelGrounded[i] ? "Y" : "N")} " +
+					$"c:{dynamics.SuspensionCompression[i] * 1000f,6:F0} " +
+					$"v:{dynamics.SuspensionVelocity[i],6:F2} " +
+					$"sf:{dynamics.SpringForces[i] / 1000f,5:F2} " +
+					$"df:{dynamics.DamperForces[i] / 1000f,5:F2} " +
+					$"bf:{dynamics.BumpStopForces[i] / 1000f,5:F2} " +
 					$"sr:{dynamics.WheelStates[i].SlipRatio,5:F2} " +
 					$"load:{dynamics.CurrentNormalLoads[i] / 1000f,5:F2} " +
 					$"fx:{dynamics.LongitudinalForces[i] / 1000f,6:F2} " +
 					$"fy:{dynamics.LateralForces[i] / 1000f,6:F2} " +
-					$"dt:{dynamics.WheelDriveTorques[i],6:F0} " +
-					$"bt:{dynamics.WheelBrakeTorques[i],6:F0} " +
-					$"rt:{dynamics.WheelTyreReactionTorques[i],6:F0} " +
 					$"om:{dynamics.WheelStates[i].AngularVelocity,6:F1}";
 			}
 		}
