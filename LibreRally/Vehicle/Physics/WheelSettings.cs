@@ -68,6 +68,10 @@ namespace LibreRally.Vehicle.Physics
 		[DataMemberIgnore]
 		public SurfaceType CurrentSurface { get; set; } = SurfaceType.Tarmac;
 
+		/// <summary>Current blended surface properties under this wheel. Updated by the ground probe.</summary>
+		[DataMemberIgnore]
+		public SurfaceProperties CurrentSurfaceProperties { get; set; } = SurfaceProperties.ForType(SurfaceType.Tarmac);
+
 		/// <summary>Reusable hit buffer for the tyre ground-contact probe.</summary>
 		[DataMemberIgnore]
 		public List<HitInfo> GroundProbeHits { get; } = [];

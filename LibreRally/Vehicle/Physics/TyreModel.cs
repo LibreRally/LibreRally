@@ -872,6 +872,7 @@ namespace LibreRally.Vehicle.Physics
 			var effectivePatchLength = ComputeEffectivePatchLength(normalLoad);
 			var halfPatch = MathF.Max(effectivePatchLength * 0.5f, 0.005f);
 			var effectiveBrushStiffness = ComputeEffectiveBrushStiffness()
+			                              * ComputeSurfaceSlipStiffnessScale(surface)
 			                              * (1f - surface.DeformationFactor * SurfaceDeformationBrushSoftening);
 
 			// ── Dual-zone lateral brush: adhesion/sliding frontier (λ) ───────────
@@ -968,7 +969,7 @@ namespace LibreRally.Vehicle.Physics
 			// does not inject a non-zero force at rest due to floating-point noise.
 			// Reference: Milliken, "Race Car Vehicle Dynamics", §2.2.
 			var rollingReferenceSpeed = MathF.Max(MathF.Abs(longitudinalVelocity), MathF.Abs(wheelLinearSpeed));
-			var rollingResistance = (RollingResistanceCoefficient + surface.RollingResistance)
+			var rollingResistance = MathF.Max(RollingResistanceCoefficient + surface.RollingResistance, 0f)
 			                        * ComputeStandingWaveResistanceFactor(rollingReferenceSpeed)
 			                        * normalLoad;
 			const float rollingResistanceDeadband = 0.01f;
@@ -1445,11 +1446,13 @@ namespace LibreRally.Vehicle.Physics
 			float loadRatio,
 			in SurfaceProperties surface)
 		{
+			var stiffnessScale = ComputeSurfaceSlipStiffnessScale(surface) / ComputeSurfacePeakSlipRatioScale(surface);
 			return _longitudinalPureSlipSet.Evaluate(
 				peakForce,
 				loadRatio,
 				camberAngle: 0f,
-				surface.DeformationFactor);
+				surface.DeformationFactor,
+				stiffnessScale: stiffnessScale);
 		}
 
 		internal TyreMagicFormulaCoefficients EvaluateLateralPureSlipCoefficients(
@@ -1459,12 +1462,15 @@ namespace LibreRally.Vehicle.Physics
 			in SurfaceProperties surface)
 		{
 			var pressureStiffnessFactor = MathF.Sqrt(MathF.Max(TyrePressure, 50f) / ReferencePressure);
+			var stiffnessScale = SidewallStiffness
+			                     * pressureStiffnessFactor
+			                     * ComputeSurfaceSlipStiffnessScale(surface);
 			return _lateralPureSlipSet.Evaluate(
 				peakForce,
 				loadRatio,
 				camberAngle,
 				surface.DeformationFactor,
-				stiffnessScale: SidewallStiffness * pressureStiffnessFactor);
+				stiffnessScale: stiffnessScale);
 		}
 
 		internal float ComputeEffectiveRelaxationLength(in SurfaceProperties surface, bool longitudinal)
@@ -1481,6 +1487,7 @@ namespace LibreRally.Vehicle.Physics
 			var sensitivity = longitudinal
 				? LongitudinalSurfaceRelaxationSensitivity
 				: LateralSurfaceRelaxationSensitivity;
+			var baseSurfaceScale = Math.Clamp(surface.RelaxationLengthScale, 0.5f, 3.0f);
 			var deformationFactor = 1f + Math.Clamp(surface.DeformationFactor, 0f, 1f) * MathF.Max(sensitivity, 0f);
 			// Low-grip surfaces delay carcass force buildup beyond the deformation term alone.
 			var lowGripFactor = 1f + MathF.Max(1f - Math.Clamp(surface.FrictionCoefficient, 0.1f, 1.25f), 0f)
@@ -1489,8 +1496,18 @@ namespace LibreRally.Vehicle.Physics
 			var roughnessFactor = 1f + Math.Clamp(surface.NoiseFactor, 0f, 1f)
 				* (SurfaceRelaxationRoughnessBase + MathF.Max(sensitivity, 0f) * SurfaceRelaxationRoughnessSensitivityScale);
 			var slopeScale = Math.Clamp(operatingPointSlopeScale, RelaxationSlopeMinFactor, RelaxationSlopeMaxFactor);
-			var surfaceAdjustedLength = baseLength * deformationFactor * lowGripFactor * roughnessFactor * slopeScale;
+			var surfaceAdjustedLength = baseLength * baseSurfaceScale * deformationFactor * lowGripFactor * roughnessFactor * slopeScale;
 			return MathF.Max(surfaceAdjustedLength / MathF.Max(CarcassStiffness, 0.1f), 0.05f);
+		}
+
+		internal static float ComputeSurfaceSlipStiffnessScale(in SurfaceProperties surface)
+		{
+			return Math.Clamp(surface.SlipStiffnessScale, 0.15f, 1.5f);
+		}
+
+		internal static float ComputeSurfacePeakSlipRatioScale(in SurfaceProperties surface)
+		{
+			return Math.Clamp(surface.PeakSlipRatioScale, 0.75f, 4.0f);
 		}
 
 		internal float ComputeRelaxationLengthOperatingPointScale(

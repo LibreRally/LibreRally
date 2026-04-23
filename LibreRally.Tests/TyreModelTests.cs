@@ -7,7 +7,19 @@ namespace LibreRally.Tests
 	/// </summary>
 	public class TyreModelTests
 	{
-		private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
+		private static readonly SurfaceProperties Tarmac = new()
+		{
+			FrictionCoefficient = 1.0f,
+			Microtexture = 0.8f,
+			Macrotexture = 0.6f,
+			WaterDepth = 0f,
+			RollingResistance = 0.012f,
+			SlipStiffnessScale = 1.0f,
+			RelaxationLengthScale = 1.0f,
+			PeakSlipRatioScale = 1.0f,
+			DeformationFactor = 0f,
+			NoiseFactor = 0f,
+		};
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
 
 		private static readonly SurfaceProperties DeterministicPacejkaSurface = new()
@@ -17,6 +29,9 @@ namespace LibreRally.Tests
 			Macrotexture = 0.6f,
 			WaterDepth = 0f,
 			RollingResistance = 0f,
+			SlipStiffnessScale = 1.0f,
+			RelaxationLengthScale = 1.0f,
+			PeakSlipRatioScale = 1.0f,
 			DeformationFactor = 0f,
 			NoiseFactor = 0f,
 		};
@@ -126,6 +141,26 @@ namespace LibreRally.Tests
 			Assert.True(highLoad.B > lowLoad.B);
 			Assert.True(cambered.B > lowLoad.B);
 			Assert.True(cambered.E < lowLoad.E);
+		}
+
+		/// <summary>
+		/// Verifies that loose surfaces reduce slip stiffness and move peak longitudinal force to higher slip.
+		/// </summary>
+		[Fact]
+		public void PureSlipCoefficientEvaluation_RespondsToSurfaceSlipStiffnessAndSlipTolerance()
+		{
+			var model = new TyreModel(0.305f);
+			var tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
+			var gravel = SurfaceProperties.ForType(SurfaceType.Gravel);
+
+			var tarmacLateral = model.EvaluateLateralPureSlipCoefficients(3000f, 1f, 0f, tarmac);
+			var gravelLateral = model.EvaluateLateralPureSlipCoefficients(3000f, 1f, 0f, gravel);
+			var tarmacLongitudinal = model.EvaluateLongitudinalPureSlipCoefficients(3000f, 1f, tarmac);
+			var gravelLongitudinal = model.EvaluateLongitudinalPureSlipCoefficients(3000f, 1f, gravel);
+
+			Assert.True(gravelLateral.B < tarmacLateral.B);
+			Assert.True(gravelLongitudinal.B < tarmacLongitudinal.B);
+			Assert.True(gravel.PeakSlipRatioScale > tarmac.PeakSlipRatioScale);
 		}
 
 		/// <summary>
@@ -1321,6 +1356,11 @@ namespace LibreRally.Tests
 				Microtexture = 0.9f,
 				Macrotexture = 0.9f,
 				WaterDepth = 0.002f,
+				RollingResistance = 0f,
+				SlipStiffnessScale = 1.0f,
+				RelaxationLengthScale = 1.0f,
+				PeakSlipRatioScale = 1.0f,
+				DeformationFactor = 0f,
 				NoiseFactor = 0f,
 			};
 
@@ -1330,6 +1370,11 @@ namespace LibreRally.Tests
 				Microtexture = 0.3f,
 				Macrotexture = 0.2f,
 				WaterDepth = 0.002f,
+				RollingResistance = 0f,
+				SlipStiffnessScale = 1.0f,
+				RelaxationLengthScale = 1.0f,
+				PeakSlipRatioScale = 1.0f,
+				DeformationFactor = 0f,
 				NoiseFactor = 0f,
 			};
 
@@ -1539,6 +1584,26 @@ namespace LibreRally.Tests
 			var gravel = SurfaceProperties.ForType(SurfaceType.Gravel);
 
 			Assert.True(gravel.Macrotexture >= 0.8f);
+		}
+
+		/// <summary>
+		/// Verifies that loose surfaces expose softer slip stiffness, more slip tolerance, and higher rolling resistance.
+		/// </summary>
+		[Fact]
+		public void SurfaceDefaults_LooseSurfacesModifyTyreParameters()
+		{
+			var asphalt = SurfaceProperties.ForType(SurfaceType.Tarmac);
+			var gravel = SurfaceProperties.ForType(SurfaceType.Gravel);
+			var snow = SurfaceProperties.ForType(SurfaceType.Snow);
+
+			Assert.True(asphalt.FrictionCoefficient >= 1.05f);
+			Assert.True(gravel.SlipStiffnessScale < asphalt.SlipStiffnessScale);
+			Assert.True(snow.SlipStiffnessScale < gravel.SlipStiffnessScale);
+			Assert.True(gravel.PeakSlipRatioScale > asphalt.PeakSlipRatioScale);
+			Assert.True(snow.PeakSlipRatioScale > gravel.PeakSlipRatioScale);
+			Assert.True(gravel.RollingResistance > asphalt.RollingResistance);
+			Assert.True(snow.RollingResistance > gravel.RollingResistance);
+			Assert.True(gravel.RelaxationLengthScale > asphalt.RelaxationLengthScale);
 		}
 	}
 }
