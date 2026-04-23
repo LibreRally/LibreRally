@@ -43,6 +43,7 @@ namespace LibreRally.Vehicle.Physics
 		private const float SuspensionForceGuardMultiplier = 4.5f;
 		private const float BumpStopStartFraction = 0.8f;
 		private const float BumpStopProgressiveStiffnessMultiplier = 6f;
+		private const float MinimumBumpStopTravel = 0.01f;
 		private static readonly Logger Log = GlobalLogger.GetLogger("VehicleDynamicsSystem");
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
@@ -1170,7 +1171,9 @@ namespace LibreRally.Vehicle.Physics
 				return 0f;
 			}
 
-			var bumpStopTravel = MathF.Max(maxCompression - bumpStopStart, 0.01f);
+			// Keep a small minimum travel so the progressive stop stays well-defined even on
+			// short-travel setups or data with nearly coincident limit values.
+			var bumpStopTravel = MathF.Max(maxCompression - bumpStopStart, MinimumBumpStopTravel);
 			var bumpStopCompression = springCompression - bumpStopStart;
 			var normalizedCompression = Math.Clamp(bumpStopCompression / bumpStopTravel, 0f, 1f);
 			var baseStiffness = springStiffness > 1f

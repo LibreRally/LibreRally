@@ -107,6 +107,8 @@ namespace LibreRally.HUD
 		private readonly List<(Button Button, Label Label)> _categoryButtons = [];
 
 		private const int MaxVisibleFields = 3;
+		private const float MetersToMillimeters = 1000f;
+		private const float NewtonsToKilonewtons = 1000f;
 
 		// ── Public API ───────────────────────────────────────────────────────────
 
@@ -1622,10 +1624,19 @@ namespace LibreRally.HUD
 			}
 
 			_suspensionTelemetryLabel.Text =
-				$"FL c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.FL] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.FL],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.FL] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.FL] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.FL] / 1000f,5:F2}\n" +
-				$"FR c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.FR] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.FR],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.FR] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.FR] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.FR] / 1000f,5:F2}\n" +
-				$"RL c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.RL] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.RL],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.RL] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.RL] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.RL] / 1000f,5:F2}\n" +
-				$"RR c:{dynamics.SuspensionCompression[VehicleDynamicsSystem.RR] * 1000f,5:F0}mm v:{dynamics.SuspensionVelocity[VehicleDynamicsSystem.RR],5:F2} sf:{dynamics.SpringForces[VehicleDynamicsSystem.RR] / 1000f,5:F2} df:{dynamics.DamperForces[VehicleDynamicsSystem.RR] / 1000f,5:F2} bf:{dynamics.BumpStopForces[VehicleDynamicsSystem.RR] / 1000f,5:F2}";
+				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.FL, "FL")}\n" +
+				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.FR, "FR")}\n" +
+				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.RL, "RL")}\n" +
+				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.RR, "RR")}";
+		}
+
+		private static string FormatSuspensionTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
+		{
+			return $"{wheelLabel} c:{dynamics.SuspensionCompression[wheelIndex] * MetersToMillimeters,5:F0}mm " +
+			       $"v:{dynamics.SuspensionVelocity[wheelIndex],5:F2} " +
+			       $"sf:{dynamics.SpringForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +
+			       $"df:{dynamics.DamperForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +
+			       $"bf:{dynamics.BumpStopForces[wheelIndex] / NewtonsToKilonewtons,5:F2}";
 		}
 
 		// ── Input handling ────────────────────────────────────────────────────────

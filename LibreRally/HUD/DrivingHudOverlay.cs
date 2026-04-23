@@ -37,6 +37,11 @@ namespace LibreRally.HUD
 		private static readonly Color BarTrackColor = new(16, 18, 22, 194);
 		private static readonly Color BarInnerColor = new(42, 46, 54, 205);
 		private static readonly ConcurrentDictionary<Color, SolidBrush> BrushCache = [];
+		private const float MetersToMillimeters = 1000f;
+		private const float NewtonsToKilonewtons = 1000f;
+		private const int DebugFrameHorizontalPadding = 32;
+		private const int DebugFrameContentWidth = 948;
+		private const int DebugFrameWidth = DebugFrameContentWidth + DebugFrameHorizontalPadding;
 
 		private sealed class HudBar
 		{
@@ -175,7 +180,7 @@ namespace LibreRally.HUD
 
 			_debugFrame = new Panel
 			{
-				Width = 980,
+				Width = DebugFrameWidth,
 				Height = 360,
 				HorizontalAlignment = HorizontalAlignment.Left,
 				VerticalAlignment = VerticalAlignment.Top,
@@ -184,7 +189,7 @@ namespace LibreRally.HUD
 
 			var content = new VerticalStackPanel
 			{
-				Width = 948,
+				Width = DebugFrameContentWidth,
 				Height = 328,
 				HorizontalAlignment = HorizontalAlignment.Center,
 				VerticalAlignment = VerticalAlignment.Center,
@@ -666,15 +671,15 @@ namespace LibreRally.HUD
 			{
 				_wheelDebugLabels[i].Text =
 					$"{WheelNames[i]} g:{(dynamics.WheelGrounded[i] ? "Y" : "N")} " +
-					$"c:{dynamics.SuspensionCompression[i] * 1000f,6:F0} " +
+					$"c:{dynamics.SuspensionCompression[i] * MetersToMillimeters,6:F0} " +
 					$"v:{dynamics.SuspensionVelocity[i],6:F2} " +
-					$"sf:{dynamics.SpringForces[i] / 1000f,5:F2} " +
-					$"df:{dynamics.DamperForces[i] / 1000f,5:F2} " +
-					$"bf:{dynamics.BumpStopForces[i] / 1000f,5:F2} " +
+					$"sf:{dynamics.SpringForces[i] / NewtonsToKilonewtons,5:F2} " +
+					$"df:{dynamics.DamperForces[i] / NewtonsToKilonewtons,5:F2} " +
+					$"bf:{dynamics.BumpStopForces[i] / NewtonsToKilonewtons,5:F2} " +
 					$"sr:{dynamics.WheelStates[i].SlipRatio,5:F2} " +
-					$"load:{dynamics.CurrentNormalLoads[i] / 1000f,5:F2} " +
-					$"fx:{dynamics.LongitudinalForces[i] / 1000f,6:F2} " +
-					$"fy:{dynamics.LateralForces[i] / 1000f,6:F2} " +
+					$"load:{dynamics.CurrentNormalLoads[i] / NewtonsToKilonewtons,5:F2} " +
+					$"fx:{dynamics.LongitudinalForces[i] / NewtonsToKilonewtons,6:F2} " +
+					$"fy:{dynamics.LateralForces[i] / NewtonsToKilonewtons,6:F2} " +
 					$"om:{dynamics.WheelStates[i].AngularVelocity,6:F1}";
 			}
 		}

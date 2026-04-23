@@ -23,6 +23,7 @@ namespace LibreRally.Vehicle
 	public class RallyCarComponent : SyncScript
 	{
 		private const float GroundProbeMargin = 0.05f;
+		private const float MinimumWheelContactPointScale = 0.01f;
 		private const float GamePadTriggerDeadzone = 0.08f;
 		private const float GamePadSteerDeadzone = 0.12f;
 		private const float SleepLinearSpeedThreshold = 0.10f;
@@ -1918,7 +1919,7 @@ namespace LibreRally.Vehicle
 
 		private Vector3 ComputeWheelSurfaceVfxPosition(int wheelIndex, float tyreRadius)
 		{
-			if (_wheelContactScales[wheelIndex] > 0.01f)
+			if (_wheelContactScales[wheelIndex] > MinimumWheelContactPointScale)
 			{
 				return _wheelContactPoints[wheelIndex];
 			}
