@@ -39,6 +39,12 @@ namespace LibreRally.Vehicle.Physics
 	{
 		private const float VectorLengthSquaredEpsilon = 1e-6f;
 		private const float SuspensionTargetOffsetLimit = 0.08f;
+		private const float SuspensionBumpTravelScale = 6f;
+		private const float SuspensionReboundTravelScale = 4f;
+		private const float MinimumBumpTravel = 0.08f;
+		private const float MaximumBumpTravel = 0.18f;
+		private const float MinimumReboundTravel = 0.06f;
+		private const float MaximumReboundTravel = 0.16f;
 
 		/// <summary>
 		/// Creates a root entity containing:
@@ -501,17 +507,10 @@ namespace LibreRally.Vehicle.Physics
 			var rearTyreSpec = VehicleTyreSpecResolver.Resolve(def, front: false);
 
 			float staticNormalLoad = Math.Max(quarterMass * 9.81f, 0f);
-			float ComputeStaticSag(float springRate) => staticNormalLoad / Math.Max(springRate, 1f);
-
-			// Rally suspension typically has ~100-130mm bump and ~80-100mm rebound.
-			// Use 2× and 1.5× static sag as a starting estimate, clamped to realistic limits.
-			float ComputeBumpTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 2.0f, 0.06f, 0.13f);
-			float ComputeReboundTravel(float springRate) => Math.Clamp(ComputeStaticSag(springRate) * 1.5f, 0.04f, 0.10f);
-
-			var bumpTravelF = ComputeBumpTravel(springF);
-			var reboundTravelF = ComputeReboundTravel(springF);
-			var bumpTravelR = ComputeBumpTravel(springR);
-			var reboundTravelR = ComputeReboundTravel(springR);
+			var bumpTravelF = ComputeBumpTravel(staticNormalLoad, springF);
+			var reboundTravelF = ComputeReboundTravel(staticNormalLoad, springF);
+			var bumpTravelR = ComputeBumpTravel(staticNormalLoad, springR);
+			var reboundTravelR = ComputeReboundTravel(staticNormalLoad, springR);
 			var springHeightAdjustmentF = GetSignedVar("springheight_F_asphalt", GetSignedVar("springheight_F", 0f));
 			var springHeightAdjustmentR = GetSignedVar("springheight_R_asphalt", GetSignedVar("springheight_R", 0f));
 
@@ -557,6 +556,30 @@ namespace LibreRally.Vehicle.Physics
 
 			return (GetWheel("wheel_FL", true), GetWheel("wheel_FR", true),
 				GetWheel("wheel_RL", false), GetWheel("wheel_RR", false));
+		}
+
+		internal static float ComputeStaticSag(float staticNormalLoad, float springRate)
+		{
+			return MathF.Max(staticNormalLoad, 0f) / MathF.Max(springRate, 1f);
+		}
+
+		internal static float ComputeBumpTravel(float staticNormalLoad, float springRate)
+		{
+			// The simplified wheel-on-rail suspension underestimates real damper stroke relative to
+			// chassis/wheel-center motion. Keeping generous bump travel avoids slamming into the hard
+			// limits on rally landings, which otherwise injects violent energy back into the chassis.
+			return Math.Clamp(
+				ComputeStaticSag(staticNormalLoad, springRate) * SuspensionBumpTravelScale,
+				MinimumBumpTravel,
+				MaximumBumpTravel);
+		}
+
+		internal static float ComputeReboundTravel(float staticNormalLoad, float springRate)
+		{
+			return Math.Clamp(
+				ComputeStaticSag(staticNormalLoad, springRate) * SuspensionReboundTravelScale,
+				MinimumReboundTravel,
+				MaximumReboundTravel);
 		}
 
 		/// <summary>

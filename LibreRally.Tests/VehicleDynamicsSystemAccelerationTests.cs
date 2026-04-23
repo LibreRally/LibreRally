@@ -125,5 +125,41 @@ namespace LibreRally.Tests
 
 			Assert.True(highRollCenterTransfer < lowRollCenterTransfer);
 		}
+
+		[Fact]
+		public void ComputeWheelMomentImpulseWorld_ProjectsLocalMomentsOntoWheelAxes()
+		{
+			var wheelForward = Vector3.UnitZ;
+			var wheelRight = Vector3.UnitX;
+
+			var impulse = VehicleDynamicsSystem.ComputeWheelMomentImpulseWorld(
+				wheelForward,
+				wheelRight,
+				overturningCouple: 12f,
+				rollingResistanceMoment: -8f,
+				dt: 0.02f);
+
+			Assert.Equal(-0.16f, impulse.X, 4);
+			Assert.Equal(0f, impulse.Y, 4);
+			Assert.Equal(0.24f, impulse.Z, 4);
+		}
+
+		[Fact]
+		public void ComputeWheelMomentImpulseWorld_FollowsRotatedWheelBasis()
+		{
+			var wheelForward = Vector3.Normalize(new Vector3(1f, 0f, 1f));
+			var wheelRight = Vector3.Normalize(new Vector3(1f, 0f, -1f));
+
+			var impulse = VehicleDynamicsSystem.ComputeWheelMomentImpulseWorld(
+				wheelForward,
+				wheelRight,
+				overturningCouple: 10f,
+				rollingResistanceMoment: 6f,
+				dt: 0.05f);
+
+			Assert.Equal(0.5656854f, impulse.X, 4);
+			Assert.Equal(0f, impulse.Y, 4);
+			Assert.Equal(0.14142136f, impulse.Z, 4);
+		}
 	}
 }

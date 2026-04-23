@@ -390,6 +390,104 @@ namespace LibreRally.HUD
 					Step = 0.01f,
 					Unit = "",
 				},
+				new PhysCalField
+				{
+					Id = "pneumatic-trail",
+					Label = "Pneumatic trail",
+					Description = "Zero-slip pneumatic trail used as the baseline self-aligning torque lever arm. " +
+					              "Higher = heavier steering build-up before the limit. " +
+					              "(magic number — default 0.025 m)",
+					GetValue = () => tyreFL.PneumaticTrail,
+					SetValue = v => ApplyToAllTyres(car, t => t.PneumaticTrail = v),
+					Minimum = 0f,
+					Maximum = 0.08f,
+					Step = 0.001f,
+					Unit = "m",
+				},
+				new PhysCalField
+				{
+					Id = "aligning-torque-residual",
+					Label = "Aligning torque residual",
+					Description = "Small residual Mz retained after the pneumatic trail collapses. " +
+					              "Higher = more steering torque remains near the limit. " +
+					              "(magic number — default 0.08)",
+					GetValue = () => tyreFL.AligningTorqueResidualFactor,
+					SetValue = v => ApplyToAllTyres(car, t => t.AligningTorqueResidualFactor = v),
+					Minimum = 0f,
+					Maximum = 0.25f,
+					Step = 0.005f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "aligning-torque-fx-arm",
+					Label = "Fx aligning moment arm",
+					Description = "Longitudinal-force moment arm used in combined-slip aligning torque while cornering. " +
+					              "Higher = stronger brake/drive influence on steering torque. " +
+					              "(magic number — default 0.008 m)",
+					GetValue = () => tyreFL.AligningTorqueFxMomentArm,
+					SetValue = v => ApplyToAllTyres(car, t => t.AligningTorqueFxMomentArm = v),
+					Minimum = 0f,
+					Maximum = 0.04f,
+					Step = 0.001f,
+					Unit = "m",
+				},
+				new PhysCalField
+				{
+					Id = "overturning-couple-factor",
+					Label = "Overturning couple",
+					Description = "Scale factor for tyre overturning couple Mx from lateral load and camber. " +
+					              "Higher = stronger wheel-axis roll moment reaction into the chassis. " +
+					              "(magic number — default 0.015)",
+					GetValue = () => tyreFL.OverturningCoupleFactor,
+					SetValue = v => ApplyToAllTyres(car, t => t.OverturningCoupleFactor = v),
+					Minimum = 0f,
+					Maximum = 0.05f,
+					Step = 0.001f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "overturning-camber-factor",
+					Label = "Overturning camber sensitivity",
+					Description = "Additional camber contribution into tyre overturning couple Mx. " +
+					              "Higher = cambered tyres feed more roll moment into the chassis. " +
+					              "(magic number — default 0.35)",
+					GetValue = () => tyreFL.OverturningCamberFactor,
+					SetValue = v => ApplyToAllTyres(car, t => t.OverturningCamberFactor = v),
+					Minimum = 0f,
+					Maximum = 1.5f,
+					Step = 0.025f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "rolling-resistance-moment-factor",
+					Label = "Rolling resistance moment",
+					Description = "Scale factor for tyre rolling-resistance moment My about the wheel axle. " +
+					              "Higher = stronger rolling drag moment reaction into the chassis. " +
+					              "(magic number — default 0.006)",
+					GetValue = () => tyreFL.RollingResistanceMomentFactor,
+					SetValue = v => ApplyToAllTyres(car, t => t.RollingResistanceMomentFactor = v),
+					Minimum = 0f,
+					Maximum = 0.03f,
+					Step = 0.001f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "rolling-resistance-moment-fx-factor",
+					Label = "Rolling moment Fx coupling",
+					Description = "Additional drive/brake-force coupling into rolling-resistance moment My. " +
+					              "Higher = longitudinal tyre force changes axle reaction more strongly. " +
+					              "(magic number — default 0.08)",
+					GetValue = () => tyreFL.RollingResistanceMomentFxFactor,
+					SetValue = v => ApplyToAllTyres(car, t => t.RollingResistanceMomentFxFactor = v),
+					Minimum = 0f,
+					Maximum = 0.4f,
+					Step = 0.01f,
+					Unit = "",
+				},
 			];
 		}
 
@@ -443,9 +541,9 @@ namespace LibreRally.HUD
 					{
 						Id = "lateral-relaxation",
 						Label = "Lateral relaxation length",
-						Description = "Distance the tyre travels before lateral force reaches steady state (m). " +
-						              "Shorter = snappier turn-in; longer = softer, more gradual. " +
-						              "(magic number — default 0.45 m)",
+						Description = "Baseline distance the tyre travels before lateral force reaches steady state (m). " +
+						              "The live value is also scaled by surface grip and local force-curve slope. " +
+						              "(magic number — default 0.30 m)",
 						GetValue = () => tyreFL.RelaxationLength,
 						SetValue = v => ApplyToAllTyres(car, t => t.RelaxationLength = v),
 						Minimum = 0.05f,
@@ -457,8 +555,8 @@ namespace LibreRally.HUD
 					{
 						Id = "longitudinal-relaxation",
 						Label = "Longitudinal relaxation length",
-						Description = "Distance for drive/brake force to reach steady state (m). " +
-						              "Shorter gives crisper throttle and brake response. " +
+						Description = "Baseline distance for drive/brake force to reach steady state (m). " +
+						              "The live value is also scaled by surface grip and local force-curve slope. " +
 						              "(magic number — default 0.28 m)",
 						GetValue = () => tyreFL.LongitudinalRelaxationLength,
 						SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalRelaxationLength = v),
@@ -499,8 +597,8 @@ namespace LibreRally.HUD
 					{
 						Id = "combined-slip-coupling",
 						Label = "Combined-slip coupling",
-						Description = "How strongly simultaneous Fx and Fy reduce each other (friction ellipse coupling). " +
-						              "Higher = more pronounced combined-slip penalty. " +
+						Description = "MF-style cross-slip weighting strength for Fx/Fy interaction. " +
+						              "Higher = the other slip channel reduces force sooner. " +
 						              "(magic number — default 1.0)",
 						GetValue = () => tyreFL.CombinedSlipCoupling,
 						SetValue = v => ApplyToAllTyres(car, t => t.CombinedSlipCoupling = v),
@@ -542,13 +640,27 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalB = v),
 						Minimum = 2f,
 						Maximum = 30f,
-						Step = 0.1f,
-						Unit = "",
-					},
-					new PhysCalField
-					{
-						Id = "long-c",
-						Label = "Longitudinal C (shape factor)",
+					Step = 0.1f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "long-b-load-sensitivity",
+					Label = "Longitudinal B load sensitivity",
+					Description = "Load sensitivity for longitudinal pure-slip stiffness evaluation. " +
+					              "Higher = drive/brake stiffness rises more with vertical load. " +
+					              "(magic number — default 0.04)",
+					GetValue = () => tyreFL.LongitudinalLoadStiffnessSensitivity,
+					SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalLoadStiffnessSensitivity = v),
+					Minimum = -0.5f,
+					Maximum = 0.5f,
+					Step = 0.01f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "long-c",
+					Label = "Longitudinal C (shape factor)",
 						Description = "Pacejka shape factor for the longitudinal curve. " +
 						              "Typical range 1.5–1.8; higher rounds the peak less sharply. " +
 						              "(magic number — default 1.65)",
@@ -584,13 +696,27 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LateralB = v),
 						Minimum = 2f,
 						Maximum = 30f,
-						Step = 0.1f,
-						Unit = "",
-					},
-					new PhysCalField
-					{
-						Id = "lat-c",
-						Label = "Lateral C (shape factor)",
+					Step = 0.1f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "lat-b-load-sensitivity",
+					Label = "Lateral B load sensitivity",
+					Description = "Load sensitivity for lateral pure-slip stiffness evaluation. " +
+					              "Higher = cornering stiffness rises more with vertical load. " +
+					              "(magic number — default 0.06)",
+					GetValue = () => tyreFL.LateralLoadStiffnessSensitivity,
+					SetValue = v => ApplyToAllTyres(car, t => t.LateralLoadStiffnessSensitivity = v),
+					Minimum = -0.5f,
+					Maximum = 0.5f,
+					Step = 0.01f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "lat-c",
+					Label = "Lateral C (shape factor)",
 						Description = "Pacejka shape factor for the lateral curve. " +
 						              "Typical range 1.1–1.4 for passenger/rally tyres. " +
 						              "(magic number — default 1.3)",
@@ -612,12 +738,40 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LateralE = v),
 						Minimum = -5f,
 						Maximum = 1f,
-						Step = 0.05f,
-						Unit = "",
-					},
-					new PhysCalField
-					{
-						Id = "high-slip-start",
+					Step = 0.05f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "lat-b-camber-sensitivity",
+					Label = "Lateral B camber sensitivity",
+					Description = "Camber sensitivity for lateral pure-slip stiffness evaluation. " +
+					              "Higher = cambered tyres build cornering force more aggressively. " +
+					              "(magic number — default 0.35)",
+					GetValue = () => tyreFL.LateralCamberStiffnessSensitivity,
+					SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberStiffnessSensitivity = v),
+					Minimum = 0f,
+					Maximum = 1.5f,
+					Step = 0.025f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "lat-e-camber-sensitivity",
+					Label = "Lateral E camber sensitivity",
+					Description = "Camber sensitivity for lateral pure-slip curvature evaluation. " +
+					              "More negative = stronger camber-driven reshaping of the lateral falloff. " +
+					              "(magic number — default -0.15)",
+					GetValue = () => tyreFL.LateralCamberCurvatureSensitivity,
+					SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberCurvatureSensitivity = v),
+					Minimum = -1.0f,
+					Maximum = 1.0f,
+					Step = 0.025f,
+					Unit = "",
+				},
+				new PhysCalField
+				{
+					Id = "high-slip-start",
 						Label = "High-slip transition start",
 						Description = "Slip angle (rad) at which the rally high-slip blending begins. " +
 						              "Below this, pure Pacejka applies. ~15° by default. " +

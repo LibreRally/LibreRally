@@ -19,7 +19,7 @@ namespace LibreRally.Vehicle.Physics
 
 	/// <summary>
 	/// Mutable per-wheel thermal and wear state.
-	/// Updated every physics step by <see cref="TyreModel.Update"/>.
+	/// Updated every physics step by <see cref="TyreModel.Update(ref TyreState, float, float, float, float, float, float, in SurfaceProperties, float, out float, out float, out float)"/>.
 	///
 	/// Temperature model reference: Salaani et al., "An Analytical Tire Model for
 	/// Use in Vehicle Dynamics Simulations", SAE 2007-01-0816.
@@ -94,6 +94,20 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public sealed class TyreModel
 	{
+		private readonly TyreMagicFormulaSet _longitudinalPureSlipSet = new(12.0f, 1.65f, -0.5f)
+		{
+			LoadStiffnessSensitivity = 0.04f,
+			SurfaceDeformationSensitivity = 0.3f,
+		};
+
+		private readonly TyreMagicFormulaSet _lateralPureSlipSet = new(10.0f, 1.30f, -0.6f)
+		{
+			LoadStiffnessSensitivity = 0.06f,
+			CamberStiffnessSensitivity = 0.35f,
+			CamberCurvatureSensitivity = -0.15f,
+			SurfaceDeformationSensitivity = 0.2f,
+		};
+
 		// ── Model selection ──────────────────────────────────────────────────────
 
 		/// <summary>
@@ -177,27 +191,100 @@ namespace LibreRally.Vehicle.Physics
 		/// </summary>
 		public float WheelInertia { get; set; } = 0f;
 
+		/// <summary>BeamNG-derived hub radius hint (m) used to refine wheel inertia estimation when explicit inertia is unavailable.</summary>
+		public float? HubRadius { get; set; }
+
+		/// <summary>BeamNG-derived hub width hint (m) used to refine wheel inertia estimation when explicit inertia is unavailable.</summary>
+		public float? HubWidth { get; set; }
+
+		/// <summary>BeamNG-derived wheel offset hint (m). Carried through for wheel-geometry-aware physics work.</summary>
+		public float? WheelOffset { get; set; }
+
 		// ── Pacejka Magic Formula coefficients ───────────────────────────────────
 		// F = D * sin(C * atan(B*x - E*(B*x - atan(B*x))))
 		// B = stiffness factor, C = shape factor, D = peak factor, E = curvature
 
 		/// <summary>Longitudinal stiffness factor B (cornering stiffness / peak force).</summary>
-		public float LongitudinalB { get; set; } = 12.0f;
+		public float LongitudinalB
+		{
+			get => _longitudinalPureSlipSet.BaseB;
+			set => _longitudinalPureSlipSet.BaseB = value;
+		}
 
 		/// <summary>Longitudinal shape factor C. Typically 1.5–1.8 for combined slip models.</summary>
-		public float LongitudinalC { get; set; } = 1.65f;
+		public float LongitudinalC
+		{
+			get => _longitudinalPureSlipSet.BaseC;
+			set => _longitudinalPureSlipSet.BaseC = value;
+		}
 
 		/// <summary>Longitudinal curvature factor E. Negative values extend the curve past the peak.</summary>
-		public float LongitudinalE { get; set; } = -0.5f;
+		public float LongitudinalE
+		{
+			get => _longitudinalPureSlipSet.BaseE;
+			set => _longitudinalPureSlipSet.BaseE = value;
+		}
+
+		/// <summary>
+		/// Load sensitivity applied to the longitudinal pure-slip stiffness factor.
+		/// Higher values make Fx build up more sharply as vertical load rises.
+		/// </summary>
+		public float LongitudinalLoadStiffnessSensitivity
+		{
+			get => _longitudinalPureSlipSet.LoadStiffnessSensitivity;
+			set => _longitudinalPureSlipSet.LoadStiffnessSensitivity = value;
+		}
 
 		/// <summary>Lateral stiffness factor B.</summary>
-		public float LateralB { get; set; } = 10.0f;
+		public float LateralB
+		{
+			get => _lateralPureSlipSet.BaseB;
+			set => _lateralPureSlipSet.BaseB = value;
+		}
 
 		/// <summary>Lateral shape factor C. Typically 1.1–1.4 for passenger/rally tyres.</summary>
-		public float LateralC { get; set; } = 1.30f;
+		public float LateralC
+		{
+			get => _lateralPureSlipSet.BaseC;
+			set => _lateralPureSlipSet.BaseC = value;
+		}
 
 		/// <summary>Lateral curvature factor E.</summary>
-		public float LateralE { get; set; } = -0.6f;
+		public float LateralE
+		{
+			get => _lateralPureSlipSet.BaseE;
+			set => _lateralPureSlipSet.BaseE = value;
+		}
+
+		/// <summary>
+		/// Load sensitivity applied to the lateral pure-slip stiffness factor.
+		/// Higher values make the cornering-stiffness ramp respond more strongly to load.
+		/// </summary>
+		public float LateralLoadStiffnessSensitivity
+		{
+			get => _lateralPureSlipSet.LoadStiffnessSensitivity;
+			set => _lateralPureSlipSet.LoadStiffnessSensitivity = value;
+		}
+
+		/// <summary>
+		/// Camber sensitivity applied to the lateral pure-slip stiffness factor.
+		/// Higher values make cambered tyres build lateral force more aggressively.
+		/// </summary>
+		public float LateralCamberStiffnessSensitivity
+		{
+			get => _lateralPureSlipSet.CamberStiffnessSensitivity;
+			set => _lateralPureSlipSet.CamberStiffnessSensitivity = value;
+		}
+
+		/// <summary>
+		/// Camber sensitivity applied to the lateral pure-slip curvature factor.
+		/// Higher values reshape the lateral force falloff more strongly under camber.
+		/// </summary>
+		public float LateralCamberCurvatureSensitivity
+		{
+			get => _lateralPureSlipSet.CamberCurvatureSensitivity;
+			set => _lateralPureSlipSet.CamberCurvatureSensitivity = value;
+		}
 
 		/// <summary>
 		/// Ratio of lateral grip limit to longitudinal grip limit.
@@ -249,15 +336,16 @@ namespace LibreRally.Vehicle.Physics
 		public float ContactPatchDamping { get; set; } = 4500f;
 
 		/// <summary>
-		/// Lateral relaxation length (m) for the brush tyre transient model.
-		/// Tuned shorter than before because loose-surface scaling now lengthens it dynamically.
+		/// Baseline lateral relaxation length (m) for the brush tyre transient model.
+		/// The effective value is further scaled by loose-surface modifiers and the local force-curve slope.
 		/// </summary>
 		public float RelaxationLength { get; set; } = 0.30f;
 
 		/// <summary>
-		/// Longitudinal relaxation length (m) for the brush tyre transient model.
+		/// Baseline longitudinal relaxation length (m) for the brush tyre transient model.
 		/// Typically shorter than lateral because the tyre carcass is stiffer in
-		/// the rolling direction. Default 0.28 m.
+		/// the rolling direction. The effective value is further scaled by surface and local force-curve slope.
+		/// Default 0.28 m.
 		/// Reference: Pacejka §5.4; brush model braking transient.
 		/// </summary>
 		public float LongitudinalRelaxationLength { get; set; } = 0.28f;
@@ -283,6 +371,42 @@ namespace LibreRally.Vehicle.Physics
 
 		/// <summary>Pneumatic trail at zero slip (m). Mz = trail × Fy. Decreases with slip angle.</summary>
 		public float PneumaticTrail { get; set; } = 0.025f;
+
+		/// <summary>
+		/// Small residual aligning-torque fraction retained after the pneumatic trail has largely collapsed.
+		/// This captures the non-trail remainder of Mz near the limit without dominating low-slip steering feel.
+		/// </summary>
+		public float AligningTorqueResidualFactor { get; set; } = 0.08f;
+
+		/// <summary>
+		/// Effective longitudinal-force moment arm (m) used for the <c>s * Fx</c>-style aligning-torque term.
+		/// This only contributes while the tyre is already generating meaningful lateral force.
+		/// </summary>
+		public float AligningTorqueFxMomentArm { get; set; } = 0.008f;
+
+		/// <summary>
+		/// Scale factor for the tyre overturning couple <c>Mx</c>.
+		/// Higher values increase the wheel-axis roll moment generated by lateral load and camber.
+		/// </summary>
+		public float OverturningCoupleFactor { get; set; } = 0.015f;
+
+		/// <summary>
+		/// Additional camber sensitivity for the overturning couple.
+		/// Higher values make cambered tyres generate more wheel-axis roll moment.
+		/// </summary>
+		public float OverturningCamberFactor { get; set; } = 0.35f;
+
+		/// <summary>
+		/// Scale factor for the rolling-resistance moment <c>My</c>.
+		/// Higher values increase the axle-axis moment that resists wheel rotation.
+		/// </summary>
+		public float RollingResistanceMomentFactor { get; set; } = 0.006f;
+
+		/// <summary>
+		/// Coupling between longitudinal tyre force and rolling-resistance moment.
+		/// Higher values make drive/brake force overlap contribute more strongly to <c>My</c>.
+		/// </summary>
+		public float RollingResistanceMomentFxFactor { get; set; } = 0.08f;
 
 		// ── Thermal / wear ───────────────────────────────────────────────────────
 
@@ -327,10 +451,16 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Minimum grip multiplier when tyre is completely worn (fraction of peak).</summary>
 		public float WornGripFraction { get; set; } = 0.65f;
 
-		/// <summary>Combined-slip interaction coupling strength. Higher values reduce Fx/Fy more when both slips are high.</summary>
+		/// <summary>
+		/// Combined-slip weighting stiffness for the MF-style <c>Gxα</c>/<c>Gyκ</c> reduction functions.
+		/// Higher values make cross-slip reduce the other force channel sooner.
+		/// </summary>
 		public float CombinedSlipCoupling { get; set; } = 0.6f;
 
-		/// <summary>Combined-slip interaction exponent controlling transition sharpness.</summary>
+		/// <summary>
+		/// Combined-slip weighting shape factor for the MF-style <c>Gxα</c>/<c>Gyκ</c> reduction functions.
+		/// Values near 1 are gentle; values near 2 collapse force capacity more aggressively at high cross-slip.
+		/// </summary>
 		public float CombinedSlipExponent { get; set; } = 2.0f;
 
 		// ── Rally high-slip extension ────────────────────────────────────────────
@@ -409,6 +539,9 @@ namespace LibreRally.Vehicle.Physics
 		private const float SurfaceRelaxationLowGripSensitivityScale = 0.25f;
 		private const float SurfaceRelaxationRoughnessBase = 0.1f;
 		private const float SurfaceRelaxationRoughnessSensitivityScale = 0.1f;
+		private const float RelaxationSlopeMinFactor = 0.2f;
+		private const float RelaxationSlopeMaxFactor = 2.0f;
+		private const float RelaxationDerivativeStep = 0.0025f;
 
 		/// <summary>
 		/// Reference tyre pressure (kPa) used to normalise pressure-dependent effects.
@@ -518,9 +651,61 @@ namespace LibreRally.Vehicle.Physics
 			out float lateralForce,
 			out float selfAligningTorque)
 		{
+			Update(
+				ref state,
+				longitudinalVelocity,
+				lateralVelocity,
+				normalLoad,
+				driveTorque,
+				brakeTorque,
+				camberAngle,
+				in surface,
+				dt,
+				out longitudinalForce,
+				out lateralForce,
+				out selfAligningTorque,
+				out _,
+				out _);
+		}
+
+		/// <summary>
+		/// Computes all tyre forces and moments for one wheel for one physics step.
+		/// </summary>
+		/// <param name="state">Per-wheel mutable state (angular velocity, temperature, wear, deflection).</param>
+		/// <param name="longitudinalVelocity">Forward velocity at the contact patch (m/s).</param>
+		/// <param name="lateralVelocity">Lateral velocity at the contact patch (m/s). Positive = rightward.</param>
+		/// <param name="normalLoad">Vertical load on the tyre (N). Must be &gt; 0 for contact.</param>
+		/// <param name="driveTorque">Torque applied to the wheel from the drivetrain (N·m).</param>
+		/// <param name="brakeTorque">Braking torque magnitude (N·m). Always opposes rotation.</param>
+		/// <param name="camberAngle">Camber angle (rad). Positive = top of wheel tilted outward.</param>
+		/// <param name="surface">Surface material properties affecting grip.</param>
+		/// <param name="dt">Physics timestep (s).</param>
+		/// <param name="longitudinalForce">Output: longitudinal force (N).</param>
+		/// <param name="lateralForce">Output: lateral force (N).</param>
+		/// <param name="selfAligningTorque">Output: self-aligning torque (N·m).</param>
+		/// <param name="overturningCouple">Output: overturning couple <c>Mx</c> about the wheel longitudinal axis (N·m).</param>
+		/// <param name="rollingResistanceMoment">Output: rolling-resistance moment <c>My</c> about the wheel lateral axis (N·m).</param>
+		public void Update(
+			ref TyreState state,
+			float longitudinalVelocity,
+			float lateralVelocity,
+			float normalLoad,
+			float driveTorque,
+			float brakeTorque,
+			float camberAngle,
+			in SurfaceProperties surface,
+			float dt,
+			out float longitudinalForce,
+			out float lateralForce,
+			out float selfAligningTorque,
+			out float overturningCouple,
+			out float rollingResistanceMoment)
+		{
 			longitudinalForce = 0f;
 			lateralForce = 0f;
 			selfAligningTorque = 0f;
+			overturningCouple = 0f;
+			rollingResistanceMoment = 0f;
 
 			if (dt < 1e-6f)
 			{
@@ -543,7 +728,7 @@ namespace LibreRally.Vehicle.Physics
 				// Integrate angular velocity from torque even without ground contact
 				var airInertia = WheelInertia > 0f
 					? WheelInertia
-					: MathF.Max(0.5f, Radius * Radius * InertiaScalar);
+					: ComputeEstimatedWheelInertia(ReferenceLoad);
 
 				state.AngularVelocity += (driveTorque / airInertia) * dt;
 
@@ -597,20 +782,33 @@ namespace LibreRally.Vehicle.Physics
 			// F = D · sin(C · atan(B·x − E·(B·x − atan(B·x))))
 			// D = µ · Fz (peak force proportional to load)
 			var peakForce = mu * normalLoad;
+			var referenceLoad = MathF.Max(ReferenceLoad, 1f);
+			var loadRatio = MathF.Max(normalLoad / referenceLoad, 1e-3f);
+			var longitudinalCoefficients = EvaluateLongitudinalPureSlipCoefficients(
+				peakForce,
+				loadRatio,
+				surface);
+			var lateralCoefficients = EvaluateLateralPureSlipCoefficients(
+				peakForce,
+				loadRatio,
+				camberAngle,
+				surface);
 
 			// Longitudinal force Fx(κ)
-			// Deformable surfaces tolerate more slip before saturation — widen the curve.
-			var effectiveLongB = LongitudinalB * (1f - surface.DeformationFactor * 0.3f);
-			var rawFx = MagicFormula(slipRatio, effectiveLongB, LongitudinalC, peakForce, LongitudinalE);
+			var rawFx = MagicFormula(
+				slipRatio,
+				longitudinalCoefficients.B,
+				longitudinalCoefficients.C,
+				longitudinalCoefficients.D,
+				longitudinalCoefficients.E);
 
 			// Lateral force Fy(α) — with rally high-slip extension.
-			// SidewallStiffness scales the lateral cornering stiffness B:
-			//   corneringStiffness *= SidewallStiffness
-			// Higher sidewall stiffness → sharper response.
-			var pressureStiffnessFactor = MathF.Sqrt(MathF.Max(TyrePressure, 50f) / ReferencePressure);
-			var effectiveLatB = LateralB * SidewallStiffness * pressureStiffnessFactor
-			                    * (1f - surface.DeformationFactor * 0.2f);
-			var rawFy = MagicFormulaRally(slipAngle, effectiveLatB, LateralC, peakForce, LateralE);
+			var rawFy = MagicFormulaRally(
+				slipAngle,
+				lateralCoefficients.B,
+				lateralCoefficients.C,
+				lateralCoefficients.D,
+				lateralCoefficients.E);
 
 			// ── Contact-patch brush model (lateral transient) ────────────────────
 			// The brush model smooths lateral force buildup through a deflection state.
@@ -618,7 +816,28 @@ namespace LibreRally.Vehicle.Physics
 			// CarcassStiffness modifies relaxation length: stiffer carcass → shorter relaxation.
 			//   effectiveRelaxationLength = RelaxationLength / CarcassStiffness
 			// Reference: Pacejka §5.4, Eq. 5.31 (relaxation length model).
-			var effectiveRelaxation = ComputeEffectiveRelaxationLength(surface, longitudinal: false);
+			var referenceMu = ComputeEffectiveFriction(referenceLoad, surface, gripTemperature,
+				state.TreadLife, absVx: absVx, dt: dt);
+			var referencePeakForce = referenceMu * referenceLoad;
+			var referenceLongitudinalCoefficients = EvaluateLongitudinalPureSlipCoefficients(
+				referencePeakForce,
+				loadRatio: 1f,
+				surface);
+			var referenceLateralCoefficients = EvaluateLateralPureSlipCoefficients(
+				referencePeakForce,
+				loadRatio: 1f,
+				camberAngle,
+				surface);
+			var lateralRelaxationSlopeScale = ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: false,
+				slipRatio,
+				slipAngle,
+				lateralCoefficients,
+				referenceLateralCoefficients);
+			var effectiveRelaxation = ComputeEffectiveRelaxationLength(
+				surface,
+				longitudinal: false,
+				lateralRelaxationSlopeScale);
 			var relaxSpeed = MathF.Max(absVx, 2f);
 			var deflectionRate = lateralVelocity -
 			                     (state.LateralDeflection * relaxSpeed / MathF.Max(effectiveRelaxation, 0.05f));
@@ -673,7 +892,16 @@ namespace LibreRally.Vehicle.Physics
 			// dδx/dt = (ωR − Vx) − δx · |Vx| / Lx
 			// This gives smoother brake-pedal feel and torque application.
 			// Reference: brush model braking, The Contact Patch C2015, Eq. 21–28.
-			var effectiveLongRelaxation = ComputeEffectiveRelaxationLength(surface, longitudinal: true);
+			var longitudinalRelaxationSlopeScale = ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: true,
+				slipRatio,
+				slipAngle,
+				longitudinalCoefficients,
+				referenceLongitudinalCoefficients);
+			var effectiveLongRelaxation = ComputeEffectiveRelaxationLength(
+				surface,
+				longitudinal: true,
+				longitudinalRelaxationSlopeScale);
 			var longSlipVelocity = wheelLinearSpeed - longitudinalVelocity;
 			var longDeflectionRate = longSlipVelocity -
 			                         (state.LongitudinalDeflection * relaxSpeed / MathF.Max(effectiveLongRelaxation, 0.05f));
@@ -704,7 +932,7 @@ namespace LibreRally.Vehicle.Physics
 				blendAlphaLong = MathF.Min(longSlideBlend, 0.85f);
 			}
 			var blendedFx = blendAlphaLong * rawFx + (1f - blendAlphaLong) * brushFx;
-			ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, peakForce);
+			ApplyCombinedSlipInteraction(ref blendedFx, ref blendedFy, slipRatio, slipAngle);
 
 			// ── Camber thrust ────────────────────────────────────────────────────
 			// Small lateral force from wheel inclination. Fy_camber = γ · Cγ · Fz.
@@ -749,14 +977,30 @@ namespace LibreRally.Vehicle.Physics
 			longitudinalForce = tyreLongitudinalForce + rrForce + carcassShearForce;
 			lateralForce = tyreLateralForce;
 
-			// ── Self-aligning torque (physically-derived pneumatic trail) ────────
+			// ── Self-aligning torque (combined-slip trail + residual + Fx moment arm) ───
 			// The pneumatic trail follows a characteristic rise-then-collapse curve from
 			// the brush model's adhesion/sliding frontier λ.
 			// Pure adhesion:  trail = a/3  (resultant 2/3 along the patch)
 			// Mixed regime:   trail = a · λ · (1 − 2λ/3) / (2 · (1 − λ/2))
 			// This gives the realistic steering-going-light effect near the grip limit.
-			// Reference: The Contact Patch, C2015, Eq. 13, 20.
-			var pneumaticTrail = ComputeBrushPneumaticTrail(halfPatch, lambda);
+			// For combined slip, evaluate trail on an equivalent side-slip input so brake/drive
+			// overlap also unloads steering torque. Reference: Pacejka Eq. 4.E71-4.E76.
+			var corneringStiffness = MathF.Abs(ComputeLateralForceSlopePerTanAlpha(
+				0f,
+				lateralCoefficients.B,
+				lateralCoefficients.C,
+				lateralCoefficients.D,
+				lateralCoefficients.E));
+			var longitudinalStiffness = MathF.Abs(ComputeLongitudinalForceSlope(
+				0f,
+				longitudinalCoefficients.B,
+				longitudinalCoefficients.C,
+				longitudinalCoefficients.D,
+				longitudinalCoefficients.E));
+			var stiffnessRatio = longitudinalStiffness / MathF.Max(corneringStiffness, 1f);
+			var equivalentTrailSlip = ComputeEquivalentTrailSlip(MathF.Tan(slipAngle), slipRatio, stiffnessRatio);
+			var trailLambda = ComputeAdhesionFraction(MathF.Abs(equivalentTrailSlip), peakForce, halfPatch, brushCperLength);
+			var pneumaticTrail = ComputeBrushPneumaticTrail(halfPatch, trailLambda);
 
 			// Scale by the configured PneumaticTrail property as a reference calibration.
 			// The brush model predicts trail ≈ a/3 at zero slip; PneumaticTrail is the user's
@@ -765,7 +1009,23 @@ namespace LibreRally.Vehicle.Physics
 			var trailScale = PneumaticTrail / MathF.Max(referenceTrail, 0.001f);
 			pneumaticTrail *= trailScale;
 
-			selfAligningTorque = pneumaticTrail * lateralForce;
+			var residualAligningTorque = ComputeResidualAligningTorque(equivalentTrailSlip, peakForce, trailLambda);
+			var fxMomentArm = ComputeFxAligningMomentArm(tyreLateralForce, peakForce, camberAngle);
+			selfAligningTorque = pneumaticTrail * lateralForce + residualAligningTorque + fxMomentArm * tyreLongitudinalForce;
+			overturningCouple = ComputeOverturningCouple(
+				normalLoad,
+				tyreLateralForce,
+				peakForce * MathF.Max(FrictionEllipseRatio, 0.1f),
+				camberAngle,
+				effectiveRollingRadius);
+			rollingResistanceMoment = ComputeRollingResistanceMoment(
+				effectiveRollingRadius,
+				rrForce,
+				carcassShearForce,
+				rollingReferenceSpeed,
+				tyreLongitudinalForce,
+				peakForce,
+				longitudinalVelocity != 0f ? longitudinalVelocity : wheelLinearSpeed);
 
 			// ── Wheel angular velocity integration ───────────────────────────────
 			// Iω̇ = T_drive − T_brake − Fx·R
@@ -775,7 +1035,7 @@ namespace LibreRally.Vehicle.Physics
 			// Reference: basic rotational dynamics, F = ma analogy for rotation.
 			var wheelInertia = WheelInertia > 0f
 				? WheelInertia
-				: MathF.Max(0.5f, (normalLoad / 9.81f * 0.05f) * Radius * Radius * InertiaScalar);
+				: ComputeEstimatedWheelInertia(normalLoad);
 
 			var netTorque = driveTorque - longitudinalForce * effectiveRollingRadius;
 			state.AngularVelocity += (netTorque / wheelInertia) * dt;
@@ -1091,7 +1351,42 @@ namespace LibreRally.Vehicle.Physics
 			return MathF.Max(theoreticalLength * MathF.Max(ContactPatchLengthScale, 0.1f) * ReferenceTyreWidth, 1e-6f);
 		}
 
+		internal TyreMagicFormulaCoefficients EvaluateLongitudinalPureSlipCoefficients(
+			float peakForce,
+			float loadRatio,
+			in SurfaceProperties surface)
+		{
+			return _longitudinalPureSlipSet.Evaluate(
+				peakForce,
+				loadRatio,
+				camberAngle: 0f,
+				surface.DeformationFactor);
+		}
+
+		internal TyreMagicFormulaCoefficients EvaluateLateralPureSlipCoefficients(
+			float peakForce,
+			float loadRatio,
+			float camberAngle,
+			in SurfaceProperties surface)
+		{
+			var pressureStiffnessFactor = MathF.Sqrt(MathF.Max(TyrePressure, 50f) / ReferencePressure);
+			return _lateralPureSlipSet.Evaluate(
+				peakForce,
+				loadRatio,
+				camberAngle,
+				surface.DeformationFactor,
+				stiffnessScale: SidewallStiffness * pressureStiffnessFactor);
+		}
+
 		internal float ComputeEffectiveRelaxationLength(in SurfaceProperties surface, bool longitudinal)
+		{
+			return ComputeEffectiveRelaxationLength(surface, longitudinal, 1f);
+		}
+
+		internal float ComputeEffectiveRelaxationLength(
+			in SurfaceProperties surface,
+			bool longitudinal,
+			float operatingPointSlopeScale)
 		{
 			var baseLength = longitudinal ? LongitudinalRelaxationLength : RelaxationLength;
 			var sensitivity = longitudinal
@@ -1104,8 +1399,126 @@ namespace LibreRally.Vehicle.Physics
 			// Rough aggregate adds extra tread-block shuffle, so relaxation grows slightly with surface noise.
 			var roughnessFactor = 1f + Math.Clamp(surface.NoiseFactor, 0f, 1f)
 				* (SurfaceRelaxationRoughnessBase + MathF.Max(sensitivity, 0f) * SurfaceRelaxationRoughnessSensitivityScale);
-			var surfaceAdjustedLength = baseLength * deformationFactor * lowGripFactor * roughnessFactor;
+			var slopeScale = Math.Clamp(operatingPointSlopeScale, RelaxationSlopeMinFactor, RelaxationSlopeMaxFactor);
+			var surfaceAdjustedLength = baseLength * deformationFactor * lowGripFactor * roughnessFactor * slopeScale;
 			return MathF.Max(surfaceAdjustedLength / MathF.Max(CarcassStiffness, 0.1f), 0.05f);
+		}
+
+		internal float ComputeRelaxationLengthOperatingPointScale(
+			bool longitudinal,
+			float slipRatio,
+			float slipAngle,
+			in TyreMagicFormulaCoefficients coefficients,
+			in TyreMagicFormulaCoefficients referenceCoefficients)
+		{
+			var currentSlope = longitudinal
+				? ComputeLongitudinalForceSlope(slipRatio, coefficients.B, coefficients.C, coefficients.D, coefficients.E)
+				: ComputeLateralForceSlopePerTanAlpha(slipAngle, coefficients.B, coefficients.C, coefficients.D, coefficients.E);
+			var referenceSlope = longitudinal
+				? ComputeLongitudinalForceSlope(0f, referenceCoefficients.B, referenceCoefficients.C, referenceCoefficients.D, referenceCoefficients.E)
+				: ComputeLateralForceSlopePerTanAlpha(0f, referenceCoefficients.B, referenceCoefficients.C, referenceCoefficients.D, referenceCoefficients.E);
+			if (MathF.Abs(referenceSlope) <= 1e-4f)
+			{
+				return 1f;
+			}
+
+			return Math.Clamp(currentSlope / referenceSlope, RelaxationSlopeMinFactor, RelaxationSlopeMaxFactor);
+		}
+
+		internal static float ComputeEquivalentTrailSlip(float tanSlipAngle, float slipRatio, float stiffnessRatio)
+		{
+			if (MathF.Abs(tanSlipAngle) <= 1e-6f)
+			{
+				return 0f;
+			}
+
+			var scaledSlipRatio = MathF.Abs(MathF.Max(stiffnessRatio, 0f) * slipRatio);
+			var magnitude = MathF.Sqrt(tanSlipAngle * tanSlipAngle + scaledSlipRatio * scaledSlipRatio);
+			return MathF.Sign(tanSlipAngle) * magnitude;
+		}
+
+		internal float ComputeResidualAligningTorque(float equivalentTrailSlip, float peakForce, float adhesionFraction)
+		{
+			if (MathF.Abs(equivalentTrailSlip) <= 1e-6f || peakForce <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var buildFactor = Math.Clamp((1f - Math.Clamp(adhesionFraction, 0f, 1f))
+			                             * (0.5f + MathF.Abs(equivalentTrailSlip)), 0f, 1f);
+			var lever = MathF.Max(PneumaticTrail, 0.001f) * MathF.Max(AligningTorqueResidualFactor, 0f);
+			return -MathF.Sign(equivalentTrailSlip) * peakForce * lever * buildFactor;
+		}
+
+		internal float ComputeFxAligningMomentArm(float lateralForce, float peakForce, float camberAngle)
+		{
+			if (MathF.Abs(lateralForce) <= 1f || peakForce <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var lateralLoadFactor = Math.Clamp(MathF.Abs(lateralForce) / peakForce, 0f, 1f);
+			var baseMomentArm = MathF.Max(AligningTorqueFxMomentArm, 0f) + MathF.Abs(WheelOffset ?? 0f) * 0.5f;
+			var camberFactor = 1f + Math.Clamp(MathF.Abs(camberAngle), 0f, 0.5f) * 0.5f;
+			return MathF.Sign(lateralForce) * baseMomentArm * lateralLoadFactor * camberFactor;
+		}
+
+		internal float ComputeOverturningCouple(
+			float normalLoad,
+			float lateralForce,
+			float peakLateralForce,
+			float camberAngle,
+			float effectiveRollingRadius)
+		{
+			if (normalLoad <= 1e-3f || peakLateralForce <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var sectionHalfWidth = ComputeEffectiveSectionHalfWidth();
+			var radiusRatio = Math.Clamp(effectiveRollingRadius / MathF.Max(Radius, 0.1f), 0.75f, 1.05f);
+			var lateralArm = sectionHalfWidth * MathF.Max(OverturningCoupleFactor, 0f) * (0.6f + 0.4f * radiusRatio);
+			var camberArm = sectionHalfWidth * MathF.Max(OverturningCamberFactor, 0f) * radiusRatio;
+			var lateralUtilization = Math.Clamp(MathF.Abs(lateralForce) / peakLateralForce, 0f, 1f);
+			var lateralMoment = lateralForce * lateralArm * (0.75f + 0.25f * lateralUtilization);
+			var camberMoment = normalLoad * camberArm * Math.Clamp(camberAngle, -0.5f, 0.5f);
+			return lateralMoment + camberMoment;
+		}
+
+		internal float ComputeRollingResistanceMoment(
+			float effectiveRollingRadius,
+			float rollingResistanceForce,
+			float carcassShearForce,
+			float rollingSpeed,
+			float longitudinalTyreForce,
+			float peakForce,
+			float signedRollingDirection)
+		{
+			if (effectiveRollingRadius <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var baseResistiveForce = MathF.Abs(rollingResistanceForce + carcassShearForce);
+			var baseMoment = baseResistiveForce * effectiveRollingRadius;
+			var standingWaveExcess = MathF.Max(ComputeStandingWaveResistanceFactor(rollingSpeed) - 1f, 0f);
+			var standingWaveMoment = baseMoment * standingWaveExcess;
+			var fxCoupling = peakForce > 1e-3f
+				? Math.Abs(longitudinalTyreForce / peakForce) * MathF.Max(RollingResistanceMomentFxFactor, 0f)
+				: 0f;
+			var slipCouplingMoment = MathF.Abs(longitudinalTyreForce) * effectiveRollingRadius * fxCoupling * 0.1f;
+			var magnitude = (baseMoment + standingWaveMoment) * MathF.Max(RollingResistanceMomentFactor, 0f)
+			                + slipCouplingMoment;
+			var direction = MathF.Abs(signedRollingDirection) > 1e-4f ? MathF.Sign(signedRollingDirection) : 0f;
+			return -direction * magnitude;
+		}
+
+		internal float ComputeEffectiveSectionHalfWidth()
+		{
+			var geometryWidth = HubWidth is { } hubWidth && hubWidth > 0f
+				? MathF.Max(hubWidth, Width)
+				: Width;
+			return MathF.Max(geometryWidth * 0.5f, 0.05f);
 		}
 
 		private void ClampToFrictionEllipse(ref float longitudinalForce, ref float lateralForce, float peakForce)
@@ -1124,35 +1537,98 @@ namespace LibreRally.Vehicle.Physics
 		}
 
 		/// <summary>
-		/// Applies explicit combined-slip coupling between longitudinal and lateral tyre forces.
-		/// Each force channel is attenuated by a smooth function of the other channel's utilization,
-		/// approximating friction-ellipse interaction before the final hard clamp.
+		/// Applies MF-style combined-slip weighting using explicit slip inputs rather than force utilization.
+		/// The current force channels remain the existing hybrid brush/Pacejka blend, but the cross-slip
+		/// reduction now follows <c>Gxα</c>/<c>Gyκ</c>-like cosine weights instead of the old power-law penalty.
 		/// </summary>
-		/// <param name="longitudinalForce">Current longitudinal tyre force Fx (N), updated in-place.</param>
-		/// <param name="lateralForce">Current lateral tyre force Fy (N), updated in-place.</param>
-		/// <param name="peakForce">Peak longitudinal force capacity µ·Fz (N).</param>
-		private void ApplyCombinedSlipInteraction(ref float longitudinalForce, ref float lateralForce, float peakForce)
+		private void ApplyCombinedSlipInteraction(
+			ref float longitudinalForce,
+			ref float lateralForce,
+			float slipRatio,
+			float slipAngle)
 		{
-			const float forceEpsilon = 1e-6f;
-			var fxMax = MathF.Max(peakForce, forceEpsilon);
-			var fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
-			var ux = MathF.Abs(longitudinalForce) / fxMax;
-			var uy = MathF.Abs(lateralForce) / fyMax;
-			var exponent = MathF.Max(CombinedSlipExponent, 1f);
+			longitudinalForce *= ComputeCombinedSlipLongitudinalWeight(slipAngle, slipRatio);
+			lateralForce *= ComputeCombinedSlipLateralWeight(slipRatio, slipAngle);
+		}
+
+		internal float ComputeCombinedSlipLongitudinalWeight(float slipAngle, float slipRatio)
+		{
+			var lateralSlip = MathF.Abs(MathF.Tan(slipAngle));
+			var stiffness = ComputeCombinedSlipStiffness(MathF.Abs(slipRatio));
+			return ComputeCombinedSlipWeight(lateralSlip, stiffness, CombinedSlipExponent, ComputeCombinedSlipCurvature());
+		}
+
+		internal float ComputeCombinedSlipLateralWeight(float slipRatio, float slipAngle)
+		{
+			var longitudinalSlip = MathF.Abs(slipRatio);
+			var stiffness = ComputeCombinedSlipStiffness(MathF.Abs(MathF.Tan(slipAngle)));
+			return ComputeCombinedSlipWeight(longitudinalSlip, stiffness, CombinedSlipExponent, ComputeCombinedSlipCurvature());
+		}
+
+		private float ComputeCombinedSlipStiffness(float coupledSlipMagnitude)
+		{
 			var coupling = MathF.Max(CombinedSlipCoupling, 0f);
-			var invExponent = 1f / exponent;
+			if (coupling <= 1e-6f)
+			{
+				return 0f;
+			}
 
-			var interactionX = MathF.Pow(1f + coupling * MathF.Pow(uy, exponent), -invExponent);
-			var interactionY = MathF.Pow(1f + coupling * MathF.Pow(ux, exponent), -invExponent);
+			// Pacejka's combined-slip weighting coefficients soften as the paired slip grows.
+			// We mirror that behavior with a compact cosine/atan scaling rather than a fixed penalty.
+			var coupledSlipScale = MathF.Cos(MathF.Atan(coupledSlipMagnitude));
+			return MathF.Max(coupling * coupledSlipScale, 0f);
+		}
 
-			longitudinalForce *= interactionX;
-			lateralForce *= interactionY;
+		private float ComputeCombinedSlipCurvature()
+		{
+			return Math.Clamp(0.35f + 0.15f * MathF.Max(CombinedSlipExponent - 1f, 0f), 0f, 0.95f);
+		}
+
+		internal static float ComputeCombinedSlipWeight(
+			float slipInput,
+			float stiffnessFactor,
+			float shapeFactor,
+			float curvatureFactor,
+			float horizontalShift = 0f)
+		{
+			var stiffness = MathF.Max(stiffnessFactor, 0f);
+			if (stiffness <= 1e-6f)
+			{
+				return 1f;
+			}
+
+			var shape = MathF.Max(shapeFactor, 1f);
+			var curvature = Math.Clamp(curvatureFactor, -0.99f, 0.99f);
+			var shiftedSlip = MathF.Abs(slipInput) + horizontalShift;
+			var rawWeight = MagicFormulaCosineWeight(shiftedSlip, stiffness, shape, curvature);
+			var referenceWeight = MagicFormulaCosineWeight(horizontalShift, stiffness, shape, curvature);
+			if (MathF.Abs(referenceWeight) <= 1e-6f)
+			{
+				return Math.Clamp(rawWeight, 0f, 1f);
+			}
+
+			return Math.Clamp(rawWeight / referenceWeight, 0f, 1f);
 		}
 
 		internal float ComputeVerticalStiffness()
 		{
 			var pressureRatio = MathF.Max(TyrePressure, 50f) / ReferencePressure;
 			return MathF.Max(VerticalStiffness * pressureRatio, 10000f);
+		}
+
+		internal float ComputeEstimatedWheelInertia(float normalLoad)
+		{
+			var effectiveLoad = MathF.Max(normalLoad, 1f);
+			var effectiveMass = effectiveLoad / 9.81f * 0.05f;
+			var outerRadius = MathF.Max(Radius, 0.05f);
+			var innerRadius = HubRadius is > 0f and var hubRadius
+				? Math.Clamp(hubRadius, 0.03f, outerRadius * 0.98f)
+				: outerRadius * 0.55f;
+			var widthRatio = HubWidth is > 0f and var hubWidth
+				? Math.Clamp(hubWidth / MathF.Max(Width, 0.05f), 0.6f, 1.5f)
+				: 1f;
+			var polarRadiusSquared = 0.5f * (outerRadius * outerRadius + innerRadius * innerRadius);
+			return MathF.Max(0.5f, effectiveMass * polarRadiusSquared * widthRatio * InertiaScalar);
 		}
 
 		internal float ComputeEffectiveRollingRadius(float normalLoad)
@@ -1252,6 +1728,46 @@ namespace LibreRally.Vehicle.Physics
 		{
 			var bx = b * x;
 			return d * MathF.Sin(c * MathF.Atan(bx - e * (bx - MathF.Atan(bx))));
+		}
+
+		internal static float ComputeLongitudinalForceSlope(float slipRatio, float b, float c, float d, float e)
+		{
+			return ComputeMagicFormulaSlope(slipRatio, b, c, d, e);
+		}
+
+		internal float ComputeLateralForceSlopePerTanAlpha(float slipAngle, float b, float c, float d, float e)
+		{
+			var tanAlpha = MathF.Tan(slipAngle);
+			var forwardTan = tanAlpha + RelaxationDerivativeStep;
+			var backwardTan = tanAlpha - RelaxationDerivativeStep;
+			var forwardAngle = MathF.Atan(forwardTan);
+			var backwardAngle = MathF.Atan(backwardTan);
+			var forwardForce = MagicFormulaRally(forwardAngle, b, c, d, e);
+			var backwardForce = MagicFormulaRally(backwardAngle, b, c, d, e);
+			var denominator = forwardTan - backwardTan;
+			if (MathF.Abs(denominator) <= 1e-6f)
+			{
+				return 0f;
+			}
+
+			return (forwardForce - backwardForce) / denominator;
+		}
+
+		internal static float ComputeMagicFormulaSlope(float x, float b, float c, float d, float e)
+		{
+			var bx = b * x;
+			var atanBx = MathF.Atan(bx);
+			var shapeInput = bx - e * (bx - atanBx);
+			var shapeInputDerivative = b * ((1f - e) + e / (1f + bx * bx));
+			var atanShape = MathF.Atan(shapeInput);
+			var atanShapeDerivative = shapeInputDerivative / (1f + shapeInput * shapeInput);
+			return d * MathF.Cos(c * atanShape) * c * atanShapeDerivative;
+		}
+
+		private static float MagicFormulaCosineWeight(float x, float b, float c, float e)
+		{
+			var bx = b * x;
+			return MathF.Cos(c * MathF.Atan(bx - e * (bx - MathF.Atan(bx))));
 		}
 
 		/// <summary>

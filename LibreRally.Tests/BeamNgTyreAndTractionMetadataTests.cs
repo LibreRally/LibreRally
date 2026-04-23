@@ -28,6 +28,9 @@ namespace LibreRally.Tests
 			                           { "loadSensitivitySlope": 0.000165 },
 			                           { "fullLoadCoef": 0.5 },
 			                           { "softnessCoef": 0.8 },
+			                           { "hubRadius": 0.18 },
+			                           { "hubWidth": 0.16 },
+			                           { "wheelOffset": 0.025 },
 			                           ["FL", "hub", "group", "n1", "n2", "nS", "arm", 1]
 			                         ]
 			                       }
@@ -48,6 +51,9 @@ namespace LibreRally.Tests
 				Assert.Equal(0.000165f, options.LoadSensitivitySlope.GetValueOrDefault(), 6);
 				Assert.Equal(0.5f, options.FullLoadCoef.GetValueOrDefault(), 3);
 				Assert.Equal(0.8f, options.SoftnessCoef.GetValueOrDefault(), 3);
+				Assert.Equal(0.18f, options.HubRadius.GetValueOrDefault(), 3);
+				Assert.Equal(0.16f, options.HubWidth.GetValueOrDefault(), 3);
+				Assert.Equal(0.025f, options.WheelOffset.GetValueOrDefault(), 3);
 			}
 			finally
 			{
@@ -154,11 +160,14 @@ namespace LibreRally.Tests
 							PressurePsi = 30f,
 								FrictionCoef = 1.0f,
 								SlidingFrictionCoef = 0.9f,
-								TreadCoef = 0.8f,
-								NoLoadCoef = 1.6f,
-								LoadSensitivitySlope = 0.000165f,
-								FullLoadCoef = 0.5f,
-								SoftnessCoef = 0.9f,
+							TreadCoef = 0.8f,
+							NoLoadCoef = 1.6f,
+							LoadSensitivitySlope = 0.000165f,
+							FullLoadCoef = 0.5f,
+							SoftnessCoef = 0.9f,
+							HubRadius = 0.19f,
+							HubWidth = 0.17f,
+							WheelOffset = 0.022f,
 							}),
 						new(
 							"tire_R_225_45_17_sport",
@@ -176,6 +185,9 @@ namespace LibreRally.Tests
 								LoadSensitivitySlope = 0.000175f,
 								FullLoadCoef = 0.5f,
 								SoftnessCoef = 1.1f,
+								HubRadius = 0.18f,
+								HubWidth = 0.18f,
+								WheelOffset = 0.018f,
 							}),
 				},
 			};
@@ -191,6 +203,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.9f, frontSpec.BeamNgSlidingFrictionCoefficient.GetValueOrDefault(), 3);
 			Assert.Equal(0.8f, frontSpec.BeamNgTreadCoefficient.GetValueOrDefault(), 3);
 			Assert.Equal(0.9f, frontSpec.BeamNgSoftnessCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.19f, frontSpec.BeamNgHubRadius.GetValueOrDefault(), 3);
+			Assert.Equal(0.17f, frontSpec.BeamNgHubWidth.GetValueOrDefault(), 3);
+			Assert.Equal(0.022f, frontSpec.BeamNgWheelOffset.GetValueOrDefault(), 3);
 
 			Assert.Equal(0.315f, rearSpec.Radius, 3);
 			Assert.Equal(0.205f, rearSpec.Width, 3);
@@ -200,6 +215,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.85f, rearSpec.BeamNgSlidingFrictionCoefficient.GetValueOrDefault(), 3);
 			Assert.Equal(0.7f, rearSpec.BeamNgTreadCoefficient.GetValueOrDefault(), 3);
 			Assert.Equal(1.1f, rearSpec.BeamNgSoftnessCoefficient.GetValueOrDefault(), 3);
+			Assert.Equal(0.18f, rearSpec.BeamNgHubRadius.GetValueOrDefault(), 3);
+			Assert.Equal(0.18f, rearSpec.BeamNgHubWidth.GetValueOrDefault(), 3);
+			Assert.Equal(0.018f, rearSpec.BeamNgWheelOffset.GetValueOrDefault(), 3);
 		}
 
 		[Fact]
@@ -211,6 +229,9 @@ namespace LibreRally.Tests
 				PressureKpa: 220f,
 				PeakFrictionCoefficient: 1.05f,
 				RollingResistanceCoefficient: 0.012f,
+				BeamNgHubRadius: 0.18f,
+				BeamNgHubWidth: 0.16f,
+				BeamNgWheelOffset: 0.025f,
 				BeamNgNoLoadFrictionCoefficient: null,
 				BeamNgFullLoadFrictionCoefficient: null,
 				BeamNgLoadSensitivitySlope: null,
@@ -227,6 +248,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1.25f, tyre.SidewallStiffness, 4);
 			Assert.Equal(baselineTyre.ContactPatchStiffness * 1.25f, tyre.ContactPatchStiffness, 2);
 			Assert.Equal(0.035f, tyre.ContactAreaGripExponent, 4);
+			Assert.Equal(0.18f, tyre.HubRadius.GetValueOrDefault(), 3);
+			Assert.Equal(0.16f, tyre.HubWidth.GetValueOrDefault(), 3);
+			Assert.Equal(0.025f, tyre.WheelOffset.GetValueOrDefault(), 3);
 		}
 
 		[Fact]

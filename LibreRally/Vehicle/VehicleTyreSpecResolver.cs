@@ -11,6 +11,9 @@ namespace LibreRally.Vehicle
 		float PressureKpa,
 		float PeakFrictionCoefficient,
 		float RollingResistanceCoefficient,
+		float? BeamNgHubRadius = null,
+		float? BeamNgHubWidth = null,
+		float? BeamNgWheelOffset = null,
 		float? BeamNgNoLoadFrictionCoefficient = null,
 		float? BeamNgFullLoadFrictionCoefficient = null,
 		float? BeamNgLoadSensitivitySlope = null,
@@ -63,6 +66,9 @@ namespace LibreRally.Vehicle
 			var fullLoadCoef = ResolveLastPositive(options.Select(option => option.FullLoadCoef));
 			var loadSensitivitySlope = ResolveLastPositive(options.Select(option => option.LoadSensitivitySlope));
 			var softnessCoef = ResolveLastPositive(options.Select(option => option.SoftnessCoef));
+			var hubRadius = ResolveLastPositive(options.Select(option => option.HubRadius));
+			var hubWidth = ResolveLastPositive(options.Select(option => option.HubWidth));
+			var wheelOffset = ResolveLastPositive(options.Select(option => option.WheelOffset));
 
 			var peakFrictionCoefficient = DefaultPeakFrictionCoefficient * frictionCoef;
 			if (noLoadCoef.HasValue && fullLoadCoef.HasValue && loadSensitivitySlope.HasValue)
@@ -80,6 +86,9 @@ namespace LibreRally.Vehicle
 				PressureKpa: pressurePsi * PsiToKpa,
 				PeakFrictionCoefficient: Math.Clamp(peakFrictionCoefficient, 0.4f, 2f),
 				RollingResistanceCoefficient: DefaultRollingResistanceCoefficient,
+				BeamNgHubRadius: hubRadius,
+				BeamNgHubWidth: hubWidth,
+				BeamNgWheelOffset: wheelOffset,
 				BeamNgNoLoadFrictionCoefficient: noLoadCoef,
 				BeamNgFullLoadFrictionCoefficient: fullLoadCoef,
 				BeamNgLoadSensitivitySlope: loadSensitivitySlope,

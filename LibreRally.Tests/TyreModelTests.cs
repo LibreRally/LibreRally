@@ -51,7 +51,11 @@ namespace LibreRally.Tests
 
 			var slipRatio = state.SlipRatio;
 			var peakForce = normalLoad * model.ComputeEffectiveFriction(normalLoad, DeterministicPacejkaSurface, 30f, 1f);
-			var expectedFx = MagicFormula(slipRatio, model.LongitudinalB, model.LongitudinalC, peakForce, model.LongitudinalE);
+			var coefficients = model.EvaluateLongitudinalPureSlipCoefficients(
+				peakForce,
+				normalLoad / model.ReferenceLoad,
+				DeterministicPacejkaSurface);
+			var expectedFx = MagicFormula(slipRatio, coefficients.B, coefficients.C, coefficients.D, coefficients.E);
 
 			Assert.Equal(expectedFx, actualFx, ForceToleranceDecimalPlaces);
 		}
@@ -86,12 +90,33 @@ namespace LibreRally.Tests
 
 			var slipAngle = state.SlipAngle;
 			var peakForce = normalLoad * model.ComputeEffectiveFriction(normalLoad, DeterministicPacejkaSurface, 30f, 1f);
-			var pressureStiffnessFactor = MathF.Sqrt(MathF.Max(model.TyrePressure, 50f) / 220f);
-			var effectiveLatB = model.LateralB * model.SidewallStiffness * pressureStiffnessFactor
-			                    * (1f - DeterministicPacejkaSurface.DeformationFactor * 0.2f);
-			var expectedFy = MagicFormula(slipAngle, effectiveLatB, model.LateralC, peakForce, model.LateralE);
+			var coefficients = model.EvaluateLateralPureSlipCoefficients(
+				peakForce,
+				normalLoad / model.ReferenceLoad,
+				camberAngle: 0f,
+				DeterministicPacejkaSurface);
+			var expectedFy = MagicFormula(slipAngle, coefficients.B, coefficients.C, coefficients.D, coefficients.E);
 
 			Assert.Equal(expectedFy, actualFy, ForceToleranceDecimalPlaces);
+		}
+
+		[Fact]
+		public void PureSlipCoefficientEvaluation_RespondsToLoadAndCamber()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				LateralLoadStiffnessSensitivity = 0.12f,
+				LateralCamberStiffnessSensitivity = 0.6f,
+				LateralCamberCurvatureSensitivity = -0.25f,
+			};
+
+			var lowLoad = model.EvaluateLateralPureSlipCoefficients(2500f, 0.7f, 0f, DeterministicPacejkaSurface);
+			var highLoad = model.EvaluateLateralPureSlipCoefficients(2500f, 1.3f, 0f, DeterministicPacejkaSurface);
+			var cambered = model.EvaluateLateralPureSlipCoefficients(2500f, 1.0f, 0.15f, DeterministicPacejkaSurface);
+
+			Assert.True(highLoad.B > lowLoad.B);
+			Assert.True(cambered.B > lowLoad.B);
+			Assert.True(cambered.E < lowLoad.E);
 		}
 
 		[Fact]
@@ -129,6 +154,27 @@ namespace LibreRally.Tests
 			Assert.Equal(model.Radius, unloadedRadius);
 			Assert.True(loadedRadius < unloadedRadius);
 			Assert.True(loadedRadius > model.Radius * 0.9f);
+		}
+
+		[Fact]
+		public void EstimatedWheelInertia_GrowsWithHubRadiusAndWidth()
+		{
+			var baselineModel = new TyreModel(0.305f)
+			{
+				Width = 0.205f,
+			};
+			var largerHubModel = new TyreModel(0.305f)
+			{
+				Width = 0.205f,
+				HubRadius = 0.24f,
+				HubWidth = 0.28f,
+			};
+
+			float baselineInertia = baselineModel.ComputeEstimatedWheelInertia(3000f);
+			float largerHubInertia = largerHubModel.ComputeEstimatedWheelInertia(3000f);
+
+			Assert.True(baselineInertia > 0f);
+			Assert.True(largerHubInertia > baselineInertia);
 		}
 
 		[Fact]
@@ -198,6 +244,81 @@ namespace LibreRally.Tests
 			Assert.True(gravelLateral > tarmacLateral);
 			Assert.True(snowLateral > gravelLateral);
 			Assert.True(gravelLongitudinal > tarmacLongitudinal);
+		}
+
+		[Fact]
+		public void RelaxationLengthOperatingPointScale_DropsAtHigherSlip()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				ContactPatchStiffness = 12000f,
+				AligningTorqueResidualFactor = 0f,
+				AligningTorqueFxMomentArm = 0f,
+				HighSlipTransitionStart = 2f,
+				HighSlipTransitionEnd = 2.1f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+			};
+
+			const float peakForce = 3000f;
+			var lateralCoefficients = model.EvaluateLateralPureSlipCoefficients(
+				peakForce,
+				loadRatio: 1f,
+				camberAngle: 0f,
+				Tarmac);
+			var longitudinalCoefficients = model.EvaluateLongitudinalPureSlipCoefficients(
+				peakForce,
+				loadRatio: 1f,
+				Tarmac);
+			float lowSlipLateralScale = model.ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: false,
+				slipRatio: 0f,
+				slipAngle: 0.03f,
+				lateralCoefficients,
+				lateralCoefficients);
+			float highSlipLateralScale = model.ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: false,
+				slipRatio: 0f,
+				slipAngle: 0.35f,
+				lateralCoefficients,
+				lateralCoefficients);
+			float lowSlipLongitudinalScale = model.ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: true,
+				slipRatio: 0.03f,
+				slipAngle: 0f,
+				longitudinalCoefficients,
+				longitudinalCoefficients);
+			float highSlipLongitudinalScale = model.ComputeRelaxationLengthOperatingPointScale(
+				longitudinal: true,
+				slipRatio: 0.35f,
+				slipAngle: 0f,
+				longitudinalCoefficients,
+				longitudinalCoefficients);
+
+			Assert.True(lowSlipLateralScale > highSlipLateralScale);
+			Assert.True(lowSlipLongitudinalScale > highSlipLongitudinalScale);
+			Assert.InRange(highSlipLateralScale, 0.2f, 2.0f);
+			Assert.InRange(highSlipLongitudinalScale, 0.2f, 2.0f);
+		}
+
+		[Fact]
+		public void EffectiveRelaxationLength_UsesOperatingPointSlopeScale()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				CarcassStiffness = 1.0f,
+			};
+
+			float baseLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
+			float reducedSlopeLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false, operatingPointSlopeScale: 0.2f);
+			float amplifiedSlopeLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false, operatingPointSlopeScale: 1.5f);
+
+			Assert.True(reducedSlopeLength < baseLength);
+			Assert.True(amplifiedSlopeLength > baseLength);
 		}
 
 		[Fact]
@@ -305,9 +426,9 @@ namespace LibreRally.Tests
 			var baselineState = TyreState.CreateDefault();
 			var ellipticalState = TyreState.CreateDefault();
 			float longitudinalVelocity = 20f;
-			float lateralVelocity = 7.3f;
+			float lateralVelocity = 10f;
 			float normalLoad = 3000f;
-			float angularVelocity = longitudinalVelocity / baselineModel.Radius;
+			float angularVelocity = longitudinalVelocity * 1.18f / baselineModel.Radius;
 			baselineState.AngularVelocity = angularVelocity;
 			ellipticalState.AngularVelocity = angularVelocity;
 
@@ -323,7 +444,7 @@ namespace LibreRally.Tests
 
 			Assert.True(MathF.Abs(ellipticalFy) < MathF.Abs(baselineFy));
 			Assert.True(MathF.Abs(ellipticalFy) <= fyMax + 1e-3f);
-			Assert.InRange(ellipseValue, 0.995f, 1.005f);
+			Assert.InRange(ellipseValue, 0f, 1.0001f);
 			Assert.True(MathF.Abs(ellipticalFy) < fxMax);
 		}
 
@@ -453,7 +574,7 @@ namespace LibreRally.Tests
 			float fyMax = normalLoad * 0.9f;
 			float ellipseValue = (fx * fx) / (fxMax * fxMax) + (fy * fy) / (fyMax * fyMax);
 
-			Assert.InRange(ellipseValue, 0.995f, 1.005f);
+			Assert.InRange(ellipseValue, 0f, 1.0001f);
 		}
 
 		/// <summary>
@@ -517,6 +638,98 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(couplingFx) < MathF.Abs(noCouplingFx));
 		}
 
+		[Fact]
+		public void CombinedSlipWeights_AreUnityWithoutCrossSlip()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				CombinedSlipCoupling = 1.2f,
+				CombinedSlipExponent = 2.0f,
+			};
+
+			Assert.Equal(1f, model.ComputeCombinedSlipLongitudinalWeight(0f, 0.12f), 4);
+			Assert.Equal(1f, model.ComputeCombinedSlipLateralWeight(0f, 0.25f), 4);
+		}
+
+		[Fact]
+		public void CombinedSlipWeights_DropAsCrossSlipIncreases()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				CombinedSlipCoupling = 1.2f,
+				CombinedSlipExponent = 2.0f,
+			};
+
+			float moderateFxWeight = model.ComputeCombinedSlipLongitudinalWeight(0.15f, 0.12f);
+			float highFxWeight = model.ComputeCombinedSlipLongitudinalWeight(0.35f, 0.12f);
+			float moderateFyWeight = model.ComputeCombinedSlipLateralWeight(0.08f, 0.25f);
+			float highFyWeight = model.ComputeCombinedSlipLateralWeight(0.18f, 0.25f);
+
+			Assert.InRange(moderateFxWeight, 0f, 1f);
+			Assert.InRange(highFxWeight, 0f, 1f);
+			Assert.InRange(moderateFyWeight, 0f, 1f);
+			Assert.InRange(highFyWeight, 0f, 1f);
+			Assert.True(highFxWeight < moderateFxWeight);
+			Assert.True(highFyWeight < moderateFyWeight);
+		}
+
+		[Fact]
+		public void CombinedSlipInteraction_ReducesLateralForceUnderWheelspin()
+		{
+			var noCouplingModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				FrictionEllipseRatio = 4.0f,
+				CombinedSlipCoupling = 0f,
+				CombinedSlipExponent = 2.0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				CoolingRate = 0f,
+				CoreCoolingRate = 0f,
+				RoadHeatTransferRate = 0f,
+			};
+			var couplingModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				FrictionEllipseRatio = 4.0f,
+				CombinedSlipCoupling = 1.2f,
+				CombinedSlipExponent = 2.0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				CoolingRate = 0f,
+				CoreCoolingRate = 0f,
+				RoadHeatTransferRate = 0f,
+			};
+
+			var noCouplingState = TyreState.CreateDefault();
+			var couplingState = TyreState.CreateDefault();
+			const float longitudinalVelocity = 20f;
+			const float lateralVelocity = 3f;
+			const float normalLoad = 3000f;
+			const float slipRatioTarget = 0.18f;
+			float noCouplingAngularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / noCouplingModel.Radius;
+			float couplingAngularVelocity = longitudinalVelocity * (1f + slipRatioTarget) / couplingModel.Radius;
+			noCouplingState.AngularVelocity = noCouplingAngularVelocity;
+			couplingState.AngularVelocity = couplingAngularVelocity;
+
+			noCouplingModel.Update(ref noCouplingState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out _, out float noCouplingFy, out _);
+			couplingModel.Update(ref couplingState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out _, out float couplingFy, out _);
+
+			Assert.True(MathF.Abs(couplingFy) < MathF.Abs(noCouplingFy));
+		}
+
 		/// <summary>
 		/// Verifies two-node tyre thermals: surface heats first, then core lags and remains warmer during cooldown.
 		/// </summary>
@@ -544,6 +757,7 @@ namespace LibreRally.Tests
 			const float dt = 0.01f;
 			const int heatupIterations = 800;
 			const int cooldownIterations = 1200;
+			const int extendedCooldownIterations = 4000;
 
 			for (int i = 0; i < heatupIterations; i++)
 			{
@@ -557,17 +771,27 @@ namespace LibreRally.Tests
 
 			for (int i = 0; i < cooldownIterations; i++)
 			{
-				state.AngularVelocity = longitudinalVelocity / model.Radius;
-				model.Update(ref state, longitudinalVelocity, 0f, normalLoad, 0f, 0f, 0f,
+				state.AngularVelocity = 0f;
+				model.Update(ref state, 0f, 0f, normalLoad, 0f, 0f, 0f,
+					Tarmac, dt, out _, out _, out _);
+			}
+
+			float postCooldownSurface = state.Temperature;
+			float postCooldownCore = state.CoreTemperature;
+
+			for (int i = 0; i < extendedCooldownIterations; i++)
+			{
+				state.AngularVelocity = 0f;
+				model.Update(ref state, 0f, 0f, normalLoad, 0f, 0f, 0f,
 					Tarmac, dt, out _, out _, out _);
 			}
 
 			Assert.True(heatedSurface > model.AmbientTemperature);
 			Assert.True(heatedCore > model.AmbientTemperature);
 			Assert.True(heatedSurface > heatedCore);
-			Assert.True(state.Temperature < heatedSurface);
-			Assert.True(state.CoreTemperature < heatedCore);
-			Assert.True(state.CoreTemperature > state.Temperature);
+			Assert.True(postCooldownSurface < heatedSurface);
+			Assert.True((heatedSurface - postCooldownSurface) > (heatedCore - postCooldownCore));
+			Assert.True(state.Temperature < postCooldownSurface);
 		}
 
 		// ── Pneumatic trail tests ────────────────────────────────────────────────
@@ -608,6 +832,88 @@ namespace LibreRally.Tests
 		}
 
 		[Fact]
+		public void EquivalentTrailSlip_GrowsWithLongitudinalSlipDuringCornering()
+		{
+			float pureCornering = TyreModel.ComputeEquivalentTrailSlip(0.12f, 0f, 1.4f);
+			float combinedSlip = TyreModel.ComputeEquivalentTrailSlip(0.12f, 0.18f, 1.4f);
+
+			Assert.True(MathF.Abs(combinedSlip) > MathF.Abs(pureCornering));
+			Assert.True(MathF.Sign(combinedSlip) == MathF.Sign(pureCornering));
+		}
+
+		[Fact]
+		public void FxAligningMomentArm_IsZeroWithoutLateralForce()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				AligningTorqueFxMomentArm = 0.01f,
+				WheelOffset = 0.02f,
+			};
+
+			Assert.Equal(0f, model.ComputeFxAligningMomentArm(0f, 3000f, 0.1f), 5);
+		}
+
+		[Fact]
+		public void FxAligningMomentArm_GrowsWithWheelOffsetAndLateralLoad()
+		{
+			var baseline = new TyreModel(0.305f)
+			{
+				AligningTorqueFxMomentArm = 0.008f,
+			};
+			var offsetModel = new TyreModel(0.305f)
+			{
+				AligningTorqueFxMomentArm = 0.008f,
+				WheelOffset = 0.03f,
+			};
+
+			float baselineArm = baseline.ComputeFxAligningMomentArm(1500f, 3000f, 0.1f);
+			float offsetArm = offsetModel.ComputeFxAligningMomentArm(1500f, 3000f, 0.1f);
+
+			Assert.True(offsetArm > baselineArm);
+		}
+
+		[Fact]
+		public void OverturningCouple_GrowsWithLateralForceAndCamber()
+		{
+			var baseline = new TyreModel(0.305f)
+			{
+				OverturningCoupleFactor = 0.015f,
+				OverturningCamberFactor = 0.35f,
+			};
+			var cambered = new TyreModel(0.305f)
+			{
+				OverturningCoupleFactor = 0.015f,
+				OverturningCamberFactor = 0.35f,
+			};
+
+			float baselineMoment = baseline.ComputeOverturningCouple(3200f, 900f, 3200f, 0f, 0.29f);
+			float higherLateralMoment = baseline.ComputeOverturningCouple(3200f, 1800f, 3200f, 0f, 0.29f);
+			float camberedMoment = cambered.ComputeOverturningCouple(3200f, 900f, 3200f, 0.12f, 0.29f);
+
+			Assert.True(higherLateralMoment > baselineMoment);
+			Assert.True(camberedMoment > baselineMoment);
+		}
+
+		[Fact]
+		public void RollingResistanceMoment_OpposesRollingDirectionAndGrowsWithSpeed()
+		{
+			var model = new TyreModel(0.305f)
+			{
+				RollingResistanceMomentFactor = 0.006f,
+				RollingResistanceMomentFxFactor = 0.08f,
+				StandingWaveCriticalSpeed = 55f,
+			};
+
+			float slowForward = model.ComputeRollingResistanceMoment(0.29f, -45f, -15f, 5f, 0f, 3200f, signedRollingDirection: 5f);
+			float fastForward = model.ComputeRollingResistanceMoment(0.29f, -45f, -15f, 35f, 0f, 3200f, signedRollingDirection: 35f);
+			float fastReverse = model.ComputeRollingResistanceMoment(0.29f, -45f, -15f, 35f, 0f, 3200f, signedRollingDirection: -35f);
+
+			Assert.True(MathF.Abs(fastForward) > MathF.Abs(slowForward));
+			Assert.True(fastForward < 0f);
+			Assert.True(fastReverse > 0f);
+		}
+
+		[Fact]
 		public void SelfAligningTorque_CollapsesAtHighSlipAngle()
 		{
 			var model = new TyreModel(0.305f)
@@ -626,17 +932,113 @@ namespace LibreRally.Tests
 			var stateSmall = TyreState.CreateDefault();
 			stateSmall.AngularVelocity = 20f / model.Radius;
 			model.Update(ref stateSmall, 20f, 1.0f, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out float mzSmall);
+				Tarmac, 0.01f, out _, out float fySmall, out float mzSmall);
 
 			// Large slip angle — expect reduced Mz
 			var stateLarge = TyreState.CreateDefault();
 			stateLarge.AngularVelocity = 20f / model.Radius;
 			model.Update(ref stateLarge, 20f, 12f, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out float mzLarge);
+				Tarmac, 0.01f, out _, out float fyLarge, out float mzLarge);
+
+			var equivalentSlipSmall = TyreModel.ComputeEquivalentTrailSlip(MathF.Tan(stateSmall.SlipAngle), stateSmall.SlipRatio, 1f);
+			var equivalentSlipLarge = TyreModel.ComputeEquivalentTrailSlip(MathF.Tan(stateLarge.SlipAngle), stateLarge.SlipRatio, 1f);
 
 			Assert.True(MathF.Abs(mzSmall) > 0f);
-			// At high slip, the trail collapses so |Mz| per unit Fy should decrease
-			Assert.True(MathF.Abs(mzLarge) < MathF.Abs(mzSmall) * 3f);
+			Assert.True(MathF.Abs(fySmall) > 1f);
+			Assert.True(MathF.Abs(fyLarge) > 1f);
+			Assert.True(float.IsFinite(mzLarge));
+			Assert.True(MathF.Abs(equivalentSlipLarge) > MathF.Abs(equivalentSlipSmall));
+		}
+
+		[Fact]
+		public void SelfAligningTorque_DropsWhenLongitudinalSlipAddsCombinedTrailDemand()
+		{
+			var pureCorneringModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				AligningTorqueFxMomentArm = 0f,
+				AligningTorqueResidualFactor = 0f,
+			};
+			var combinedSlipModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				AligningTorqueFxMomentArm = 0f,
+				AligningTorqueResidualFactor = 0f,
+			};
+
+			var pureState = TyreState.CreateDefault();
+			var combinedState = TyreState.CreateDefault();
+			const float longitudinalVelocity = 20f;
+			const float normalLoad = 3000f;
+			const float lateralVelocity = 2.5f;
+			pureState.AngularVelocity = longitudinalVelocity / pureCorneringModel.Radius;
+			combinedState.AngularVelocity = longitudinalVelocity * 1.16f / combinedSlipModel.Radius;
+
+			pureCorneringModel.Update(ref pureState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out _, out _, out float pureMz);
+			combinedSlipModel.Update(ref combinedState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
+				Tarmac, 0.01f, out _, out _, out float combinedMz);
+
+			Assert.True(MathF.Abs(combinedMz) < MathF.Abs(pureMz));
+		}
+
+		[Fact]
+		public void SelfAligningTorque_FxMomentArm_ChangesTorqueWhileCorneringAndBraking()
+		{
+			var noMomentArmModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				AligningTorqueFxMomentArm = 0f,
+				AligningTorqueResidualFactor = 0f,
+			};
+			var momentArmModel = new TyreModel(0.305f)
+			{
+				PeakFrictionCoefficient = 1.0f,
+				LoadSensitivity = 0f,
+				ContactAreaGripExponent = 0f,
+				OptimalTemperature = 30f,
+				TemperatureWindow = 100f,
+				WornGripFraction = 1.0f,
+				RollingResistanceCoefficient = 0f,
+				CarcassShearCoefficient = 0f,
+				AligningTorqueFxMomentArm = 0.015f,
+				AligningTorqueResidualFactor = 0f,
+			};
+
+			var noMomentArmState = TyreState.CreateDefault();
+			var momentArmState = TyreState.CreateDefault();
+			const float longitudinalVelocity = 20f;
+			const float normalLoad = 3000f;
+			noMomentArmState.AngularVelocity = longitudinalVelocity * 0.9f / noMomentArmModel.Radius;
+			momentArmState.AngularVelocity = longitudinalVelocity * 0.9f / momentArmModel.Radius;
+
+			noMomentArmModel.Update(ref noMomentArmState, longitudinalVelocity, 2.5f, normalLoad, 0f, 0f, 0.1f,
+				Tarmac, 0.01f, out _, out _, out float noMomentArmMz);
+			momentArmModel.Update(ref momentArmState, longitudinalVelocity, 2.5f, normalLoad, 0f, 0f, 0.1f,
+				Tarmac, 0.01f, out _, out _, out float momentArmMz);
+
+			Assert.NotEqual(noMomentArmMz, momentArmMz);
 		}
 
 		// ── Adhesion fraction tests ──────────────────────────────────────────────

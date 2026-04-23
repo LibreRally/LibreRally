@@ -156,6 +156,12 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Self-aligning torque per wheel (N·m). Applied to steering system.</summary>
 		public readonly float[] SelfAligningTorques = new float[WheelCount];
 
+		/// <summary>Overturning couple per wheel (N·m) about the wheel forward axis.</summary>
+		public readonly float[] OverturningCouples = new float[WheelCount];
+
+		/// <summary>Rolling-resistance moment per wheel (N·m) about the wheel right axis.</summary>
+		public readonly float[] RollingResistanceMoments = new float[WheelCount];
+
 		/// <summary>Drive torque delivered to each wheel after differential (N·m).</summary>
 		public readonly float[] WheelDriveTorques = new float[WheelCount];
 
@@ -561,8 +567,7 @@ namespace LibreRally.Vehicle.Physics
 		}
 
 		/// <summary>
-		/// Evaluates the tyre model for each wheel, computing longitudinal force (Fx),
-		/// lateral force (Fy), and self-aligning torque (Mz).
+		/// Evaluates the tyre model for each wheel, computing tyre forces plus bounded moment terms.
 		/// </summary>
 		private void ComputeTyreForces(
 			ReadOnlySpan<Matrix> wheelOrientations,
@@ -579,6 +584,8 @@ namespace LibreRally.Vehicle.Physics
 					LongitudinalForces[i] = 0f;
 					LateralForces[i] = 0f;
 					SelfAligningTorques[i] = 0f;
+					OverturningCouples[i] = 0f;
+					RollingResistanceMoments[i] = 0f;
 					continue;
 				}
 
@@ -587,6 +594,8 @@ namespace LibreRally.Vehicle.Physics
 					LongitudinalForces[i] = 0f;
 					LateralForces[i] = 0f;
 					SelfAligningTorques[i] = 0f;
+					OverturningCouples[i] = 0f;
+					RollingResistanceMoments[i] = 0f;
 					WheelStates[i].LateralDeflection = 0f;
 
 					// Still call Update with normalLoad=0 so angular velocity integrates
@@ -623,7 +632,9 @@ namespace LibreRally.Vehicle.Physics
 					dt,
 					out LongitudinalForces[i],
 					out LateralForces[i],
-					out SelfAligningTorques[i]);
+					out SelfAligningTorques[i],
+					out OverturningCouples[i],
+					out RollingResistanceMoments[i]);
 			}
 		}
 
@@ -779,8 +790,13 @@ namespace LibreRally.Vehicle.Physics
 
 				var fx = LongitudinalForces[i];
 				var fy = LateralForces[i];
+				var overturningCouple = OverturningCouples[i];
+				var rollingResistanceMoment = RollingResistanceMoments[i];
 
-				if (MathF.Abs(fx) < MinimumWakeForce && MathF.Abs(fy) < MinimumWakeForce)
+				if (MathF.Abs(fx) < MinimumWakeForce
+				    && MathF.Abs(fy) < MinimumWakeForce
+				    && MathF.Abs(overturningCouple) < 1e-3f
+				    && MathF.Abs(rollingResistanceMoment) < 1e-3f)
 				{
 					continue;
 				}
@@ -790,13 +806,33 @@ namespace LibreRally.Vehicle.Physics
 
 				var forceWorld = wheelForward * fx + wheelRight * fy;
 				var impulse = forceWorld * dt;
+				var momentImpulse = ComputeWheelMomentImpulseWorld(
+					wheelForward,
+					wheelRight,
+					overturningCouple,
+					rollingResistanceMoment,
+					dt);
 				var tyreRadius = TyreModels[i]?.Radius ?? 0.305f;
 				var contactPatchPosition = wheelPositions[i] - wheelUp * MathF.Max(tyreRadius, 0.1f);
 				var contactOffset = contactPatchPosition - chassisPosition;
 
 				chassisBody.Awake = true;
 				chassisBody.ApplyImpulse(impulse, contactOffset);
+				if (momentImpulse.LengthSquared() > 1e-8f)
+				{
+					chassisBody.ApplyAngularImpulse(momentImpulse);
+				}
 			}
+		}
+
+		internal static Vector3 ComputeWheelMomentImpulseWorld(
+			in Vector3 wheelForward,
+			in Vector3 wheelRight,
+			float overturningCouple,
+			float rollingResistanceMoment,
+			float dt)
+		{
+			return wheelForward * (overturningCouple * dt) + wheelRight * (rollingResistanceMoment * dt);
 		}
 
 		/// <summary>

@@ -428,6 +428,9 @@ namespace LibreRally.Vehicle
 				PeakFrictionCoefficient = spec.PeakFrictionCoefficient,
 				RollingResistanceCoefficient = spec.RollingResistanceCoefficient,
 				LoadSensitivity = hasBeamNgLoadCurve ? 0f : 0.15f,
+				HubRadius = spec.BeamNgHubRadius,
+				HubWidth = spec.BeamNgHubWidth,
+				WheelOffset = spec.BeamNgWheelOffset,
 			};
 
 			if (hasBeamNgLoadCurve)
