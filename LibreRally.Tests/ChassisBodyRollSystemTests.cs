@@ -11,12 +11,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void EqualCompression_ProducesNoRollTorque()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 0f, };
 
 			// All wheels equally compressed at 0.02 m
 			float[] compressions = { 0.02f, 0.02f, 0.02f, 0.02f };
@@ -30,17 +25,16 @@ namespace LibreRally.Tests
 		/// Left-side-more-compressed (positive delta) should produce positive roll torque,
 		/// and right-side-more-compressed should produce negative roll torque.
 		/// </summary>
+		/// <param name="fl">A front-left compression value.</param>
+		/// <param name="fr">A front-right compression value.</param>
+		/// <param name="rl">A rear-left compression value.</param>
+		/// <param name="rr">A rear-right compression value.</param>
 		[Theory]
 		[InlineData(0.04f, 0.01f, 0.04f, 0.01f)] // Left more compressed
 		[InlineData(0.01f, 0.04f, 0.01f, 0.04f)] // Right more compressed
 		public void AsymmetricCompression_ProducesCorrectSign(float fl, float fr, float rl, float rr)
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 0f, };
 
 			float[] compressions = { fl, fr, rl, rr };
 			var torque = ComputeRollTorque(system, compressions);
@@ -63,19 +57,9 @@ namespace LibreRally.Tests
 		{
 			float[] compressions = { 0.04f, 0.01f, 0.04f, 0.01f };
 
-			var low = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 2000f,
-				RearRollStiffness = 2000f,
-				RollDampingCoefficient = 0f,
-			};
+			var low = new ChassisBodyRollSystem { FrontRollStiffness = 2000f, RearRollStiffness = 2000f, RollDampingCoefficient = 0f, };
 
-			var high = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 6000f,
-				RearRollStiffness = 6000f,
-				RollDampingCoefficient = 0f,
-			};
+			var high = new ChassisBodyRollSystem { FrontRollStiffness = 6000f, RearRollStiffness = 6000f, RollDampingCoefficient = 0f, };
 
 			var torqueLow = ComputeRollTorque(low, compressions);
 			var torqueHigh = ComputeRollTorque(high, compressions);
@@ -94,26 +78,11 @@ namespace LibreRally.Tests
 		{
 			float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
 
-			var frontOnly = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 0f,
-				RollDampingCoefficient = 0f,
-			};
+			var frontOnly = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 0f, RollDampingCoefficient = 0f, };
 
-			var rearOnly = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 0f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 0f,
-			};
+			var rearOnly = new ChassisBodyRollSystem { FrontRollStiffness = 0f, RearRollStiffness = 4000f, RollDampingCoefficient = 0f, };
 
-			var both = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 0f,
-			};
+			var both = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 0f, };
 
 			var torqueFront = ComputeRollTorque(frontOnly, compressions);
 			var torqueRear = ComputeRollTorque(rearOnly, compressions);
@@ -128,12 +97,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void ZeroStiffness_ProducesNoTorque()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 0f,
-				RearRollStiffness = 0f,
-				RollDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 0f, RearRollStiffness = 0f, RollDampingCoefficient = 0f, };
 
 			float[] compressions = { 0.05f, 0.00f, 0.05f, 0.00f };
 			var torque = ComputeRollTorque(system, compressions);
@@ -147,12 +111,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void NearZeroDt_ProducesNoEffect()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 0f, };
 
 			float[] compressions = { 0.04f, 0.01f, 0.04f, 0.01f };
 			var torque = ComputeRollTorqueWithDt(system, compressions, 0f);
@@ -166,12 +125,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void Damping_OpposesPositiveRollRate()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 800f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 800f, };
 
 			float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
 
@@ -189,12 +143,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void Damping_OpposesNegativeRollRate()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 800f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 800f, };
 
 			float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
 
@@ -214,19 +163,9 @@ namespace LibreRally.Tests
 			float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
 			const float rollRate = 1.5f;
 
-			var low = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 400f,
-			};
+			var low = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 400f, };
 
-			var high = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 1200f,
-			};
+			var high = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 1200f, };
 
 			var baseTorque = ComputeRollTorque(low, compressions);
 			var lowDamped = ComputeRollTorqueWithDamping(low, compressions, rollRate);
@@ -246,12 +185,7 @@ namespace LibreRally.Tests
 		[Fact]
 		public void ZeroRollRate_DampingHasNoEffect()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				FrontRollStiffness = 5000f,
-				RearRollStiffness = 4000f,
-				RollDampingCoefficient = 800f,
-			};
+			var system = new ChassisBodyRollSystem { FrontRollStiffness = 5000f, RearRollStiffness = 4000f, RollDampingCoefficient = 800f, };
 
 			float[] compressions = { 0.03f, 0.01f, 0.03f, 0.01f };
 
@@ -261,14 +195,13 @@ namespace LibreRally.Tests
 			Assert.Equal(undampedTorque, dampedTorque, precision: 4);
 		}
 
+		/// <summary>
+		/// Equal front and rear compression should produce no pitch torque.
+		/// </summary>
 		[Fact]
 		public void EqualFrontRearCompression_ProducesNoPitchTorque()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				PitchStiffness = 12000f,
-				PitchDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { PitchStiffness = 12000f, PitchDampingCoefficient = 0f, };
 
 			float[] compressions = { 0.02f, 0.02f, 0.02f, 0.02f };
 
@@ -277,16 +210,20 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, torque, precision: 4);
 		}
 
+		/// <summary>
+		/// Front axle compression bias should produce the correct pitch sign.
+		/// </summary>
+		/// <param name="fl">A front-left compression value.</param>
+		/// <param name="fr">A front-right compression value.</param>
+		/// <param name="rl">A rear-left compression value.</param>
+		/// <param name="rr">A rear-right compression value.</param>
+		/// <param name="expectedSign">An expected pitch-torque sign.</param>
 		[Theory]
 		[InlineData(0.05f, 0.05f, 0.01f, 0.01f, 1f)]
 		[InlineData(0.01f, 0.01f, 0.05f, 0.05f, -1f)]
 		public void FrontRearCompressionBias_ProducesCorrectPitchSign(float fl, float fr, float rl, float rr, float expectedSign)
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				PitchStiffness = 12000f,
-				PitchDampingCoefficient = 0f,
-			};
+			var system = new ChassisBodyRollSystem { PitchStiffness = 12000f, PitchDampingCoefficient = 0f, };
 
 			float[] compressions = { fl, fr, rl, rr };
 			var torque = ComputePitchTorque(system, compressions);
@@ -294,14 +231,13 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Sign(torque) == MathF.Sign(expectedSign), $"Expected pitch sign {expectedSign}, got {torque}");
 		}
 
+		/// <summary>
+		/// Positive pitch-rate damping should reduce pitch torque.
+		/// </summary>
 		[Fact]
 		public void PitchDamping_OpposesPositivePitchRate()
 		{
-			var system = new ChassisBodyRollSystem
-			{
-				PitchStiffness = 12000f,
-				PitchDampingCoefficient = 1500f,
-			};
+			var system = new ChassisBodyRollSystem { PitchStiffness = 12000f, PitchDampingCoefficient = 1500f, };
 
 			float[] compressions = { 0.04f, 0.04f, 0.01f, 0.01f };
 

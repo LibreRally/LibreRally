@@ -4,8 +4,14 @@ using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies drivetrain, control-filtering, assist, and surface-VFX helpers in <see cref="RallyCarComponent"/>.
+	/// </summary>
 	public class RallyCarComponentControlTests
 	{
+		/// <summary>
+		/// Verifies that shift RPM clamping caps excess wheelspin above road speed.
+		/// </summary>
 		[Fact]
 		public void ClampShiftRpmForSlip_CapsExcessWheelspinAboveRoadSpeed()
 		{
@@ -14,6 +20,9 @@ namespace LibreRally.Tests
 			Assert.Equal(2400f, shiftRpm);
 		}
 
+		/// <summary>
+		/// Verifies that shift RPM clamping does not drop below road speed.
+		/// </summary>
 		[Fact]
 		public void ClampShiftRpmForSlip_DoesNotDropBelowRoadSpeed()
 		{
@@ -22,6 +31,9 @@ namespace LibreRally.Tests
 			Assert.Equal(3200f, shiftRpm);
 		}
 
+		/// <summary>
+		/// Verifies that driven-wheel omega clamping preserves reverse direction while capping slip.
+		/// </summary>
 		[Fact]
 		public void ClampDrivenWheelOmegaForSlip_PreservesReverseDirectionWhileCappingSlip()
 		{
@@ -41,6 +53,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-expectedOmegaMagnitude, clampedOmega, 3);
 		}
 
+		/// <summary>
+		/// Verifies that driven-wheel omega resolution preserves grounded wheel direction.
+		/// </summary>
 		[Fact]
 		public void ResolveDrivenWheelOmega_PreservesGroundedWheelDirection()
 		{
@@ -53,6 +68,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-10f, resolvedOmega, 3);
 		}
 
+		/// <summary>
+		/// Verifies that driven-wheel omega resolution falls back to road omega when only airborne wheelspin exists at standstill.
+		/// </summary>
 		[Fact]
 		public void ResolveDrivenWheelOmega_FallsBackToRoadOmega_WhenOnlyUngroundedWheelspinExistsAtStandstill()
 		{
@@ -65,6 +83,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.25f, resolvedOmega, 3);
 		}
 
+		/// <summary>
+		/// Verifies that auto-clutch driven-wheel omega uses the slowest grounded driven wheel.
+		/// </summary>
 		[Fact]
 		public void ResolveAutoClutchDrivenWheelOmega_UsesSlowestGroundedDrivenWheel()
 		{
@@ -76,6 +97,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1.5f, resolvedOmega, 3);
 		}
 
+		/// <summary>
+		/// Verifies that auto-clutch torque scaling does not punish a single grounded wheelspin outlier.
+		/// </summary>
 		[Fact]
 		public void ComputeAutoClutchTorqueScale_DoesNotPunishSingleGroundedWheelspinOutlier()
 		{
@@ -98,6 +122,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that point velocity adds angular contribution at the wheel point.
+		/// </summary>
 		[Fact]
 		public void ComputePointVelocity_AddsAngularContributionAtWheelPoint()
 		{
@@ -109,6 +136,9 @@ namespace LibreRally.Tests
 			Assert.Equal(new Vector3(2f, 0f, 10f), pointVelocity);
 		}
 
+		/// <summary>
+		/// Verifies that point velocity returns linear velocity when angular rate is zero.
+		/// </summary>
 		[Fact]
 		public void ComputePointVelocity_ReturnsLinearVelocity_WhenAngularRateIsZero()
 		{
@@ -120,6 +150,9 @@ namespace LibreRally.Tests
 			Assert.Equal(new Vector3(1f, -2f, 3f), pointVelocity);
 		}
 
+		/// <summary>
+		/// Verifies that BeamNG camber precompression maps around unity in radians.
+		/// </summary>
 		[Fact]
 		public void ConvertCamberPrecompressionToRadians_MapsBeamPrecompressionAroundUnity()
 		{
@@ -128,6 +161,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-0.036f, camberRadians, 3);
 		}
 
+		/// <summary>
+		/// Verifies that alignment camber angle adds compression gain to static camber.
+		/// </summary>
 		[Fact]
 		public void ComputeAlignmentCamberAngle_AddsCompressionGainToStaticCamber()
 		{
@@ -139,6 +175,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-0.065f, camberRadians, 3);
 		}
 
+		/// <summary>
+		/// Verifies that alignment camber angle uses opposite signs across wheel sides.
+		/// </summary>
 		[Fact]
 		public void ComputeAlignmentCamberAngle_UsesOppositeSignsAcrossWheelSides()
 		{
@@ -153,6 +192,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-leftCamberRadians, rightCamberRadians, 3);
 		}
 
+		/// <summary>
+		/// Verifies that auto-clutch torque scaling remains full when wheelspin matches the slip limit.
+		/// </summary>
 		[Fact]
 		public void ComputeAutoClutchTorqueScale_RemainsFull_WhenWheelspinMatchesSlipLimit()
 		{
@@ -166,6 +208,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that auto-clutch torque scaling reaches the floor when wheelspin greatly exceeds the slip limit.
+		/// </summary>
 		[Fact]
 		public void ComputeAutoClutchTorqueScale_ReachesFloor_WhenWheelspinGreatlyExceedsSlipLimit()
 		{
@@ -179,6 +224,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.25f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that traction-control torque scaling remains full when drive-wheel speed matches road speed.
+		/// </summary>
 		[Fact]
 		public void ComputeTractionControlTorqueScale_RemainsFull_WhenDriveWheelMatchesRoadSpeed()
 		{
@@ -191,6 +239,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that traction-control torque scaling reaches the floor when a driven wheel runs far ahead.
+		/// </summary>
 		[Fact]
 		public void ComputeTractionControlTorqueScale_ReachesFloor_WhenSingleDrivenWheelRunsFarAhead()
 		{
@@ -203,6 +254,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.08f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that ABS brake-torque scaling remains full when wheel slip is below target.
+		/// </summary>
 		[Fact]
 		public void ComputeAbsBrakeTorqueScale_RemainsFull_WhenWheelSlipIsBelowTarget()
 		{
@@ -216,6 +270,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that ABS brake-torque scaling reaches the floor when a forward wheel approaches lockup.
+		/// </summary>
 		[Fact]
 		public void ComputeAbsBrakeTorqueScale_ReachesFloor_WhenForwardWheelApproachesLockup()
 		{
@@ -229,6 +286,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.18f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that ABS brake-torque scaling uses travel direction for reverse braking.
+		/// </summary>
 		[Fact]
 		public void ComputeAbsBrakeTorqueScale_UsesTravelDirectionForReverseBraking()
 		{
@@ -242,6 +302,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.18f, scale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that ground-probe contact scale is full at nominal contact.
+		/// </summary>
 		[Fact]
 		public void ComputeGroundProbeContactScale_IsFullAtNominalContact()
 		{
@@ -253,6 +316,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, contactScale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that ground-probe contact scale fades out across the probe margin.
+		/// </summary>
 		[Fact]
 		public void ComputeGroundProbeContactScale_FadesOutAcrossProbeMargin()
 		{
@@ -264,6 +330,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, contactScale, 3);
 		}
 
+		/// <summary>
+		/// Verifies that wheel-surface VFX intensity stays off for low-slip tarmac running.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelSurfaceVfxIntensity_StaysOffForLowTarmacSlip()
 		{
@@ -277,6 +346,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, intensity, 3);
 		}
 
+		/// <summary>
+		/// Verifies that wheel-surface VFX intensity activates for a tarmac burnout.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelSurfaceVfxIntensity_ActivatesForBurnoutOnTarmac()
 		{
@@ -290,6 +362,9 @@ namespace LibreRally.Tests
 			Assert.True(intensity > 0.9f);
 		}
 
+		/// <summary>
+		/// Verifies that wheel-surface VFX intensity activates earlier on gravel.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelSurfaceVfxIntensity_ActivatesEarlierOnGravel()
 		{
@@ -303,6 +378,9 @@ namespace LibreRally.Tests
 			Assert.True(intensity > 0.2f);
 		}
 
+		/// <summary>
+		/// Verifies that wheel-surface VFX intensity is clamped to one for tarmac spawn scaling.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelSurfaceVfxIntensity_IsClampedToOneForSpawnScaling()
 		{
@@ -316,6 +394,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, intensity, 3);
 		}
 
+		/// <summary>
+		/// Verifies that wheel-surface VFX intensity is clamped to one for gravel spawn scaling.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelSurfaceVfxIntensity_IsClampedToOneForSpawnScalingOnGravel()
 		{
@@ -329,6 +410,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, intensity, 3);
 		}
 
+		/// <summary>
+		/// Verifies that low-speed yaw assist uses drive direction for reverse launch.
+		/// </summary>
 		[Fact]
 		public void ComputeLowSpeedYawAssistRate_UsesDriveDirectionForReverseLaunch()
 		{
@@ -342,6 +426,9 @@ namespace LibreRally.Tests
 			Assert.True(assist < 0f);
 		}
 
+		/// <summary>
+		/// Verifies that low-speed yaw assist fades out once tyre forces should dominate.
+		/// </summary>
 		[Fact]
 		public void ComputeLowSpeedYawAssistRate_FadesOutOnceTyreForcesShouldDominate()
 		{
@@ -355,6 +442,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, assist);
 		}
 
+		/// <summary>
+		/// Verifies that yaw-assist top-up does not damp existing yaw in the same direction.
+		/// </summary>
 		[Fact]
 		public void ApplyYawAssistTopUp_DoesNotDampExistingYawInSameDirection()
 		{
@@ -366,6 +456,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.35f, adjustedYaw);
 		}
 
+		/// <summary>
+		/// Verifies that trigger deadzone rejects small trigger noise.
+		/// </summary>
 		[Fact]
 		public void ApplyTriggerDeadzone_RejectsSmallTriggerNoise()
 		{
@@ -374,6 +467,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, filtered);
 		}
 
+		/// <summary>
+		/// Verifies that trigger deadzone rescales remaining trigger travel.
+		/// </summary>
 		[Fact]
 		public void ApplyTriggerDeadzone_ReScalesRemainingTriggerTravel()
 		{
@@ -382,6 +478,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.5f, filtered, 3);
 		}
 
+		/// <summary>
+		/// Verifies that signed-axis deadzone rejects small stick drift.
+		/// </summary>
 		[Fact]
 		public void ApplySignedAxisDeadzone_RejectsSmallStickDrift()
 		{
@@ -390,6 +489,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, filtered);
 		}
 
+		/// <summary>
+		/// Verifies that signed-axis deadzone preserves sign after the deadzone.
+		/// </summary>
 		[Fact]
 		public void ApplySignedAxisDeadzone_PreservesSignAfterDeadzone()
 		{
@@ -398,6 +500,9 @@ namespace LibreRally.Tests
 			Assert.Equal(-0.5f, filtered, 3);
 		}
 
+		/// <summary>
+		/// Verifies that vehicle wake retention is <see langword="false" /> when the car is stopped and no input is present.
+		/// </summary>
 		[Fact]
 		public void ShouldKeepVehicleAwake_IsFalse_WhenStoppedAndNoInput()
 		{
@@ -412,6 +517,9 @@ namespace LibreRally.Tests
 			Assert.False(keepAwake);
 		}
 
+		/// <summary>
+		/// Verifies that vehicle wake retention is <see langword="true" /> when driver input is present.
+		/// </summary>
 		[Fact]
 		public void ShouldKeepVehicleAwake_IsTrue_WhenDriverAppliesInput()
 		{
@@ -426,6 +534,9 @@ namespace LibreRally.Tests
 			Assert.True(keepAwake);
 		}
 
+		/// <summary>
+		/// Verifies that standing gear selection enters reverse when braking at standstill.
+		/// </summary>
 		[Fact]
 		public void ResolveStandingGearSelection_EntersReverse_WhenBrakingAtStandstill()
 		{
@@ -442,6 +553,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0, selectedGear);
 		}
 
+		/// <summary>
+		/// Verifies that standing gear selection does not enter reverse while the vehicle is still rolling.
+		/// </summary>
 		[Fact]
 		public void ResolveStandingGearSelection_DoesNotEnterReverse_WhileStillRolling()
 		{

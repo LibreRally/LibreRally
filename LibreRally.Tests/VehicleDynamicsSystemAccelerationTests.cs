@@ -3,8 +3,14 @@ using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies acceleration and moment-projection helper behavior in <see cref="VehicleDynamicsSystem"/>.
+	/// </summary>
 	public class VehicleDynamicsSystemAccelerationTests
 	{
+		/// <summary>
+		/// Verifies that planar acceleration projects along the chassis axes.
+		/// </summary>
 		[Fact]
 		public void EstimatePlanarAccelerationFromNetForce_ProjectsAlongChassisAxes()
 		{
@@ -22,6 +28,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, acceleration.Y, 4);
 		}
 
+		/// <summary>
+		/// Verifies that planar acceleration handles rotated chassis axes.
+		/// </summary>
 		[Fact]
 		public void EstimatePlanarAccelerationFromNetForce_HandlesRotatedAxes()
 		{
@@ -39,6 +48,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, acceleration.Y, 4);
 		}
 
+		/// <summary>
+		/// Verifies that near-zero mass returns zero planar acceleration.
+		/// </summary>
 		[Fact]
 		public void EstimatePlanarAccelerationFromNetForce_NearZeroMassReturnsZero()
 		{
@@ -51,6 +63,9 @@ namespace LibreRally.Tests
 			Assert.Equal(Vector2.Zero, acceleration);
 		}
 
+		/// <summary>
+		/// Verifies that near-zero mass returns zero world acceleration.
+		/// </summary>
 		[Fact]
 		public void EstimateWorldAccelerationFromNetForce_NearZeroMassReturnsZero()
 		{
@@ -61,6 +76,9 @@ namespace LibreRally.Tests
 			Assert.Equal(Vector3.Zero, acceleration);
 		}
 
+		/// <summary>
+		/// Verifies that planar projection reprojects the same world acceleration after frame rotation.
+		/// </summary>
 		[Fact]
 		public void PlanarProjection_ReprojectsSameWorldAccelerationAcrossFrameRotation()
 		{
@@ -87,6 +105,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, step2.Y, 4);
 		}
 
+		/// <summary>
+		/// Verifies that effective pitch transfer height applies anti-dive and anti-squat scaling.
+		/// </summary>
 		[Fact]
 		public void EffectivePitchTransferHeight_AppliesAntiDiveAndAntiSquat()
 		{
@@ -105,6 +126,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.3f, accelerationHeight, 4);
 		}
 
+		/// <summary>
+		/// Verifies that axle lateral transfer decreases as the roll center rises.
+		/// </summary>
 		[Fact]
 		public void AxleLateralTransfer_DecreasesAsRollCenterRises()
 		{
@@ -126,6 +150,9 @@ namespace LibreRally.Tests
 			Assert.True(highRollCenterTransfer < lowRollCenterTransfer);
 		}
 
+		/// <summary>
+		/// Verifies that wheel moment impulse projects local moments onto the world wheel axes.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelMomentImpulseWorld_ProjectsLocalMomentsOntoWheelAxes()
 		{
@@ -144,6 +171,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.24f, impulse.Z, 4);
 		}
 
+		/// <summary>
+		/// Verifies that wheel moment impulse follows a rotated wheel basis.
+		/// </summary>
 		[Fact]
 		public void ComputeWheelMomentImpulseWorld_FollowsRotatedWheelBasis()
 		{

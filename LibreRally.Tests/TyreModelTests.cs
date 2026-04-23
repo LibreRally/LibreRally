@@ -2,10 +2,14 @@ using LibreRally.Vehicle.Physics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies pure-slip, combined-slip, thermal, surface, and moment behavior in <see cref="TyreModel"/>.
+	/// </summary>
 	public class TyreModelTests
 	{
 		private static readonly SurfaceProperties Tarmac = SurfaceProperties.ForType(SurfaceType.Tarmac);
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
+
 		private static readonly SurfaceProperties DeterministicPacejkaSurface = new()
 		{
 			FrictionCoefficient = 1.0f,
@@ -16,6 +20,7 @@ namespace LibreRally.Tests
 			DeformationFactor = 0f,
 			NoiseFactor = 0f,
 		};
+
 		private const int ForceToleranceDecimalPlaces = 1;
 
 		private static float MagicFormula(float x, float b, float c, float d, float e)
@@ -24,6 +29,9 @@ namespace LibreRally.Tests
 			return d * MathF.Sin(c * MathF.Atan(bx - e * (bx - MathF.Atan(bx))));
 		}
 
+		/// <summary>
+		/// Verifies that Pacejka-only longitudinal force follows the Magic Formula equation.
+		/// </summary>
 		[Fact]
 		public void PacejkaOnly_LongitudinalForce_FollowsMagicFormulaEquation()
 		{
@@ -60,6 +68,9 @@ namespace LibreRally.Tests
 			Assert.Equal(expectedFx, actualFx, ForceToleranceDecimalPlaces);
 		}
 
+		/// <summary>
+		/// Verifies that Pacejka-only lateral force follows the Magic Formula equation when the high-slip extension is disabled.
+		/// </summary>
 		[Fact]
 		public void PacejkaOnly_LateralForce_FollowsMagicFormulaEquationWhenHighSlipExtensionIsDisabled()
 		{
@@ -100,15 +111,13 @@ namespace LibreRally.Tests
 			Assert.Equal(expectedFy, actualFy, ForceToleranceDecimalPlaces);
 		}
 
+		/// <summary>
+		/// Verifies that pure-slip coefficient evaluation responds to load and camber.
+		/// </summary>
 		[Fact]
 		public void PureSlipCoefficientEvaluation_RespondsToLoadAndCamber()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				LateralLoadStiffnessSensitivity = 0.12f,
-				LateralCamberStiffnessSensitivity = 0.6f,
-				LateralCamberCurvatureSensitivity = -0.25f,
-			};
+			var model = new TyreModel(0.305f) { LateralLoadStiffnessSensitivity = 0.12f, LateralCamberStiffnessSensitivity = 0.6f, LateralCamberCurvatureSensitivity = -0.25f, };
 
 			var lowLoad = model.EvaluateLateralPureSlipCoefficients(2500f, 0.7f, 0f, DeterministicPacejkaSurface);
 			var highLoad = model.EvaluateLateralPureSlipCoefficients(2500f, 1.3f, 0f, DeterministicPacejkaSurface);
@@ -119,15 +128,13 @@ namespace LibreRally.Tests
 			Assert.True(cambered.E < lowLoad.E);
 		}
 
+		/// <summary>
+		/// Verifies that contact-patch length grows with load and shrinks with pressure.
+		/// </summary>
 		[Fact]
 		public void ContactPatchLength_GrowsWithLoad_AndShrinksWithPressure()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				Width = 0.205f,
-				ContactPatchLengthScale = 1.0f,
-				TyrePressure = 220f,
-			};
+			var model = new TyreModel(0.305f) { Width = 0.205f, ContactPatchLengthScale = 1.0f, TyrePressure = 220f, };
 
 			float lightLoadPatch = model.ComputeEffectivePatchLength(1500f);
 			float heavyLoadPatch = model.ComputeEffectivePatchLength(3000f);
@@ -139,14 +146,13 @@ namespace LibreRally.Tests
 			Assert.True(highPressurePatch < heavyLoadPatch);
 		}
 
+		/// <summary>
+		/// Verifies that effective rolling radius decreases under load.
+		/// </summary>
 		[Fact]
 		public void EffectiveRollingRadius_DecreasesUnderLoad()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				TyrePressure = 220f,
-				VerticalStiffness = 200000f,
-			};
+			var model = new TyreModel(0.305f) { TyrePressure = 220f, VerticalStiffness = 200000f, };
 
 			float unloadedRadius = model.ComputeEffectiveRollingRadius(0f);
 			float loadedRadius = model.ComputeEffectiveRollingRadius(3000f);
@@ -156,19 +162,14 @@ namespace LibreRally.Tests
 			Assert.True(loadedRadius > model.Radius * 0.9f);
 		}
 
+		/// <summary>
+		/// Verifies that estimated wheel inertia grows with hub radius and width.
+		/// </summary>
 		[Fact]
 		public void EstimatedWheelInertia_GrowsWithHubRadiusAndWidth()
 		{
-			var baselineModel = new TyreModel(0.305f)
-			{
-				Width = 0.205f,
-			};
-			var largerHubModel = new TyreModel(0.305f)
-			{
-				Width = 0.205f,
-				HubRadius = 0.24f,
-				HubWidth = 0.28f,
-			};
+			var baselineModel = new TyreModel(0.305f) { Width = 0.205f, };
+			var largerHubModel = new TyreModel(0.305f) { Width = 0.205f, HubRadius = 0.24f, HubWidth = 0.28f, };
 
 			float baselineInertia = baselineModel.ComputeEstimatedWheelInertia(3000f);
 			float largerHubInertia = largerHubModel.ComputeEstimatedWheelInertia(3000f);
@@ -177,14 +178,13 @@ namespace LibreRally.Tests
 			Assert.True(largerHubInertia > baselineInertia);
 		}
 
+		/// <summary>
+		/// Verifies that brush stiffness increases with pressure and width.
+		/// </summary>
 		[Fact]
 		public void BrushStiffness_IncreasesWithPressureAndWidth()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				Width = 0.205f,
-				TyrePressure = 220f,
-			};
+			var model = new TyreModel(0.305f) { Width = 0.205f, TyrePressure = 220f, };
 
 			float baseline = model.ComputeEffectiveBrushStiffness();
 
@@ -199,14 +199,13 @@ namespace LibreRally.Tests
 			Assert.True(widerTyre > baseline);
 		}
 
+		/// <summary>
+		/// Verifies that standing-wave resistance factor grows with speed.
+		/// </summary>
 		[Fact]
 		public void StandingWaveResistanceFactor_GrowsWithSpeed()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				StandingWaveCriticalSpeed = 65f,
-				StandingWaveResistanceGain = 1.0f,
-			};
+			var model = new TyreModel(0.305f) { StandingWaveCriticalSpeed = 65f, StandingWaveResistanceGain = 1.0f, };
 
 			float lowSpeed = model.ComputeStandingWaveResistanceFactor(10f);
 			float highSpeed = model.ComputeStandingWaveResistanceFactor(80f);
@@ -215,6 +214,9 @@ namespace LibreRally.Tests
 			Assert.True(highSpeed > lowSpeed);
 		}
 
+		/// <summary>
+		/// Verifies that the obsolete contact-patch length alias maps to the scale property.
+		/// </summary>
 		[Fact]
 		public void ContactPatchLengthAlias_MapsToScaleProperty()
 		{
@@ -227,13 +229,13 @@ namespace LibreRally.Tests
 			Assert.Equal(1.2f, model.ContactPatchLengthScale);
 		}
 
+		/// <summary>
+		/// Verifies that effective relaxation length grows on loose low-grip surfaces.
+		/// </summary>
 		[Fact]
 		public void EffectiveRelaxationLength_GrowsOnLooseLowGripSurfaces()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CarcassStiffness = 1.0f,
-			};
+			var model = new TyreModel(0.305f) { CarcassStiffness = 1.0f, };
 
 			float tarmacLateral = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
 			float gravelLateral = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Gravel), longitudinal: false);
@@ -246,6 +248,9 @@ namespace LibreRally.Tests
 			Assert.True(gravelLongitudinal > tarmacLongitudinal);
 		}
 
+		/// <summary>
+		/// Verifies that relaxation-length operating-point scale drops at higher slip.
+		/// </summary>
 		[Fact]
 		public void RelaxationLengthOperatingPointScale_DropsAtHigherSlip()
 		{
@@ -305,13 +310,13 @@ namespace LibreRally.Tests
 			Assert.InRange(highSlipLongitudinalScale, 0.2f, 2.0f);
 		}
 
+		/// <summary>
+		/// Verifies that effective relaxation length uses the operating-point slope scale.
+		/// </summary>
 		[Fact]
 		public void EffectiveRelaxationLength_UsesOperatingPointSlopeScale()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CarcassStiffness = 1.0f,
-			};
+			var model = new TyreModel(0.305f) { CarcassStiffness = 1.0f, };
 
 			float baseLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
 			float reducedSlopeLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false, operatingPointSlopeScale: 0.2f);
@@ -321,6 +326,9 @@ namespace LibreRally.Tests
 			Assert.True(amplifiedSlopeLength > baseLength);
 		}
 
+		/// <summary>
+		/// Verifies that effective friction uses the power-law load-sensitivity path.
+		/// </summary>
 		[Fact]
 		public void EffectiveFriction_UsesPowerLawLoadSensitivity()
 		{
@@ -345,6 +353,9 @@ namespace LibreRally.Tests
 			Assert.True(highLoadMu / mediumLoadMu < mediumLoadMu / referenceMu);
 		}
 
+		/// <summary>
+		/// Verifies that effective friction uses the BeamNG load curve when provided.
+		/// </summary>
 		[Fact]
 		public void EffectiveFriction_UsesBeamNgLoadCurveWhenProvided()
 		{
@@ -372,6 +383,9 @@ namespace LibreRally.Tests
 			Assert.Equal(expectedHighLoadMu, highLoadMu, 4);
 		}
 
+		/// <summary>
+		/// Verifies that effective friction increases with larger patch area.
+		/// </summary>
 		[Fact]
 		public void EffectiveFriction_IncreasesWithLargerPatchArea()
 		{
@@ -394,6 +408,9 @@ namespace LibreRally.Tests
 			Assert.True(lowPressureMu > highPressureMu);
 		}
 
+		/// <summary>
+		/// Verifies that the friction ellipse caps combined slip at the ellipse boundary.
+		/// </summary>
 		[Fact]
 		public void FrictionEllipse_CapsCombinedSlipAtEllipseBoundary()
 		{
@@ -448,6 +465,9 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(ellipticalFy) < fxMax);
 		}
 
+		/// <summary>
+		/// Verifies that higher pressure increases steady-state cornering force.
+		/// </summary>
 		[Fact]
 		public void HigherPressure_IncreasesSteadyStateCorneringForce()
 		{
@@ -493,6 +513,9 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(highPressureFy) > MathF.Abs(lowPressureFy));
 		}
 
+		/// <summary>
+		/// Verifies that effective friction clamps the reference patch-area load.
+		/// </summary>
 		[Fact]
 		public void EffectiveFriction_ClampsReferencePatchAreaLoad()
 		{
@@ -513,6 +536,9 @@ namespace LibreRally.Tests
 			Assert.InRange(mu, 0.5f, 2.0f);
 		}
 
+		/// <summary>
+		/// Verifies that the friction ellipse respects very low peak force.
+		/// </summary>
 		[Fact]
 		public void FrictionEllipse_RespectsVeryLowPeakForce()
 		{
@@ -545,6 +571,9 @@ namespace LibreRally.Tests
 			Assert.InRange(ellipseValue, 0f, 1.0001f);
 		}
 
+		/// <summary>
+		/// Verifies that the friction ellipse clamps final applied forces after camber and rolling resistance.
+		/// </summary>
 		[Fact]
 		public void FrictionEllipse_ClampsFinalAppliedForcesAfterCamberAndRollingResistance()
 		{
@@ -578,7 +607,7 @@ namespace LibreRally.Tests
 		}
 
 		/// <summary>
-		/// Verifies explicit combined-slip coupling: adding lateral slip reduces available longitudinal force.
+		/// Verifies that combined-slip interaction reduces longitudinal force under cornering.
 		/// </summary>
 		[Fact]
 		public void CombinedSlipInteraction_ReducesLongitudinalForceUnderCornering()
@@ -638,27 +667,25 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(couplingFx) < MathF.Abs(noCouplingFx));
 		}
 
+		/// <summary>
+		/// Verifies that combined-slip weights are unity without cross-slip.
+		/// </summary>
 		[Fact]
 		public void CombinedSlipWeights_AreUnityWithoutCrossSlip()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CombinedSlipCoupling = 1.2f,
-				CombinedSlipExponent = 2.0f,
-			};
+			var model = new TyreModel(0.305f) { CombinedSlipCoupling = 1.2f, CombinedSlipExponent = 2.0f, };
 
 			Assert.Equal(1f, model.ComputeCombinedSlipLongitudinalWeight(0f, 0.12f), 4);
 			Assert.Equal(1f, model.ComputeCombinedSlipLateralWeight(0f, 0.25f), 4);
 		}
 
+		/// <summary>
+		/// Verifies that combined-slip weights drop as cross-slip increases.
+		/// </summary>
 		[Fact]
 		public void CombinedSlipWeights_DropAsCrossSlipIncreases()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CombinedSlipCoupling = 1.2f,
-				CombinedSlipExponent = 2.0f,
-			};
+			var model = new TyreModel(0.305f) { CombinedSlipCoupling = 1.2f, CombinedSlipExponent = 2.0f, };
 
 			float moderateFxWeight = model.ComputeCombinedSlipLongitudinalWeight(0.15f, 0.12f);
 			float highFxWeight = model.ComputeCombinedSlipLongitudinalWeight(0.35f, 0.12f);
@@ -673,6 +700,9 @@ namespace LibreRally.Tests
 			Assert.True(highFyWeight < moderateFyWeight);
 		}
 
+		/// <summary>
+		/// Verifies that combined-slip interaction reduces lateral force under wheelspin.
+		/// </summary>
 		[Fact]
 		public void CombinedSlipInteraction_ReducesLateralForceUnderWheelspin()
 		{
@@ -731,7 +761,7 @@ namespace LibreRally.Tests
 		}
 
 		/// <summary>
-		/// Verifies two-node tyre thermals: surface heats first, then core lags and remains warmer during cooldown.
+		/// Verifies that the thermal model tracks surface and core temperature with lag during heat-up and cooldown.
 		/// </summary>
 		[Fact]
 		public void ThermalModel_TracksSurfaceAndCoreWithLagDuringHeatAndCooldown()
@@ -796,6 +826,9 @@ namespace LibreRally.Tests
 
 		// ── Pneumatic trail tests ────────────────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that brush pneumatic trail returns one third of the half patch under full adhesion.
+		/// </summary>
 		[Fact]
 		public void BrushPneumaticTrail_FullAdhesion_ReturnsOneThirdHalfPatch()
 		{
@@ -805,6 +838,9 @@ namespace LibreRally.Tests
 			Assert.Equal(halfPatch / 3f, trail, 5);
 		}
 
+		/// <summary>
+		/// Verifies that brush pneumatic trail returns zero under full sliding.
+		/// </summary>
 		[Fact]
 		public void BrushPneumaticTrail_FullSliding_ReturnsZero()
 		{
@@ -814,6 +850,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, trail, 5);
 		}
 
+		/// <summary>
+		/// Verifies that brush pneumatic trail peaks before collapsing.
+		/// </summary>
 		[Fact]
 		public void BrushPneumaticTrail_PeaksBeforeCollapsing()
 		{
@@ -831,6 +870,9 @@ namespace LibreRally.Tests
 			Assert.True(trailLow < trailFull);
 		}
 
+		/// <summary>
+		/// Verifies that equivalent trail slip grows with longitudinal slip during cornering.
+		/// </summary>
 		[Fact]
 		public void EquivalentTrailSlip_GrowsWithLongitudinalSlipDuringCornering()
 		{
@@ -841,30 +883,25 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Sign(combinedSlip) == MathF.Sign(pureCornering));
 		}
 
+		/// <summary>
+		/// Verifies that the Fx aligning moment arm is zero without lateral force.
+		/// </summary>
 		[Fact]
 		public void FxAligningMomentArm_IsZeroWithoutLateralForce()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				AligningTorqueFxMomentArm = 0.01f,
-				WheelOffset = 0.02f,
-			};
+			var model = new TyreModel(0.305f) { AligningTorqueFxMomentArm = 0.01f, WheelOffset = 0.02f, };
 
 			Assert.Equal(0f, model.ComputeFxAligningMomentArm(0f, 3000f, 0.1f), 5);
 		}
 
+		/// <summary>
+		/// Verifies that the Fx aligning moment arm grows with wheel offset and lateral load.
+		/// </summary>
 		[Fact]
 		public void FxAligningMomentArm_GrowsWithWheelOffsetAndLateralLoad()
 		{
-			var baseline = new TyreModel(0.305f)
-			{
-				AligningTorqueFxMomentArm = 0.008f,
-			};
-			var offsetModel = new TyreModel(0.305f)
-			{
-				AligningTorqueFxMomentArm = 0.008f,
-				WheelOffset = 0.03f,
-			};
+			var baseline = new TyreModel(0.305f) { AligningTorqueFxMomentArm = 0.008f, };
+			var offsetModel = new TyreModel(0.305f) { AligningTorqueFxMomentArm = 0.008f, WheelOffset = 0.03f, };
 
 			float baselineArm = baseline.ComputeFxAligningMomentArm(1500f, 3000f, 0.1f);
 			float offsetArm = offsetModel.ComputeFxAligningMomentArm(1500f, 3000f, 0.1f);
@@ -872,19 +909,14 @@ namespace LibreRally.Tests
 			Assert.True(offsetArm > baselineArm);
 		}
 
+		/// <summary>
+		/// Verifies that overturning couple grows with lateral force and camber.
+		/// </summary>
 		[Fact]
 		public void OverturningCouple_GrowsWithLateralForceAndCamber()
 		{
-			var baseline = new TyreModel(0.305f)
-			{
-				OverturningCoupleFactor = 0.015f,
-				OverturningCamberFactor = 0.35f,
-			};
-			var cambered = new TyreModel(0.305f)
-			{
-				OverturningCoupleFactor = 0.015f,
-				OverturningCamberFactor = 0.35f,
-			};
+			var baseline = new TyreModel(0.305f) { OverturningCoupleFactor = 0.015f, OverturningCamberFactor = 0.35f, };
+			var cambered = new TyreModel(0.305f) { OverturningCoupleFactor = 0.015f, OverturningCamberFactor = 0.35f, };
 
 			float baselineMoment = baseline.ComputeOverturningCouple(3200f, 900f, 3200f, 0f, 0.29f);
 			float higherLateralMoment = baseline.ComputeOverturningCouple(3200f, 1800f, 3200f, 0f, 0.29f);
@@ -894,15 +926,13 @@ namespace LibreRally.Tests
 			Assert.True(camberedMoment > baselineMoment);
 		}
 
+		/// <summary>
+		/// Verifies that rolling-resistance moment opposes rolling direction and grows with speed.
+		/// </summary>
 		[Fact]
 		public void RollingResistanceMoment_OpposesRollingDirectionAndGrowsWithSpeed()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				RollingResistanceMomentFactor = 0.006f,
-				RollingResistanceMomentFxFactor = 0.08f,
-				StandingWaveCriticalSpeed = 55f,
-			};
+			var model = new TyreModel(0.305f) { RollingResistanceMomentFactor = 0.006f, RollingResistanceMomentFxFactor = 0.08f, StandingWaveCriticalSpeed = 55f, };
 
 			float slowForward = model.ComputeRollingResistanceMoment(0.29f, -45f, -15f, 5f, 0f, 3200f, signedRollingDirection: 5f);
 			float fastForward = model.ComputeRollingResistanceMoment(0.29f, -45f, -15f, 35f, 0f, 3200f, signedRollingDirection: 35f);
@@ -913,6 +943,9 @@ namespace LibreRally.Tests
 			Assert.True(fastReverse > 0f);
 		}
 
+		/// <summary>
+		/// Verifies that self-aligning torque collapses at high slip angle.
+		/// </summary>
 		[Fact]
 		public void SelfAligningTorque_CollapsesAtHighSlipAngle()
 		{
@@ -950,6 +983,9 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(equivalentSlipLarge) > MathF.Abs(equivalentSlipSmall));
 		}
 
+		/// <summary>
+		/// Verifies that self-aligning torque drops when longitudinal slip adds combined trail demand.
+		/// </summary>
 		[Fact]
 		public void SelfAligningTorque_DropsWhenLongitudinalSlipAddsCombinedTrailDemand()
 		{
@@ -996,6 +1032,9 @@ namespace LibreRally.Tests
 			Assert.True(MathF.Abs(combinedMz) < MathF.Abs(pureMz));
 		}
 
+		/// <summary>
+		/// Verifies that the Fx moment arm changes self-aligning torque while cornering and braking.
+		/// </summary>
 		[Fact]
 		public void SelfAligningTorque_FxMomentArm_ChangesTorqueWhileCorneringAndBraking()
 		{
@@ -1043,6 +1082,9 @@ namespace LibreRally.Tests
 
 		// ── Adhesion fraction tests ──────────────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that adhesion fraction remains in full adhesion at low slip.
+		/// </summary>
 		[Fact]
 		public void AdhesionFraction_FullAdhesion_AtLowSlip()
 		{
@@ -1053,6 +1095,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, lambda);
 		}
 
+		/// <summary>
+		/// Verifies that adhesion fraction decreases with higher slip.
+		/// </summary>
 		[Fact]
 		public void AdhesionFraction_DecreasesWithHigherSlip()
 		{
@@ -1070,6 +1115,9 @@ namespace LibreRally.Tests
 
 		// ── Longitudinal brush transient tests ───────────────────────────────────
 
+		/// <summary>
+		/// Verifies that longitudinal deflection builds under braking.
+		/// </summary>
 		[Fact]
 		public void LongitudinalDeflection_BuildsUnderBraking()
 		{
@@ -1107,6 +1155,9 @@ namespace LibreRally.Tests
 				MathF.Abs(deflectionBraking) > MathF.Abs(baselineDeflection));
 		}
 
+		/// <summary>
+		/// Verifies that longitudinal deflection resets when airborne.
+		/// </summary>
 		[Fact]
 		public void LongitudinalDeflection_ResetsWhenAirborne()
 		{
@@ -1124,13 +1175,13 @@ namespace LibreRally.Tests
 
 		// ── Carcass shear tests ──────────────────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that carcass shear force increases with deflection.
+		/// </summary>
 		[Fact]
 		public void CarcassShearForce_IncreasesWithDeflection()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CarcassShearCoefficient = 0.5f,
-			};
+			var model = new TyreModel(0.305f) { CarcassShearCoefficient = 0.5f, };
 
 			float brushCperLength = 300000f;
 			float halfPatch = 0.09f;
@@ -1143,26 +1194,26 @@ namespace LibreRally.Tests
 			Assert.True(shearLarge > shearSmall);
 		}
 
+		/// <summary>
+		/// Verifies that carcass shear force is zero when no deflection is present.
+		/// </summary>
 		[Fact]
 		public void CarcassShearForce_ZeroWhenNoDeflection()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CarcassShearCoefficient = 0.5f,
-			};
+			var model = new TyreModel(0.305f) { CarcassShearCoefficient = 0.5f, };
 
 			float shear = model.ComputeCarcassShearForce(0f, 0.09f, 300000f, 0.18f);
 
 			Assert.Equal(0f, shear);
 		}
 
+		/// <summary>
+		/// Verifies that carcass shear force is zero when its coefficient is zero.
+		/// </summary>
 		[Fact]
 		public void CarcassShearForce_ZeroWhenCoefficientIsZero()
 		{
-			var model = new TyreModel(0.305f)
-			{
-				CarcassShearCoefficient = 0f,
-			};
+			var model = new TyreModel(0.305f) { CarcassShearCoefficient = 0f, };
 
 			float shear = model.ComputeCarcassShearForce(0.01f, 0.09f, 300000f, 0.18f);
 
@@ -1171,6 +1222,9 @@ namespace LibreRally.Tests
 
 		// ── Wet grip / hydroplaning tests ────────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that wet-grip factor returns one on a dry surface.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_DryReturnsOne()
 		{
@@ -1179,6 +1233,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, factor);
 		}
 
+		/// <summary>
+		/// Verifies that wet-grip factor decreases with water depth.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_DecreasesWithWaterDepth()
 		{
@@ -1189,6 +1246,9 @@ namespace LibreRally.Tests
 			Assert.True(deep < shallow);
 		}
 
+		/// <summary>
+		/// Verifies that macrotexture improves wet-grip drainage.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_MacrotextureImprovesDrainage()
 		{
@@ -1198,6 +1258,9 @@ namespace LibreRally.Tests
 			Assert.True(highMacro > lowMacro);
 		}
 
+		/// <summary>
+		/// Verifies that wet-grip factor decreases with speed.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_DecreasesWithSpeed()
 		{
@@ -1207,6 +1270,9 @@ namespace LibreRally.Tests
 			Assert.True(highSpeed < lowSpeed);
 		}
 
+		/// <summary>
+		/// Verifies that hydroplaning collapses wet-grip factor.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_HydroplaningCollapsesGrip()
 		{
@@ -1217,6 +1283,9 @@ namespace LibreRally.Tests
 			Assert.True(factor >= 0.05f); // never below minimum
 		}
 
+		/// <summary>
+		/// Verifies that wet-grip factor never drops below its minimum.
+		/// </summary>
 		[Fact]
 		public void WetGripFactor_NeverBelowMinimum()
 		{
@@ -1228,6 +1297,9 @@ namespace LibreRally.Tests
 
 		// ── Microtexture / macrotexture tests ────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that effective friction uses macrotexture drainage to improve wet grip.
+		/// </summary>
 		[Fact]
 		public void EffectiveFriction_MacrotextureImprovesWetGripViaDrainage()
 		{
@@ -1270,6 +1342,9 @@ namespace LibreRally.Tests
 
 		// ── WetTarmac surface integration tests ─────────────────────────────────
 
+		/// <summary>
+		/// Verifies that wet tarmac produces less grip than dry tarmac.
+		/// </summary>
 		[Fact]
 		public void WetTarmac_ProducesLessGripThanDryTarmac()
 		{
@@ -1302,6 +1377,9 @@ namespace LibreRally.Tests
 
 		// ── Road noise grip perturbation tests ──────────────────────────────────
 
+		/// <summary>
+		/// Verifies that road-noise grip factor returns near unity.
+		/// </summary>
 		[Fact]
 		public void RoadNoiseGripFactor_ReturnsNearUnity()
 		{
@@ -1311,6 +1389,9 @@ namespace LibreRally.Tests
 			Assert.InRange(factor, 0.99f, 1.01f);
 		}
 
+		/// <summary>
+		/// Verifies that road-noise grip factor stays bounded by its configured amplitude.
+		/// </summary>
 		[Fact]
 		public void RoadNoiseGripFactor_BoundedByAmplitude()
 		{
@@ -1322,6 +1403,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that road-noise grip factor returns unity at zero speed.
+		/// </summary>
 		[Fact]
 		public void RoadNoiseGripFactor_ReturnsUnityAtZeroSpeed()
 		{
@@ -1333,6 +1417,9 @@ namespace LibreRally.Tests
 
 		// ── Default surface calibration tests ────────────────────────────────────
 
+		/// <summary>
+		/// Verifies that wet-tarmac surface defaults include water and lower friction.
+		/// </summary>
 		[Fact]
 		public void SurfaceDefaults_WetTarmacHasWaterAndLowerFriction()
 		{
@@ -1344,18 +1431,25 @@ namespace LibreRally.Tests
 			Assert.True(wet.FrictionCoefficient < dry.FrictionCoefficient);
 		}
 
+		/// <summary>
+		/// Verifies that all default surfaces expose texture values.
+		/// </summary>
 		[Fact]
 		public void SurfaceDefaults_AllSurfacesHaveTexture()
 		{
 			foreach (SurfaceType type in Enum.GetValues<SurfaceType>())
 			{
 				var props = SurfaceProperties.ForType(type);
+
 				// All surfaces should have non-negative texture values
 				Assert.True(props.Microtexture >= 0f);
 				Assert.True(props.Macrotexture >= 0f);
 			}
 		}
 
+		/// <summary>
+		/// Verifies that ice defaults to very low texture.
+		/// </summary>
 		[Fact]
 		public void SurfaceDefaults_IceHasVeryLowTexture()
 		{
@@ -1365,6 +1459,9 @@ namespace LibreRally.Tests
 			Assert.True(ice.Macrotexture <= 0.1f);
 		}
 
+		/// <summary>
+		/// Verifies that gravel defaults to high macrotexture.
+		/// </summary>
 		[Fact]
 		public void SurfaceDefaults_GravelHasHighMacrotexture()
 		{

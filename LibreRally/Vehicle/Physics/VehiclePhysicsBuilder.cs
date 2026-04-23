@@ -95,9 +95,9 @@ namespace LibreRally.Vehicle.Physics
 			// Keep mass derived from the full sprung node cloud, but build the *collision* proxy from
 			// body-shell nodes only. Suspension/pickup/skid nodes that sit very low in the jbeam should
 			// influence mass and COM, but should not make the rigid chassis hull drag on the ground.
-			const float MinNodeZ = 0.10f;        // excludes unresolved steelwheel origin nodes
-			const float CollisionMinZ = 0.35f;   // floor pan / sill region, safely above the wheels' contact patch
-			const float BodySplitZ = 0.55f;      // split lower body / upper cabin
+			const float MinNodeZ = 0.10f; // excludes unresolved steelwheel origin nodes
+			const float CollisionMinZ = 0.35f; // floor pan / sill region, safely above the wheels' contact patch
+			const float BodySplitZ = 0.55f; // split lower body / upper cabin
 
 			var chassisNodes = chassisPart.ExclusiveNodeIds
 				.Where(id => def.Nodes.ContainsKey(id))
@@ -173,6 +173,7 @@ namespace LibreRally.Vehicle.Physics
 					extents.X *= 0.65f;
 					extents.Z *= 0.50f;
 				}
+
 				boxSpecs.Add((
 					center,
 					new Vector3(
@@ -200,6 +201,7 @@ namespace LibreRally.Vehicle.Physics
 				centerOfMass += spec.Center * spec.Mass;
 				boxMassSum += spec.Mass;
 			}
+
 			centerOfMass /= Math.Max(boxMassSum, 1f);
 
 			var entity = new Entity("chassis") { Transform = { Position = centerOfMass } };
@@ -207,20 +209,10 @@ namespace LibreRally.Vehicle.Physics
 			var collider = new CompoundCollider();
 			foreach (var spec in boxSpecs)
 			{
-				collider.Colliders.Add(new BoxCollider
-				{
-					Size = spec.Size,
-					PositionLocal = spec.Center - centerOfMass,
-					Mass = spec.Mass,
-				});
+				collider.Colliders.Add(new BoxCollider { Size = spec.Size, PositionLocal = spec.Center - centerOfMass, Mass = spec.Mass, });
 			}
 
-			var body = new BodyComponent
-			{
-				Collider = collider,
-				Gravity = true,
-				InterpolationMode = InterpolationMode.Interpolated,
-			};
+			var body = new BodyComponent { Collider = collider, Gravity = true, InterpolationMode = InterpolationMode.Interpolated, };
 
 			var nodeCom = ComputeWeightedCentroid(sprungNodes);
 			var upperAabb = upperCollisionNodes.Count > 0 ? ComputeAABB(upperCollisionNodes.Select(n => n.Position)) : new BoundingBox(Vector3.Zero, Vector3.Zero);
@@ -259,10 +251,7 @@ namespace LibreRally.Vehicle.Physics
 
 			var extents = aabb.Maximum - aabb.Minimum;
 
-			var entity = new Entity(part.Name)
-			{
-				Transform = { Position = centroid }
-			};
+			var entity = new Entity(part.Name) { Transform = { Position = centroid } };
 
 			var body = new BodyComponent
 			{
@@ -287,19 +276,11 @@ namespace LibreRally.Vehicle.Physics
 			entity.Add(body);
 
 			// Weld this part to the chassis; the BreakablePartComponent will remove it on impact
-			var weld = new WeldConstraintComponent
-			{
-				A = chassisBody,
-				B = body,
-			};
+			var weld = new WeldConstraintComponent { A = chassisBody, B = body, };
 			entity.Add(weld);
 
 			// Add the break monitor
-			entity.Add(new BreakablePartComponent
-			{
-				BreakStrength = part.BreakStrength,
-				WeldConstraint = weld,
-			});
+			entity.Add(new BreakablePartComponent { BreakStrength = part.BreakStrength, WeldConstraint = weld, });
 
 			return (entity, body);
 		}
@@ -376,7 +357,7 @@ namespace LibreRally.Vehicle.Physics
 			{
 				if (node.Position.Z < 0.10f)
 				{
-					continue;  // skip steelwheel origin nodes
+					continue; // skip steelwheel origin nodes
 				}
 
 				foreach (var group in node.Groups)
@@ -474,16 +455,17 @@ namespace LibreRally.Vehicle.Physics
 
 			float GetVar(string name, float fallback) =>
 				def.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
+
 			// springheight vars are signed adjustments (negative lowers the car), so accept any finite value.
 			float GetSignedVar(string name, float fallback) =>
 				def.Vars.TryGetValue(name, out var v) && float.IsFinite(v) ? v : fallback;
 
-			var springF   = GetVar("spring_F_asphalt",   GetVar("spring_F",  60000f));
-			var springR   = GetVar("spring_R_asphalt",   GetVar("spring_R",  50000f));
+			var springF = GetVar("spring_F_asphalt", GetVar("spring_F", 60000f));
+			var springR = GetVar("spring_R_asphalt", GetVar("spring_R", 50000f));
 			var dampBumpF = GetVar("damp_bump_F_asphalt", GetVar("damp_bump_F", 4400f));
-			var dampRebF  = GetVar("damp_rebound_F_asphalt", GetVar("damp_rebound_F", 11500f));
+			var dampRebF = GetVar("damp_rebound_F_asphalt", GetVar("damp_rebound_F", 11500f));
 			var dampBumpR = GetVar("damp_bump_R_asphalt", GetVar("damp_bump_R", 4400f));
-			var dampRebR  = GetVar("damp_rebound_R_asphalt", GetVar("damp_rebound_R", 9000f));
+			var dampRebR = GetVar("damp_rebound_R_asphalt", GetVar("damp_rebound_R", 9000f));
 
 			// Average bump+rebound for single BEPU damping value; BEPU uses SpringDampingRatio
 			var dampF = (dampBumpF + dampRebF) * 0.5f;
@@ -491,13 +473,14 @@ namespace LibreRally.Vehicle.Physics
 
 			float ComputeFreq(float k) =>
 				Math.Clamp((float)(Math.Sqrt(k / quarterMass) / (2 * Math.PI)), 1.0f, 6.0f);
+
 			float ComputeRatio(float c, float k) =>
 				Math.Clamp(c / (2f * (float)Math.Sqrt(k * quarterMass)), 0.4f, 2.0f);
 
-			var springFreqF  = ComputeFreq(springF);
-			var dampRatioF   = ComputeRatio(dampF, springF);
-			var springFreqR  = ComputeFreq(springR);
-			var dampRatioR   = ComputeRatio(dampR, springR);
+			var springFreqF = ComputeFreq(springF);
+			var dampRatioF = ComputeRatio(dampF, springF);
+			var springFreqR = ComputeFreq(springR);
+			var dampRatioR = ComputeRatio(dampR, springR);
 
 			Console.Error.WriteLine($"[VehiclePhysicsBuilder] sprungMass={sprungMass:F0}kg quarterMass={quarterMass:F0}kg " +
 			                        $"F: spring={springF:F0}N/m freq={springFreqF:F2}Hz ratio={dampRatioF:F2} " +
@@ -545,8 +528,9 @@ namespace LibreRally.Vehicle.Physics
 					Console.Error.WriteLine($"[VehiclePhysicsBuilder] {label}: no position data — using fallback");
 					pos = Vector3.Zero;
 				}
-				var freq  = isFront ? springFreqF  : springFreqR;
-				var ratio = isFront ? dampRatioF   : dampRatioR;
+
+				var freq = isFront ? springFreqF : springFreqR;
+				var ratio = isFront ? dampRatioF : dampRatioR;
 				var bumpTravel = isFront ? bumpTravelF : bumpTravelR;
 				var reboundTravel = isFront ? reboundTravelF : reboundTravelR;
 				var suspensionAxis = ResolveSuspensionAxis(def, pressureWheel, pos);
@@ -590,18 +574,18 @@ namespace LibreRally.Vehicle.Physics
 		/// </summary>
 		private static Vector3 ComputeWheelCenter(List<AssembledNode> nodes, float wheelRadius)
 		{
-			const float SpindleOffset  = 0.08f;  // hub lower ball joint → wheel centre height
+			const float SpindleOffset = 0.08f; // hub lower ball joint → wheel centre height
 
 			var positions = nodes.Select(n => n.Position).ToList();
 
-			var meanY  = positions.Average(p => p.Y);  // BeamNG Y = longitudinal
-			var minZ   = positions.Min(p => p.Z);       // lowest valid node ≈ hub lower ball joint
+			var meanY = positions.Average(p => p.Y); // BeamNG Y = longitudinal
+			var minZ = positions.Min(p => p.Z); // lowest valid node ≈ hub lower ball joint
 			var centreZ = Math.Max(minZ + SpindleOffset, wheelRadius);
 
 			// The outermost lateral node gives the wheel contact-patch lateral position.
 			var outerX = positions.OrderByDescending(p => Math.Abs(p.X)).First().X;
 
-			return new Vector3(outerX, centreZ, -meanY);  // BeamNG → Stride
+			return new Vector3(outerX, centreZ, -meanY); // BeamNG → Stride
 		}
 
 		private static Entity BuildWheelEntity(
@@ -620,7 +604,7 @@ namespace LibreRally.Vehicle.Physics
 			float bumpTravel = 0.1f,
 			float reboundTravel = 0.08f)
 		{
-			const float WheelMass   = 18f;
+			const float WheelMass = 18f;
 
 			var entity = new Entity(name) { Transform = { Position = position } };
 			var body = new BodyComponent
@@ -637,7 +621,8 @@ namespace LibreRally.Vehicle.Physics
 						{
 							Radius = wheelRadius,
 							Length = wheelWidth,
-							Mass   = WheelMass,
+							Mass = WheelMass,
+
 							// Default cylinder axis is Y; rotate 90° around Z to orient axis along X (wheel rolling axis)
 							RotationLocal = Quaternion.RotationZ(MathF.PI / 2),
 						}
@@ -660,9 +645,10 @@ namespace LibreRally.Vehicle.Physics
 			// PointOnLine constrains the wheel centre to a vertical rail fixed in chassis space.
 			entity.Add(new PointOnLineServoConstraintComponent
 			{
-				A = chassisBody, B = body,
-				LocalOffsetA  = localOffsetA,
-				LocalOffsetB  = localOffsetB,
+				A = chassisBody,
+				B = body,
+				LocalOffsetA = localOffsetA,
+				LocalOffsetB = localOffsetB,
 				LocalDirection = suspensionAxis,
 				ServoMaximumForce = 80000f,
 			});
@@ -670,19 +656,21 @@ namespace LibreRally.Vehicle.Physics
 			// LinearAxisServo provides the spring/damper along that rail.
 			entity.Add(new LinearAxisServoConstraintComponent
 			{
-				A = chassisBody, B = body,
-				LocalOffsetA     = localOffsetA,
-				LocalOffsetB     = localOffsetB,
+				A = chassisBody,
+				B = body,
+				LocalOffsetA = localOffsetA,
+				LocalOffsetB = localOffsetB,
 				LocalPlaneNormal = suspensionAxis,
-				TargetOffset     = targetOffset,
-				SpringFrequency    = springFreq,
+				TargetOffset = targetOffset,
+				SpringFrequency = springFreq,
 				SpringDampingRatio = dampingRatio,
-				ServoMaximumForce  = 80000f,
+				ServoMaximumForce = 80000f,
 			});
 
 			entity.Add(new LinearAxisLimitConstraintComponent
 			{
-				A = chassisBody, B = body,
+				A = chassisBody,
+				B = body,
 				LocalOffsetA = localOffsetA,
 				LocalOffsetB = localOffsetB,
 				LocalAxis = suspensionAxis,
@@ -698,10 +686,11 @@ namespace LibreRally.Vehicle.Physics
 				// Front: allow steering (swivel around chassis Y) AND spin (hinge around wheel X).
 				entity.Add(new AngularSwivelHingeConstraintComponent
 				{
-					A = chassisBody, B = body,
+					A = chassisBody,
+					B = body,
 					LocalSwivelAxisA = Vector3.UnitY,
-					LocalHingeAxisB  = Vector3.UnitX,
-					SpringFrequency    = 30f,
+					LocalHingeAxisB = Vector3.UnitX,
+					SpringFrequency = 30f,
 					SpringDampingRatio = 2f,
 				});
 			}
@@ -710,10 +699,11 @@ namespace LibreRally.Vehicle.Physics
 				// Rear: spin only; hinge axes aligned → no steer, no wobble.
 				entity.Add(new AngularHingeConstraintComponent
 				{
-					A = chassisBody, B = body,
+					A = chassisBody,
+					B = body,
 					LocalHingeAxisA = Vector3.UnitX,
 					LocalHingeAxisB = Vector3.UnitX,
-					SpringFrequency    = 30f,
+					SpringFrequency = 30f,
 					SpringDampingRatio = 2f,
 				});
 			}
@@ -726,10 +716,11 @@ namespace LibreRally.Vehicle.Physics
 			// direction, which keeps drive torque aligned with the current hinge axis.
 			var driveMotor = new AngularMotorConstraintComponent
 			{
-				A = chassisBody, B = body,
+				A = chassisBody,
+				B = body,
 				TargetVelocityLocalA = Vector3.Zero,
-				MotorMaximumForce    = 8000f,
-				MotorDamping         = 500f,
+				MotorMaximumForce = 8000f,
+				MotorDamping = 500f,
 			};
 			entity.Add(driveMotor);
 
@@ -739,13 +730,15 @@ namespace LibreRally.Vehicle.Physics
 			{
 				steerMotor = new AngularAxisMotorConstraintComponent
 				{
-					A = chassisBody, B = body,
-					LocalAxisA        = Vector3.UnitY,
-					TargetVelocity    = 0f,
+					A = chassisBody,
+					B = body,
+					LocalAxisA = Vector3.UnitY,
+					TargetVelocity = 0f,
+
 					// Steering is a position servo in RallyCarComponent, so this motor needs
 					// enough authority to hold lock against tyre-aligning load at speed.
 					MotorMaximumForce = 12000f,
-					MotorDamping      = 4000f,
+					MotorDamping = 4000f,
 				};
 				entity.Add(steerMotor);
 			}
@@ -917,7 +910,7 @@ namespace LibreRally.Vehicle.Physics
 			var allPositions = def.Nodes.Values.Select(n => n.Position).ToList();
 			var minX = allPositions.Min(p => p.X);
 			var maxX = allPositions.Max(p => p.X);
-			var minY = allPositions.Min(p => p.Y);  // jbeam Y = forward
+			var minY = allPositions.Min(p => p.Y); // jbeam Y = forward
 			var maxY = allPositions.Max(p => p.Y);
 			var groundZ = allPositions.Min(p => p.Z); // jbeam Z = up → wheel bottom
 
@@ -927,10 +920,7 @@ namespace LibreRally.Vehicle.Physics
 
 			return new Dictionary<string, List<AssembledNode>>
 			{
-				["wheel_FL"] = [new AssembledNode("est_fl", new System.Numerics.Vector3(minX, wheelY_front, wheelZ), 20, [], true)],
-				["wheel_FR"] = [new AssembledNode("est_fr", new System.Numerics.Vector3(maxX, wheelY_front, wheelZ), 20, [], true)],
-				["wheel_RL"] = [new AssembledNode("est_rl", new System.Numerics.Vector3(minX, wheelY_rear, wheelZ), 20, [], true)],
-				["wheel_RR"] = [new AssembledNode("est_rr", new System.Numerics.Vector3(maxX, wheelY_rear, wheelZ), 20, [], true)],
+				["wheel_FL"] = [new AssembledNode("est_fl", new System.Numerics.Vector3(minX, wheelY_front, wheelZ), 20, [], true)], ["wheel_FR"] = [new AssembledNode("est_fr", new System.Numerics.Vector3(maxX, wheelY_front, wheelZ), 20, [], true)], ["wheel_RL"] = [new AssembledNode("est_rl", new System.Numerics.Vector3(minX, wheelY_rear, wheelZ), 20, [], true)], ["wheel_RR"] = [new AssembledNode("est_rr", new System.Numerics.Vector3(maxX, wheelY_rear, wheelZ), 20, [], true)],
 			};
 		}
 
@@ -946,6 +936,9 @@ namespace LibreRally.Vehicle.Physics
 		/// <param name="v">Vector expressed in BeamNG coordinates (X right, Y forward, Z up).</param>
 		/// <returns>Equivalent vector in Stride coordinates (X right, Y up, Z backward).</returns>
 		/// <remarks>
+		/// <para>Uses the shared vehicle-physics convention that BeamNG forward becomes negative Z in Stride so downstream systems can continue treating <see cref="Matrix.Backward"/> as the forward direction.</para>
+		/// <para>The conversion is only an axis remap with sign inversion on the forward axis; it does not apply unit scaling or any additional rotation.</para>
+		/// <para>This helper is used when importing BeamNG-authored geometry and suspension metadata into runtime Stride entities, so keeping the transform here explicit avoids silent forward-axis mismatches elsewhere in the vehicle pipeline.</para>
 		/// <para>Coordinate system transform:</para>
 		/// <list type="bullet">
 		///   <item>BeamNG: X = right, Y = forward, Z = up</item>
@@ -1030,6 +1023,7 @@ namespace LibreRally.Vehicle.Physics
 				min = new Vector3(MathF.Min(min.X, p.X), MathF.Min(min.Y, p.Y), MathF.Min(min.Z, p.Z));
 				max = new Vector3(MathF.Max(max.X, p.X), MathF.Max(max.Y, p.Y), MathF.Max(max.Z, p.Z));
 			}
+
 			return new BoundingBox(min, max);
 		}
 	}
