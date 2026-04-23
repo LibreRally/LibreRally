@@ -134,6 +134,8 @@ namespace LibreRally.Vehicle.Physics
 		{
 			SurfaceType.Tarmac => new SurfaceProperties
 			{
+				// Dry rally asphalt acts as the reference high-grip surface for the tyre model,
+				// so use a slightly sticky µ baseline rather than a normalized 1.0 placeholder.
 				FrictionCoefficient = 1.10f,
 				Microtexture = 0.8f,
 				Macrotexture = 0.6f,
@@ -223,7 +225,6 @@ namespace LibreRally.Vehicle.Physics
 		public static SurfaceProperties Lerp(in SurfaceProperties a, in SurfaceProperties b, float t)
 		{
 			var blend = float.IsFinite(t) ? Math.Clamp(t, 0f, 1f) : 0f;
-			static float Interpolate(float from, float to, float alpha) => from + (to - from) * alpha;
 			return new SurfaceProperties
 			{
 				FrictionCoefficient = Interpolate(a.FrictionCoefficient, b.FrictionCoefficient, blend),
@@ -238,5 +239,7 @@ namespace LibreRally.Vehicle.Physics
 				NoiseFactor = Interpolate(a.NoiseFactor, b.NoiseFactor, blend),
 			};
 		}
+
+		private static float Interpolate(float from, float to, float alpha) => from + (to - from) * alpha;
 	}
 }
