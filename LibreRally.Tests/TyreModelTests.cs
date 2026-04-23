@@ -7,7 +7,9 @@ namespace LibreRally.Tests
 	/// </summary>
 	public class TyreModelTests
 	{
-		private static readonly SurfaceProperties Tarmac = new()
+		// Deterministic reference surface for analytical tyre-model tests.
+		// This intentionally keeps neutralized values instead of using gameplay defaults.
+		private static readonly SurfaceProperties DeterministicReferenceSurface = new()
 		{
 			FrictionCoefficient = 1.0f,
 			Microtexture = 0.8f,
@@ -272,10 +274,10 @@ namespace LibreRally.Tests
 		{
 			var model = new TyreModel(0.305f) { CarcassStiffness = 1.0f, };
 
-			float tarmacLateral = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
+			float tarmacLateral = model.ComputeEffectiveRelaxationLength(DeterministicReferenceSurface, longitudinal: false);
 			float gravelLateral = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Gravel), longitudinal: false);
 			float snowLateral = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Snow), longitudinal: false);
-			float tarmacLongitudinal = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: true);
+			float tarmacLongitudinal = model.ComputeEffectiveRelaxationLength(DeterministicReferenceSurface, longitudinal: true);
 			float gravelLongitudinal = model.ComputeEffectiveRelaxationLength(SurfaceProperties.ForType(SurfaceType.Gravel), longitudinal: true);
 
 			Assert.True(gravelLateral > tarmacLateral);
@@ -309,11 +311,11 @@ namespace LibreRally.Tests
 				peakForce,
 				loadRatio: 1f,
 				camberAngle: 0f,
-				Tarmac);
+				DeterministicReferenceSurface);
 			var longitudinalCoefficients = model.EvaluateLongitudinalPureSlipCoefficients(
 				peakForce,
 				loadRatio: 1f,
-				Tarmac);
+				DeterministicReferenceSurface);
 			float lowSlipLateralScale = model.ComputeRelaxationLengthOperatingPointScale(
 				longitudinal: false,
 				slipRatio: 0f,
@@ -353,9 +355,9 @@ namespace LibreRally.Tests
 		{
 			var model = new TyreModel(0.305f) { CarcassStiffness = 1.0f, };
 
-			float baseLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false);
-			float reducedSlopeLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false, operatingPointSlopeScale: 0.2f);
-			float amplifiedSlopeLength = model.ComputeEffectiveRelaxationLength(Tarmac, longitudinal: false, operatingPointSlopeScale: 1.5f);
+			float baseLength = model.ComputeEffectiveRelaxationLength(DeterministicReferenceSurface, longitudinal: false);
+			float reducedSlopeLength = model.ComputeEffectiveRelaxationLength(DeterministicReferenceSurface, longitudinal: false, operatingPointSlopeScale: 0.2f);
+			float amplifiedSlopeLength = model.ComputeEffectiveRelaxationLength(DeterministicReferenceSurface, longitudinal: false, operatingPointSlopeScale: 1.5f);
 
 			Assert.True(reducedSlopeLength < baseLength);
 			Assert.True(amplifiedSlopeLength > baseLength);
@@ -378,9 +380,9 @@ namespace LibreRally.Tests
 				WornGripFraction = 1.0f,
 			};
 
-			float referenceMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
-			float mediumLoadMu = model.ComputeEffectiveFriction(3300f, Tarmac, 30f, 1.0f);
-			float highLoadMu = model.ComputeEffectiveFriction(6000f, Tarmac, 30f, 1.0f);
+			float referenceMu = model.ComputeEffectiveFriction(3000f, DeterministicReferenceSurface, 30f, 1.0f);
+			float mediumLoadMu = model.ComputeEffectiveFriction(3300f, DeterministicReferenceSurface, 30f, 1.0f);
+			float highLoadMu = model.ComputeEffectiveFriction(6000f, DeterministicReferenceSurface, 30f, 1.0f);
 
 			Assert.Equal(1.0f, referenceMu, 4);
 			Assert.True(mediumLoadMu < referenceMu);
@@ -409,8 +411,8 @@ namespace LibreRally.Tests
 				WornGripFraction = 1.0f,
 			};
 
-			float measuredReferenceMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
-			float highLoadMu = model.ComputeEffectiveFriction(6000f, Tarmac, 30f, 1.0f);
+			float measuredReferenceMu = model.ComputeEffectiveFriction(3000f, DeterministicReferenceSurface, 30f, 1.0f);
+			float highLoadMu = model.ComputeEffectiveFriction(6000f, DeterministicReferenceSurface, 30f, 1.0f);
 			float expectedHighLoadMu = referenceMu *
 			                           (TyreModel.ComputeBeamNgLoadCoefficient(6000f, 1.6f, 0.5f, 0.000165f) / referenceMu);
 
@@ -435,10 +437,10 @@ namespace LibreRally.Tests
 			};
 
 			model.TyrePressure = 180f;
-			float lowPressureMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+			float lowPressureMu = model.ComputeEffectiveFriction(3000f, DeterministicReferenceSurface, 30f, 1.0f);
 
 			model.TyrePressure = 280f;
-			float highPressureMu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+			float highPressureMu = model.ComputeEffectiveFriction(3000f, DeterministicReferenceSurface, 30f, 1.0f);
 
 			Assert.True(lowPressureMu > highPressureMu);
 		}
@@ -485,9 +487,9 @@ namespace LibreRally.Tests
 			ellipticalState.AngularVelocity = angularVelocity;
 
 			baselineModel.Update(ref baselineState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float baselineFx, out float baselineFy, out _);
+				DeterministicReferenceSurface, 0.01f, out float baselineFx, out float baselineFy, out _);
 			ellipticalModel.Update(ref ellipticalState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float ellipticalFx, out float ellipticalFy, out _);
+				DeterministicReferenceSurface, 0.01f, out float ellipticalFx, out float ellipticalFy, out _);
 
 			float fxMax = normalLoad;
 			float fyMax = normalLoad * 0.9f;
@@ -541,9 +543,9 @@ namespace LibreRally.Tests
 			highPressureState.AngularVelocity = angularVelocity;
 
 			lowPressureModel.Update(ref lowPressureState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float lowPressureFy, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out float lowPressureFy, out _);
 			highPressureModel.Update(ref highPressureState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float highPressureFy, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out float highPressureFy, out _);
 
 			Assert.True(MathF.Abs(highPressureFy) > MathF.Abs(lowPressureFy));
 		}
@@ -565,7 +567,7 @@ namespace LibreRally.Tests
 				WornGripFraction = 1.0f,
 			};
 
-			float mu = model.ComputeEffectiveFriction(3000f, Tarmac, 30f, 1.0f);
+			float mu = model.ComputeEffectiveFriction(3000f, DeterministicReferenceSurface, 30f, 1.0f);
 
 			Assert.True(float.IsFinite(mu));
 			Assert.InRange(mu, 0.5f, 2.0f);
@@ -597,7 +599,7 @@ namespace LibreRally.Tests
 			state.AngularVelocity = longitudinalVelocity / model.Radius;
 
 			model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float fx, out float fy, out _);
+				DeterministicReferenceSurface, 0.01f, out float fx, out float fy, out _);
 
 			float fxMax = normalLoad;
 			float fyMax = normalLoad * 0.9f;
@@ -632,7 +634,7 @@ namespace LibreRally.Tests
 			state.AngularVelocity = longitudinalVelocity / model.Radius;
 
 			model.Update(ref state, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0.35f,
-				Tarmac, 0.01f, out float fx, out float fy, out _);
+				DeterministicReferenceSurface, 0.01f, out float fx, out float fy, out _);
 
 			float fxMax = normalLoad;
 			float fyMax = normalLoad * 0.9f;
@@ -693,9 +695,9 @@ namespace LibreRally.Tests
 			couplingState.AngularVelocity = couplingAngularVelocity;
 
 			noCouplingModel.Update(ref noCouplingState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float noCouplingFx, out float noCouplingFy, out _);
+				DeterministicReferenceSurface, 0.01f, out float noCouplingFx, out float noCouplingFy, out _);
 			couplingModel.Update(ref couplingState, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out float couplingFx, out float couplingFy, out _);
+				DeterministicReferenceSurface, 0.01f, out float couplingFx, out float couplingFy, out _);
 
 			Assert.True(MathF.Abs(noCouplingFy) > 0f);
 			Assert.True(MathF.Abs(couplingFy) > 0f);
@@ -788,9 +790,9 @@ namespace LibreRally.Tests
 			couplingState.AngularVelocity = couplingAngularVelocity;
 
 			noCouplingModel.Update(ref noCouplingState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float noCouplingFy, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out float noCouplingFy, out _);
 			couplingModel.Update(ref couplingState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float couplingFy, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out float couplingFy, out _);
 
 			Assert.True(MathF.Abs(couplingFy) < MathF.Abs(noCouplingFy));
 		}
@@ -828,7 +830,7 @@ namespace LibreRally.Tests
 			{
 				state.AngularVelocity = longitudinalVelocity * 1.25f / model.Radius;
 				model.Update(ref state, longitudinalVelocity, 6f, normalLoad, 0f, 0f, 0f,
-					Tarmac, dt, out _, out _, out _);
+					DeterministicReferenceSurface, dt, out _, out _, out _);
 			}
 
 			float heatedSurface = state.Temperature;
@@ -838,7 +840,7 @@ namespace LibreRally.Tests
 			{
 				state.AngularVelocity = 0f;
 				model.Update(ref state, 0f, 0f, normalLoad, 0f, 0f, 0f,
-					Tarmac, dt, out _, out _, out _);
+					DeterministicReferenceSurface, dt, out _, out _, out _);
 			}
 
 			float postCooldownSurface = state.Temperature;
@@ -848,7 +850,7 @@ namespace LibreRally.Tests
 			{
 				state.AngularVelocity = 0f;
 				model.Update(ref state, 0f, 0f, normalLoad, 0f, 0f, 0f,
-					Tarmac, dt, out _, out _, out _);
+					DeterministicReferenceSurface, dt, out _, out _, out _);
 			}
 
 			Assert.True(heatedSurface > model.AmbientTemperature);
@@ -1000,13 +1002,13 @@ namespace LibreRally.Tests
 			var stateSmall = TyreState.CreateDefault();
 			stateSmall.AngularVelocity = 20f / model.Radius;
 			model.Update(ref stateSmall, 20f, 1.0f, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float fySmall, out float mzSmall);
+				DeterministicReferenceSurface, 0.01f, out _, out float fySmall, out float mzSmall);
 
 			// Large slip angle — expect reduced Mz
 			var stateLarge = TyreState.CreateDefault();
 			stateLarge.AngularVelocity = 20f / model.Radius;
 			model.Update(ref stateLarge, 20f, 12f, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float fyLarge, out float mzLarge);
+				DeterministicReferenceSurface, 0.01f, out _, out float fyLarge, out float mzLarge);
 
 			var equivalentSlipSmall = TyreModel.ComputeEquivalentTrailSlip(MathF.Tan(stateSmall.SlipAngle), stateSmall.SlipRatio, 1f);
 			var equivalentSlipLarge = TyreModel.ComputeEquivalentTrailSlip(MathF.Tan(stateLarge.SlipAngle), stateLarge.SlipRatio, 1f);
@@ -1060,9 +1062,9 @@ namespace LibreRally.Tests
 			combinedState.AngularVelocity = longitudinalVelocity * 1.16f / combinedSlipModel.Radius;
 
 			pureCorneringModel.Update(ref pureState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out float pureMz);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out float pureMz);
 			combinedSlipModel.Update(ref combinedState, longitudinalVelocity, lateralVelocity, normalLoad, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out float combinedMz);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out float combinedMz);
 
 			Assert.True(MathF.Abs(combinedMz) < MathF.Abs(pureMz));
 		}
@@ -1108,9 +1110,9 @@ namespace LibreRally.Tests
 			momentArmState.AngularVelocity = longitudinalVelocity * 0.9f / momentArmModel.Radius;
 
 			noMomentArmModel.Update(ref noMomentArmState, longitudinalVelocity, 2.5f, normalLoad, 0f, 0f, 0.1f,
-				Tarmac, 0.01f, out _, out _, out float noMomentArmMz);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out float noMomentArmMz);
 			momentArmModel.Update(ref momentArmState, longitudinalVelocity, 2.5f, normalLoad, 0f, 0f, 0.1f,
-				Tarmac, 0.01f, out _, out _, out float momentArmMz);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out float momentArmMz);
 
 			Assert.NotEqual(noMomentArmMz, momentArmMz);
 		}
@@ -1173,14 +1175,14 @@ namespace LibreRally.Tests
 
 			// Baseline step at cruise — no braking
 			model.Update(ref state, 20f, 0f, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out _);
 			float baselineDeflection = state.LongitudinalDeflection;
 
 			// Apply heavy braking for several steps — deflection should build
 			for (int i = 0; i < 5; i++)
 			{
 				model.Update(ref state, 20f, 0f, 3000f, 0f, 3000f, 0f,
-					Tarmac, 0.01f, out _, out _, out _);
+					DeterministicReferenceSurface, 0.01f, out _, out _, out _);
 			}
 
 			float deflectionBraking = state.LongitudinalDeflection;
@@ -1203,7 +1205,7 @@ namespace LibreRally.Tests
 
 			// Airborne: normalLoad = 0
 			model.Update(ref state, 20f, 0f, 0f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out _, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out _, out _);
 
 			Assert.Equal(0f, state.LongitudinalDeflection);
 		}
@@ -1413,7 +1415,7 @@ namespace LibreRally.Tests
 			wetState.AngularVelocity = longitudinalVelocity / model.Radius;
 
 			model.Update(ref dryState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
-				Tarmac, 0.01f, out _, out float dryFy, out _);
+				DeterministicReferenceSurface, 0.01f, out _, out float dryFy, out _);
 			model.Update(ref wetState, longitudinalVelocity, lateralVelocity, 3000f, 0f, 0f, 0f,
 				WetTarmac, 0.01f, out _, out float wetFy, out _);
 
@@ -1485,7 +1487,7 @@ namespace LibreRally.Tests
 				driveTorque: 120f,
 				brakeTorque: 0f,
 				camberAngle: 0f,
-				in Tarmac,
+				in DeterministicReferenceSurface,
 				dt: 0.01f,
 				out _,
 				out _,
@@ -1521,7 +1523,7 @@ namespace LibreRally.Tests
 				driveTorque: 0f,
 				brakeTorque: 400f,
 				camberAngle: 0f,
-				in Tarmac,
+				in DeterministicReferenceSurface,
 				dt: 0.02f,
 				out _,
 				out _,

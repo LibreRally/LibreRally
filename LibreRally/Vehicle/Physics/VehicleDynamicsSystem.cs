@@ -745,10 +745,10 @@ namespace LibreRally.Vehicle.Physics
 						in WheelSurfaces[i],
 						dt,
 						out _, out _, out _);
-				WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
-				EffectivePeakFrictionCoefficients[i] = 0f;
-				continue;
-			}
+					WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
+					EffectivePeakFrictionCoefficients[i] = 0f;
+					continue;
+				}
 
 				// Decompose wheel velocity into longitudinal and lateral components
 				// in the wheel's local frame.
