@@ -1,5 +1,6 @@
 using System;
 using Stride.BepuPhysics;
+using Stride.Core.Diagnostics;
 using Stride.Core.Mathematics;
 
 namespace LibreRally.Vehicle.Physics
@@ -36,6 +37,7 @@ namespace LibreRally.Vehicle.Physics
 	public sealed class VehicleDynamicsSystem
 	{
 		private const float MinimumWakeForce = 0.01f;
+		private static readonly Logger Log = GlobalLogger.GetLogger("VehicleDynamicsSystem");
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
 		/// <summary>Front-left wheel index.</summary>
@@ -165,9 +167,31 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Drive torque delivered to each wheel after differential (N·m).</summary>
 		public readonly float[] WheelDriveTorques = new float[WheelCount];
 
+		/// <summary>Brake torque applied to each wheel this frame (N·m).</summary>
+		public readonly float[] WheelBrakeTorques = new float[WheelCount];
+
+		/// <summary>Tyre reaction torque opposing wheel rotation (N·m).</summary>
+		public readonly float[] WheelTyreReactionTorques = new float[WheelCount];
+
+		/// <summary>Total drivetrain torque requested at the wheels before traction limiting (N·m).</summary>
+		public float RequestedDrivetrainTorque { get; private set; }
+
+		/// <summary>Total drivetrain torque delivered to the wheel shafts after differential limits (N·m).</summary>
+		public float DeliveredDrivetrainTorque { get; private set; }
+
+		/// <summary>Undelivered drivetrain torque magnitude caused by traction or differential limits (N·m).</summary>
+		public float DrivetrainTorqueShortfall { get; private set; }
+
+		/// <summary>Delivered front-axle drive torque after the center differential (N·m).</summary>
+		public float FrontAxleDeliveredTorque { get; private set; }
+
+		/// <summary>Delivered rear-axle drive torque after the center differential (N·m).</summary>
+		public float RearAxleDeliveredTorque { get; private set; }
+
 		// ── Force-derived acceleration state (cached for next step) ──────────────
 		private Vector3 _forceEstimatedAccelerationWorld;
 		private bool _hasForceEstimatedAcceleration;
+		private int _drivetrainDiagnosticCooldown;
 
 		/// <summary>Initializes a new dynamics system with default tyre state and tarmac surfaces.</summary>
 		public VehicleDynamicsSystem()
@@ -517,6 +541,18 @@ namespace LibreRally.Vehicle.Physics
 				WheelDriveTorques[i] = 0f;
 			}
 
+			RequestedDrivetrainTorque = engineTorqueAtWheels;
+			DeliveredDrivetrainTorque = 0f;
+			DrivetrainTorqueShortfall = 0f;
+			FrontAxleDeliveredTorque = 0f;
+			RearAxleDeliveredTorque = 0f;
+
+			Span<float> wheelTractionLimits = stackalloc float[WheelCount];
+			for (var i = 0; i < WheelCount; i++)
+			{
+				wheelTractionLimits[i] = ComputeWheelTractionLimit(i);
+			}
+
 			if (!DriveFrontAxle && !DriveRearAxle)
 			{
 				return;
@@ -527,7 +563,12 @@ namespace LibreRally.Vehicle.Physics
 				var frontDiffOnly = FrontDiff;
 				DifferentialSolver.SplitTorque(in frontDiffOnly, engineTorqueAtWheels,
 					WheelStates[FL].AngularVelocity, WheelStates[FR].AngularVelocity,
+					wheelTractionLimits[FL], wheelTractionLimits[FR],
 					out WheelDriveTorques[FL], out WheelDriveTorques[FR]);
+				FrontAxleDeliveredTorque = WheelDriveTorques[FL] + WheelDriveTorques[FR];
+				DeliveredDrivetrainTorque = FrontAxleDeliveredTorque;
+				DrivetrainTorqueShortfall = ComputeTorqueShortfall(RequestedDrivetrainTorque, DeliveredDrivetrainTorque);
+				ValidateDrivetrainTorque("front axle", RequestedDrivetrainTorque, DeliveredDrivetrainTorque);
 				return;
 			}
 
@@ -536,23 +577,44 @@ namespace LibreRally.Vehicle.Physics
 				var rearDiffOnly = RearDiff;
 				DifferentialSolver.SplitTorque(in rearDiffOnly, engineTorqueAtWheels,
 					WheelStates[RL].AngularVelocity, WheelStates[RR].AngularVelocity,
+					wheelTractionLimits[RL], wheelTractionLimits[RR],
 					out WheelDriveTorques[RL], out WheelDriveTorques[RR]);
+				RearAxleDeliveredTorque = WheelDriveTorques[RL] + WheelDriveTorques[RR];
+				DeliveredDrivetrainTorque = RearAxleDeliveredTorque;
+				DrivetrainTorqueShortfall = ComputeTorqueShortfall(RequestedDrivetrainTorque, DeliveredDrivetrainTorque);
+				ValidateDrivetrainTorque("rear axle", RequestedDrivetrainTorque, DeliveredDrivetrainTorque);
 				return;
 			}
 
 			// Center diff splits to front and rear axles
 			var omegaFrontAxle = (WheelStates[FL].AngularVelocity + WheelStates[FR].AngularVelocity) * 0.5f;
 			var omegaRearAxle = (WheelStates[RL].AngularVelocity + WheelStates[RR].AngularVelocity) * 0.5f;
+			var frontAxleTractionLimit = DifferentialSolver.ComputeMaximumDeliveredTorque(
+				in FrontDiff,
+				WheelStates[FL].AngularVelocity,
+				WheelStates[FR].AngularVelocity,
+				wheelTractionLimits[FL],
+				wheelTractionLimits[FR]);
+			var rearAxleTractionLimit = DifferentialSolver.ComputeMaximumDeliveredTorque(
+				in RearDiff,
+				WheelStates[RL].AngularVelocity,
+				WheelStates[RR].AngularVelocity,
+				wheelTractionLimits[RL],
+				wheelTractionLimits[RR]);
 
 			var centerDiff = CenterDiff;
 			DifferentialSolver.SplitTorque(in centerDiff, engineTorqueAtWheels,
 				omegaFrontAxle, omegaRearAxle,
+				frontAxleTractionLimit, rearAxleTractionLimit,
 				out var frontAxleTorque, out var rearAxleTorque);
+			FrontAxleDeliveredTorque = frontAxleTorque;
+			RearAxleDeliveredTorque = rearAxleTorque;
 
 			// Front diff splits between FL and FR
 			var frontDiff = FrontDiff;
 			DifferentialSolver.SplitTorque(in frontDiff, frontAxleTorque,
 				WheelStates[FL].AngularVelocity, WheelStates[FR].AngularVelocity,
+				wheelTractionLimits[FL], wheelTractionLimits[FR],
 				out var torqueFL, out var torqueFR);
 			WheelDriveTorques[FL] = torqueFL;
 			WheelDriveTorques[FR] = torqueFR;
@@ -561,9 +623,17 @@ namespace LibreRally.Vehicle.Physics
 			var rearDiff = RearDiff;
 			DifferentialSolver.SplitTorque(in rearDiff, rearAxleTorque,
 				WheelStates[RL].AngularVelocity, WheelStates[RR].AngularVelocity,
+				wheelTractionLimits[RL], wheelTractionLimits[RR],
 				out var torqueRL, out var torqueRR);
 			WheelDriveTorques[RL] = torqueRL;
 			WheelDriveTorques[RR] = torqueRR;
+
+			DeliveredDrivetrainTorque = torqueFL + torqueFR + torqueRL + torqueRR;
+			DrivetrainTorqueShortfall = ComputeTorqueShortfall(RequestedDrivetrainTorque, DeliveredDrivetrainTorque);
+			ValidateDrivetrainTorque("center diff", RequestedDrivetrainTorque, frontAxleTorque + rearAxleTorque);
+			ValidateDrivetrainTorque("front diff", frontAxleTorque, torqueFL + torqueFR);
+			ValidateDrivetrainTorque("rear diff", rearAxleTorque, torqueRL + torqueRR);
+			ValidateDrivetrainTorque("wheel sum", frontAxleTorque + rearAxleTorque, DeliveredDrivetrainTorque);
 		}
 
 		/// <summary>
@@ -586,8 +656,12 @@ namespace LibreRally.Vehicle.Physics
 					SelfAligningTorques[i] = 0f;
 					OverturningCouples[i] = 0f;
 					RollingResistanceMoments[i] = 0f;
+					WheelBrakeTorques[i] = brakeTorques[i];
+					WheelTyreReactionTorques[i] = 0f;
 					continue;
 				}
+
+				WheelBrakeTorques[i] = brakeTorques[i];
 
 				if (!WheelGrounded[i])
 				{
@@ -609,6 +683,7 @@ namespace LibreRally.Vehicle.Physics
 						in WheelSurfaces[i],
 						dt,
 						out _, out _, out _);
+					WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
 					continue;
 				}
 
@@ -635,7 +710,73 @@ namespace LibreRally.Vehicle.Physics
 					out SelfAligningTorques[i],
 					out OverturningCouples[i],
 					out RollingResistanceMoments[i]);
+				WheelTyreReactionTorques[i] = WheelStates[i].TyreReactionTorque;
 			}
+		}
+
+		private float ComputeWheelTractionLimit(int wheelIndex)
+		{
+			if (!WheelGrounded[wheelIndex])
+			{
+				return 0f;
+			}
+
+			var tyreModel = TyreModels[wheelIndex];
+			if (tyreModel == null)
+			{
+				return 0f;
+			}
+
+			var normalLoad = CurrentNormalLoads[wheelIndex];
+			if (normalLoad <= 1e-3f)
+			{
+				return 0f;
+			}
+
+			var wheelState = WheelStates[wheelIndex];
+			var gripTemperatureWeight = Math.Clamp(tyreModel.GripTemperatureSurfaceWeight, 0f, 1f);
+			var gripTemperature = gripTemperatureWeight * wheelState.Temperature
+			                      + (1f - gripTemperatureWeight) * wheelState.CoreTemperature;
+			var rollingRadius = tyreModel.ComputeEffectiveRollingRadius(normalLoad);
+			var referenceSpeed = MathF.Abs(wheelState.AngularVelocity) * rollingRadius;
+			var friction = tyreModel.ComputeEffectiveFriction(
+				normalLoad,
+				in WheelSurfaces[wheelIndex],
+				gripTemperature,
+				wheelState.TreadLife,
+				referenceSpeed);
+			return MathF.Max(0f, friction * normalLoad * rollingRadius);
+		}
+
+		private void ValidateDrivetrainTorque(string stage, float inputTorque, float outputTorque)
+		{
+			var inputMagnitude = MathF.Abs(inputTorque);
+			var outputMagnitude = MathF.Abs(outputTorque);
+			var torqueError = outputMagnitude - inputMagnitude;
+			if (torqueError <= 0.25f)
+			{
+				if (_drivetrainDiagnosticCooldown > 0)
+				{
+					_drivetrainDiagnosticCooldown--;
+				}
+
+				return;
+			}
+
+			if (_drivetrainDiagnosticCooldown > 0)
+			{
+				_drivetrainDiagnosticCooldown--;
+				return;
+			}
+
+			Log.Warning($"[VehicleDynamicsSystem] Drivetrain torque mismatch at {stage}: in={inputTorque:F2}Nm out={outputTorque:F2}Nm err={outputTorque - inputTorque:F2}Nm");
+			_drivetrainDiagnosticCooldown = 120;
+		}
+
+		private static float ComputeTorqueShortfall(float requestedTorque, float deliveredTorque)
+		{
+			var shortfall = MathF.Max(0f, MathF.Abs(requestedTorque) - MathF.Abs(deliveredTorque));
+			return MathF.CopySign(shortfall, requestedTorque);
 		}
 
 		private Vector3 RunForcePredictionPass(

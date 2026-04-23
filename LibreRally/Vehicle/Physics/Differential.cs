@@ -117,6 +117,9 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public static class DifferentialSolver
 	{
+		private const float MinimumTorqueMagnitude = 1e-4f;
+		private const float TractionEpsilon = 1e-3f;
+
 		/// <summary>
 		/// Splits <paramref name="inputTorque"/> into two output torques based on the
 		/// differential configuration and the angular velocities of the two output shafts.
@@ -135,25 +138,93 @@ namespace LibreRally.Vehicle.Physics
 			out float torqueLeft,
 			out float torqueRight)
 		{
+			SplitTorque(
+				in config,
+				inputTorque,
+				omegaLeft,
+				omegaRight,
+				float.PositiveInfinity,
+				float.PositiveInfinity,
+				out torqueLeft,
+				out torqueRight);
+		}
+
+		/// <summary>
+		/// Splits <paramref name="inputTorque"/> into two output torques while respecting
+		/// the available traction capacity of each output shaft.
+		/// </summary>
+		/// <param name="config">Differential configuration.</param>
+		/// <param name="inputTorque">Total torque entering the differential (N·m).</param>
+		/// <param name="omegaLeft">Angular velocity of the left output shaft (rad/s).</param>
+		/// <param name="omegaRight">Angular velocity of the right output shaft (rad/s).</param>
+		/// <param name="tractionLimitLeft">Maximum transmissible torque magnitude on the left output (N·m).</param>
+		/// <param name="tractionLimitRight">Maximum transmissible torque magnitude on the right output (N·m).</param>
+		/// <param name="torqueLeft">Output: torque delivered to the left shaft (N·m).</param>
+		/// <param name="torqueRight">Output: torque delivered to the right shaft (N·m).</param>
+		public static void SplitTorque(
+			in DifferentialConfig config,
+			float inputTorque,
+			float omegaLeft,
+			float omegaRight,
+			float tractionLimitLeft,
+			float tractionLimitRight,
+			out float torqueLeft,
+			out float torqueRight)
+		{
+			if (MathF.Abs(inputTorque) <= MinimumTorqueMagnitude)
+			{
+				torqueLeft = 0f;
+				torqueRight = 0f;
+				return;
+			}
+
+			tractionLimitLeft = SanitizeTractionLimit(tractionLimitLeft);
+			tractionLimitRight = SanitizeTractionLimit(tractionLimitRight);
+
 			switch (config.Type)
 			{
 				case DifferentialType.Open:
-					SplitOpen(inputTorque, out torqueLeft, out torqueRight);
+					SplitOpen(inputTorque, tractionLimitLeft, tractionLimitRight, out torqueLeft, out torqueRight);
 					break;
 
 				case DifferentialType.LimitedSlip:
-					SplitLimitedSlip(config, inputTorque, omegaLeft, omegaRight,
+					SplitLimitedSlip(config, inputTorque, omegaLeft, omegaRight, tractionLimitLeft, tractionLimitRight,
 						out torqueLeft, out torqueRight);
 					break;
 
 				case DifferentialType.Locking:
-					SplitLocking(inputTorque, out torqueLeft, out torqueRight);
+					SplitLocking(inputTorque, tractionLimitLeft, tractionLimitRight, out torqueLeft, out torqueRight);
 					break;
 
 				default:
-					SplitOpen(inputTorque, out torqueLeft, out torqueRight);
+					SplitOpen(inputTorque, tractionLimitLeft, tractionLimitRight, out torqueLeft, out torqueRight);
 					break;
 			}
+		}
+
+		internal static float ComputeMaximumDeliveredTorque(
+			in DifferentialConfig config,
+			float omegaLeft,
+			float omegaRight,
+			float tractionLimitLeft,
+			float tractionLimitRight)
+		{
+			tractionLimitLeft = SanitizeTractionLimit(tractionLimitLeft);
+			tractionLimitRight = SanitizeTractionLimit(tractionLimitRight);
+
+			return config.Type switch
+			{
+				DifferentialType.Open or DifferentialType.Locking
+					=> 2f * MathF.Min(tractionLimitLeft, tractionLimitRight),
+				DifferentialType.LimitedSlip
+					=> ComputeLimitedSlipDeliveredCapacity(
+						MathF.Max(1f, config.BiasRatio),
+						SelectPreferredOutput(omegaLeft, omegaRight, tractionLimitLeft, tractionLimitRight),
+						tractionLimitLeft,
+						tractionLimitRight),
+				_
+					=> 2f * MathF.Min(tractionLimitLeft, tractionLimitRight),
+			};
 		}
 
 		/// <summary>
@@ -161,10 +232,19 @@ namespace LibreRally.Vehicle.Physics
 		/// Each shaft receives half the input torque regardless of speed difference.
 		/// This is the simplest and least effective for rally use.
 		/// </summary>
-		private static void SplitOpen(float inputTorque, out float torqueLeft, out float torqueRight)
+		private static void SplitOpen(
+			float inputTorque,
+			float tractionLimitLeft,
+			float tractionLimitRight,
+			out float torqueLeft,
+			out float torqueRight)
 		{
-			torqueLeft = inputTorque * 0.5f;
-			torqueRight = inputTorque * 0.5f;
+			var deliveredTorque = MathF.Min(
+				MathF.Abs(inputTorque),
+				2f * MathF.Min(tractionLimitLeft, tractionLimitRight));
+			var signedHalfTorque = MathF.CopySign(deliveredTorque * 0.5f, inputTorque);
+			torqueLeft = signedHalfTorque;
+			torqueRight = signedHalfTorque;
 		}
 
 		/// <summary>
@@ -185,44 +265,60 @@ namespace LibreRally.Vehicle.Physics
 			float inputTorque,
 			float omegaLeft,
 			float omegaRight,
+			float tractionLimitLeft,
+			float tractionLimitRight,
 			out float torqueLeft,
 			out float torqueRight)
 		{
-			// Start with 50/50 base split
-			var half = inputTorque * 0.5f;
-			torqueLeft = half;
-			torqueRight = half;
+			var preferredLeft = SelectPreferredOutput(omegaLeft, omegaRight, tractionLimitLeft, tractionLimitRight);
+			var preferredLimit = preferredLeft ? tractionLimitLeft : tractionLimitRight;
+			var otherLimit = preferredLeft ? tractionLimitRight : tractionLimitLeft;
+			var biasRatio = MathF.Max(1f, config.BiasRatio);
+			var deliveredMagnitude = MathF.Min(
+				MathF.Abs(inputTorque),
+				ComputeLimitedSlipDeliveredCapacity(biasRatio, preferredLeft, tractionLimitLeft, tractionLimitRight));
 
-			// Compute speed difference
+			if (deliveredMagnitude <= MinimumTorqueMagnitude)
+			{
+				torqueLeft = 0f;
+				torqueRight = 0f;
+				return;
+			}
+
+			var half = deliveredMagnitude * 0.5f;
 			var deltaOmega = omegaLeft - omegaRight;
 			var preloadTorque = MathF.Max(0f, config.PreloadTorque);
 			var lockCoeff = inputTorque < 0f
 				? config.CoastLockingCoefficient
 				: config.LockingCoefficient;
 
-			// Locking torque: proportional to input torque magnitude and speed difference.
-			// tanh provides smooth onset and saturation.
 			const float ReferenceOmega = 5f; // rad/s normalisation for tanh
 			var lockScale = MathF.Tanh(MathF.Abs(deltaOmega) / ReferenceOmega);
-			var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * MathF.Abs(inputTorque);
+			var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * deliveredMagnitude;
 			var lockingTorque = (preloadTorque + dynamicLockingTorque) * lockScale;
 
-			// Transfer torque from the faster-spinning wheel to the slower one.
-			// Clamp by bias ratio: T_slow / T_fast ≤ biasRatio.
-			var maxTransfer = MathF.Abs(half) * MathF.Max(0f, config.BiasRatio - 1f);
-			lockingTorque = MathF.Min(lockingTorque, maxTransfer);
+			var minimumTransfer = MathF.Max(0f, half - otherLimit);
+			var maximumTransfer = MathF.Min(
+				half,
+				MathF.Min(
+					MathF.Max(0f, preferredLimit - half),
+					half * (biasRatio - 1f) / (biasRatio + 1f)));
+			var transfer = maximumTransfer >= minimumTransfer
+				? Math.Clamp(lockingTorque, minimumTransfer, maximumTransfer)
+				: minimumTransfer;
 
-			if (deltaOmega > 0f)
+			var preferredTorque = half + transfer;
+			var otherTorque = half - transfer;
+
+			if (preferredLeft)
 			{
-				// Left is faster → transfer torque from left to right
-				torqueLeft -= lockingTorque;
-				torqueRight += lockingTorque;
+				torqueLeft = MathF.CopySign(preferredTorque, inputTorque);
+				torqueRight = MathF.CopySign(otherTorque, inputTorque);
 			}
 			else
 			{
-				// Right is faster → transfer torque from right to left
-				torqueLeft += lockingTorque;
-				torqueRight -= lockingTorque;
+				torqueLeft = MathF.CopySign(otherTorque, inputTorque);
+				torqueRight = MathF.CopySign(preferredTorque, inputTorque);
 			}
 		}
 
@@ -232,10 +328,54 @@ namespace LibreRally.Vehicle.Physics
 		/// For torque purposes this is equivalent to a 50/50 split since
 		/// the wheel speed equalisation is handled by the constraint system.
 		/// </summary>
-		private static void SplitLocking(float inputTorque, out float torqueLeft, out float torqueRight)
+		private static void SplitLocking(
+			float inputTorque,
+			float tractionLimitLeft,
+			float tractionLimitRight,
+			out float torqueLeft,
+			out float torqueRight)
 		{
-			torqueLeft = inputTorque * 0.5f;
-			torqueRight = inputTorque * 0.5f;
+			SplitOpen(inputTorque, tractionLimitLeft, tractionLimitRight, out torqueLeft, out torqueRight);
+		}
+
+		private static bool SelectPreferredOutput(
+			float omegaLeft,
+			float omegaRight,
+			float tractionLimitLeft,
+			float tractionLimitRight)
+		{
+			if (tractionLimitLeft > tractionLimitRight + TractionEpsilon)
+			{
+				return true;
+			}
+
+			if (tractionLimitRight > tractionLimitLeft + TractionEpsilon)
+			{
+				return false;
+			}
+
+			return omegaLeft < omegaRight;
+		}
+
+		private static float ComputeLimitedSlipDeliveredCapacity(
+			float biasRatio,
+			bool preferredLeft,
+			float tractionLimitLeft,
+			float tractionLimitRight)
+		{
+			var preferredLimit = preferredLeft ? tractionLimitLeft : tractionLimitRight;
+			var otherLimit = preferredLeft ? tractionLimitRight : tractionLimitLeft;
+			return otherLimit + MathF.Min(preferredLimit, otherLimit * biasRatio);
+		}
+
+		private static float SanitizeTractionLimit(float tractionLimit)
+		{
+			if (!float.IsFinite(tractionLimit))
+			{
+				return float.PositiveInfinity;
+			}
+
+			return MathF.Max(0f, tractionLimit);
 		}
 	}
 }

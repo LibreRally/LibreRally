@@ -51,6 +51,15 @@ namespace LibreRally.Vehicle.Physics
 		/// <summary>Current lateral slip angle (rad).</summary>
 		public float SlipAngle;
 
+		/// <summary>Current drivetrain torque applied to the wheel before tyre reaction (N·m).</summary>
+		public float DriveTorque;
+
+		/// <summary>Current brake torque applied to the wheel (N·m).</summary>
+		public float BrakeTorque;
+
+		/// <summary>Current tyre reaction torque opposing wheel rotation (N·m).</summary>
+		public float TyreReactionTorque;
+
 		/// <summary>Creates a fresh tyre state with ambient temperature, full tread life, and zero slip state.</summary>
 		/// <returns>A new <see cref="TyreState"/> initialized to the model defaults.</returns>
 		public static TyreState CreateDefault() => new()
@@ -63,6 +72,9 @@ namespace LibreRally.Vehicle.Physics
 			LongitudinalDeflection = 0f,
 			SlipRatio = 0f,
 			SlipAngle = 0f,
+			DriveTorque = 0f,
+			BrakeTorque = 0f,
+			TyreReactionTorque = 0f,
 		};
 	}
 
@@ -706,13 +718,26 @@ namespace LibreRally.Vehicle.Physics
 			selfAligningTorque = 0f;
 			overturningCouple = 0f;
 			rollingResistanceMoment = 0f;
+			state.DriveTorque = driveTorque;
+			state.BrakeTorque = brakeTorque;
 
 			if (dt < 1e-6f)
 			{
 				state.LateralDeflection = 0f;
 				state.LongitudinalDeflection = 0f;
+				state.TyreReactionTorque = 0f;
 				return;
 			}
+
+			var wheelInertia = WheelInertia > 0f
+				? WheelInertia
+				: ComputeEstimatedWheelInertia(MathF.Max(normalLoad, ReferenceLoad));
+			var brakeReactionTorque = ComputeBrakeReactionTorque(
+				brakeTorque,
+				state.AngularVelocity,
+				longitudinalVelocity,
+				driveTorque,
+				normalLoad > 0f ? ComputeEffectiveRollingRadius(normalLoad) : Radius);
 
 			// When airborne (normalLoad ≤ 0), skip force computation but still integrate
 			// angular velocity from drive/brake torque so wheels spin up in the air.
@@ -724,26 +749,16 @@ namespace LibreRally.Vehicle.Physics
 				state.LongitudinalDeflection = 0f;
 				state.SlipRatio = 0f;
 				state.SlipAngle = 0f;
-
-				// Integrate angular velocity from torque even without ground contact
-				var airInertia = WheelInertia > 0f
-					? WheelInertia
-					: ComputeEstimatedWheelInertia(ReferenceLoad);
-
-				state.AngularVelocity += (driveTorque / airInertia) * dt;
-
-				if (brakeTorque > 0f)
-				{
-					var brakeOmegaChange = (brakeTorque / airInertia) * dt;
-					if (state.AngularVelocity > 0f)
-					{
-						state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
-					}
-					else if (state.AngularVelocity < 0f)
-					{
-						state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
-					}
-				}
+				state.TyreReactionTorque = 0f;
+				IntegrateWheelAngularVelocity(
+					ref state,
+					driveTorque,
+					brakeReactionTorque,
+					0f,
+					wheelInertia,
+					longitudinalVelocity,
+					Radius,
+					dt);
 				return;
 			}
 
@@ -757,14 +772,16 @@ namespace LibreRally.Vehicle.Physics
 				state.TreadLife, absVx: MathF.Abs(longitudinalVelocity), dt: dt);
 
 			var effectiveRollingRadius = ComputeEffectiveRollingRadius(normalLoad);
+			var predictedAngularVelocity = state.AngularVelocity
+			                              + ((driveTorque - brakeReactionTorque - state.TyreReactionTorque) / wheelInertia) * dt;
 
 			// ── Slip ratio (longitudinal) ────────────────────────────────────────
 			// κ = (ω·R − Vx) / max(|Vx|, ε)
 			// Positive κ means wheel spinning faster than ground (acceleration).
 			// Reference: Pacejka, §2.2, Eq. 2.5.
-			var wheelLinearSpeed = state.AngularVelocity * effectiveRollingRadius;
+			var wheelLinearSpeed = predictedAngularVelocity * effectiveRollingRadius;
 			var absVx = MathF.Abs(longitudinalVelocity);
-			var denominator = MathF.Max(absVx, MinSpeed);
+			var denominator = MathF.Max(MathF.Max(absVx, MathF.Abs(wheelLinearSpeed)), MinSpeed);
 			var slipRatio = (wheelLinearSpeed - longitudinalVelocity) / denominator;
 			slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
 			state.SlipRatio = slipRatio;
@@ -1028,30 +1045,21 @@ namespace LibreRally.Vehicle.Physics
 				longitudinalVelocity != 0f ? longitudinalVelocity : wheelLinearSpeed);
 
 			// ── Wheel angular velocity integration ───────────────────────────────
-			// Iω̇ = T_drive − T_brake − Fx·R
+			// Iω̇ = T_drive − T_brake − T_tyre
 			// Use the same net longitudinal force that is applied to the chassis so
 			// rolling resistance produces a matching resistive wheel torque.
-			// Use explicit WheelInertia if set (> 0), otherwise estimate from load and geometry.
 			// Reference: basic rotational dynamics, F = ma analogy for rotation.
-			var wheelInertia = WheelInertia > 0f
-				? WheelInertia
-				: ComputeEstimatedWheelInertia(normalLoad);
-
-			var netTorque = driveTorque - longitudinalForce * effectiveRollingRadius;
-			state.AngularVelocity += (netTorque / wheelInertia) * dt;
-
-			if (brakeTorque > 0f)
-			{
-				var brakeOmegaChange = (brakeTorque / wheelInertia) * dt;
-				if (state.AngularVelocity > 0f)
-				{
-					state.AngularVelocity = MathF.Max(0f, state.AngularVelocity - brakeOmegaChange);
-				}
-				else if (state.AngularVelocity < 0f)
-				{
-					state.AngularVelocity = MathF.Min(0f, state.AngularVelocity + brakeOmegaChange);
-				}
-			}
+			var tyreReactionTorque = longitudinalForce * effectiveRollingRadius;
+			state.TyreReactionTorque = tyreReactionTorque;
+			IntegrateWheelAngularVelocity(
+				ref state,
+				driveTorque,
+				brakeReactionTorque,
+				tyreReactionTorque,
+				wheelInertia,
+				longitudinalVelocity,
+				effectiveRollingRadius,
+				dt);
 
 			// ── Thermal model ────────────────────────────────────────────────────
 			// Two-node thermal model:
@@ -1088,6 +1096,82 @@ namespace LibreRally.Vehicle.Physics
 			var wearEnergy = slipForceMag * slipSpeed * dt;
 			state.TreadLife -= wearEnergy * WearRate;
 			state.TreadLife = MathF.Max(state.TreadLife, 0f);
+		}
+
+		private static float ComputeBrakeReactionTorque(
+			float brakeTorque,
+			float angularVelocity,
+			float longitudinalVelocity,
+			float driveTorque,
+			float rollingRadius)
+		{
+			if (brakeTorque <= 0f)
+			{
+				return 0f;
+			}
+
+			var rollingDirection = ResolveRotationDirection(angularVelocity, longitudinalVelocity, driveTorque, rollingRadius);
+			return rollingDirection == 0f ? 0f : brakeTorque * rollingDirection;
+		}
+
+		private static void IntegrateWheelAngularVelocity(
+			ref TyreState state,
+			float driveTorque,
+			float brakeReactionTorque,
+			float tyreReactionTorque,
+			float wheelInertia,
+			float longitudinalVelocity,
+			float rollingRadius,
+			float dt)
+		{
+			var previousAngularVelocity = state.AngularVelocity;
+			var netTorque = driveTorque - brakeReactionTorque - tyreReactionTorque;
+			state.AngularVelocity += (netTorque / MathF.Max(wheelInertia, 1e-3f)) * dt;
+
+			if (brakeReactionTorque == 0f)
+			{
+				return;
+			}
+
+			var brakingDirection = ResolveRotationDirection(previousAngularVelocity, longitudinalVelocity, driveTorque, rollingRadius);
+			if (brakingDirection > 0f && state.AngularVelocity < 0f)
+			{
+				state.AngularVelocity = 0f;
+			}
+			else if (brakingDirection < 0f && state.AngularVelocity > 0f)
+			{
+				state.AngularVelocity = 0f;
+			}
+		}
+
+		private static float ResolveRotationDirection(
+			float angularVelocity,
+			float longitudinalVelocity,
+			float driveTorque,
+			float rollingRadius)
+		{
+			if (MathF.Abs(angularVelocity) > 0.5f)
+			{
+				return MathF.Sign(angularVelocity);
+			}
+
+			if (MathF.Abs(longitudinalVelocity) > MinSpeed)
+			{
+				return MathF.Sign(longitudinalVelocity);
+			}
+
+			var wheelLinearSpeed = angularVelocity * MathF.Max(rollingRadius, 0.05f);
+			if (MathF.Abs(wheelLinearSpeed) > MinSpeed)
+			{
+				return MathF.Sign(wheelLinearSpeed);
+			}
+
+			if (MathF.Abs(driveTorque) > 1e-4f)
+			{
+				return MathF.Sign(driveTorque);
+			}
+
+			return 0f;
 		}
 
 		/// <summary>
