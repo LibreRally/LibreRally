@@ -37,6 +37,8 @@ namespace LibreRally.Vehicle.Physics
 	public sealed class VehicleDynamicsSystem
 	{
 		private const float MinimumWakeForce = 0.01f;
+		private const float TorqueConservationTolerance = 0.25f;
+		private const int DiagnosticCooldownFrames = 120;
 		private static readonly Logger Log = GlobalLogger.GetLogger("VehicleDynamicsSystem");
 
 		// Wheel indices — fixed order matching VehiclePhysicsBuilder output.
@@ -755,7 +757,7 @@ namespace LibreRally.Vehicle.Physics
 			var inputMagnitude = MathF.Abs(inputTorque);
 			var outputMagnitude = MathF.Abs(outputTorque);
 			var torqueError = outputMagnitude - inputMagnitude;
-			if (torqueError <= 0.25f)
+			if (torqueError <= TorqueConservationTolerance)
 			{
 				if (_drivetrainDiagnosticCooldown > 0)
 				{
@@ -772,7 +774,7 @@ namespace LibreRally.Vehicle.Physics
 			}
 
 			Log.Warning($"[VehicleDynamicsSystem] Drivetrain torque mismatch at {stage}: in={inputTorque:F2}Nm out={outputTorque:F2}Nm err={outputTorque - inputTorque:F2}Nm");
-			_drivetrainDiagnosticCooldown = 120;
+			_drivetrainDiagnosticCooldown = DiagnosticCooldownFrames;
 		}
 
 		private static float ComputeTorqueShortfall(float requestedTorque, float deliveredTorque)

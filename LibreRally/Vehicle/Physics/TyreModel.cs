@@ -526,6 +526,9 @@ namespace LibreRally.Vehicle.Physics
 		private const float MinSpeed = 0.05f;      // velocity floor for slip calculations (m/s)
 		private const float MaxSlipRatio = 1.5f;    // clamp slip ratio to prevent numerical blow-up
 		private const float MaxSlipAngle = 1.2f;    // ~69° — beyond this we clamp
+		private const float DirectionResolutionAngularVelocityThreshold = 0.5f;
+		private const float DirectionResolutionMinimumRollingRadius = 0.05f;
+		private const float MinimumDriveTorqueThreshold = 1e-4f;
 		/// <summary>
 		/// Approximate wheel rotational inertia scalar.
 		/// Wheel inertia ≈ effective_mass × R² × scalar.
@@ -1150,7 +1153,7 @@ namespace LibreRally.Vehicle.Physics
 			float driveTorque,
 			float rollingRadius)
 		{
-			if (MathF.Abs(angularVelocity) > 0.5f)
+			if (MathF.Abs(angularVelocity) > DirectionResolutionAngularVelocityThreshold)
 			{
 				return MathF.Sign(angularVelocity);
 			}
@@ -1160,13 +1163,13 @@ namespace LibreRally.Vehicle.Physics
 				return MathF.Sign(longitudinalVelocity);
 			}
 
-			var wheelLinearSpeed = angularVelocity * MathF.Max(rollingRadius, 0.05f);
+			var wheelLinearSpeed = angularVelocity * MathF.Max(rollingRadius, DirectionResolutionMinimumRollingRadius);
 			if (MathF.Abs(wheelLinearSpeed) > MinSpeed)
 			{
 				return MathF.Sign(wheelLinearSpeed);
 			}
 
-			if (MathF.Abs(driveTorque) > 1e-4f)
+			if (MathF.Abs(driveTorque) > MinimumDriveTorqueThreshold)
 			{
 				return MathF.Sign(driveTorque);
 			}
