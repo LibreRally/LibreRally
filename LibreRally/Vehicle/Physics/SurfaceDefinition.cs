@@ -38,7 +38,8 @@ namespace LibreRally.Vehicle.Physics
 	/// <para>Surface friction is decomposed into two texture-scale contributions following
 	/// The Contact Patch, C1603:</para>
 	/// <list type="bullet">
-	///   <item><see cref="FrictionCoefficient"/>: overall peak µ multiplier (1.0 = reference dry tarmac).
+	///   <item><see cref="FrictionCoefficient"/>: overall peak µ multiplier relative to the tyre model's
+	///         internal reference surface. Values near 1.0 are neutral; rally asphalt may be slightly above 1.0.
 	///         This is the combined result of microtexture and macrotexture contributions.</item>
 	///   <item><see cref="Microtexture"/>: adhesion-dominant grip from sub-0.5 mm asperity peaks (0–1 scale).
 	///         Provides dry and light-wet grip. Polished surfaces have low microtexture.
@@ -67,7 +68,7 @@ namespace LibreRally.Vehicle.Physics
 	/// </summary>
 	public readonly struct SurfaceProperties
 	{
-		/// <summary>Peak friction multiplier (1.0 = reference dry tarmac).</summary>
+		/// <summary>Peak friction multiplier relative to the tyre model's internal reference surface.</summary>
 		public float FrictionCoefficient { get; init; }
 
 		/// <summary>

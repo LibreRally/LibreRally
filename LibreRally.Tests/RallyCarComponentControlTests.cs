@@ -361,7 +361,7 @@ namespace LibreRally.Tests
 				SurfaceFrictionCoefficient = 0.78f,
 				SurfaceSlipStiffnessScale = 0.46f,
 				SurfaceRelaxationLengthScale = 1.45f,
-				SurfaceSlipTolerance = 2.6f,
+				SurfacePeakSlipRatioScale = 2.6f,
 				RollingResistanceCoefficient = 0.05f,
 			};
 

@@ -1697,7 +1697,6 @@ namespace LibreRally.Vehicle
 			var primaryDistance = float.PositiveInfinity;
 			var secondaryDistance = float.PositiveInfinity;
 			var primarySurfaceType = SurfaceType.Tarmac;
-			var secondarySurfaceType = SurfaceType.Tarmac;
 			var primarySurfaceProperties = SurfaceProperties.ForType(SurfaceType.Tarmac);
 			var secondarySurfaceProperties = primarySurfaceProperties;
 			foreach (var hit in wheelSettings.GroundProbeHits)
@@ -1711,7 +1710,6 @@ namespace LibreRally.Vehicle
 				if (hit.Distance < primaryDistance)
 				{
 					secondaryDistance = primaryDistance;
-					secondarySurfaceType = primarySurfaceType;
 					secondarySurfaceProperties = primarySurfaceProperties;
 					primaryDistance = hit.Distance;
 					primarySurfaceType = hitSurfaceType;
@@ -1721,7 +1719,6 @@ namespace LibreRally.Vehicle
 				else if (hit.Distance < secondaryDistance)
 				{
 					secondaryDistance = hit.Distance;
-					secondarySurfaceType = hitSurfaceType;
 					secondarySurfaceProperties = hitSurfaceProperties;
 				}
 			}
@@ -1739,20 +1736,6 @@ namespace LibreRally.Vehicle
 				? SurfaceProperties.Lerp(primarySurfaceProperties, secondarySurfaceProperties, blendFactor)
 				: primarySurfaceProperties;
 			return ComputeGroundProbeContactScale(primaryDistance, wheelRadius, GroundProbeMargin);
-		}
-
-		private static SurfaceType ResolveSurfaceType(object collidable)
-		{
-			if (collidable is EntityComponent entityComponent)
-			{
-				var surfaceTag = entityComponent.Entity.Get<TrackSurfaceComponent>();
-				if (surfaceTag != null)
-				{
-					return surfaceTag.SurfaceType;
-				}
-			}
-
-			return SurfaceType.Tarmac;
 		}
 
 		private static void ResolveSurfaceProperties(

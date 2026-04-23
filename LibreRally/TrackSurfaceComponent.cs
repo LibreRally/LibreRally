@@ -36,11 +36,11 @@ namespace LibreRally
 		public float SurfaceRelaxationLengthScale { get; set; } = -1f;
 
 		/// <summary>
-		/// Override for the longitudinal slip-tolerance scale.
+		/// Override for the peak longitudinal slip-ratio scale.
 		/// Higher values move peak traction to a larger slip ratio for loose surfaces.
 		/// Negative values keep the default calibration for <see cref="SurfaceType"/>.
 		/// </summary>
-		public float SurfaceSlipTolerance { get; set; } = -1f;
+		public float SurfacePeakSlipRatioScale { get; set; } = -1f;
 
 		/// <summary>
 		/// Override for the rolling-resistance coefficient.
@@ -96,7 +96,7 @@ namespace LibreRally
 				RollingResistance = RollingResistanceCoefficient >= 0f ? RollingResistanceCoefficient : defaults.RollingResistance,
 				SlipStiffnessScale = SurfaceSlipStiffnessScale >= 0f ? SurfaceSlipStiffnessScale : defaults.SlipStiffnessScale,
 				RelaxationLengthScale = SurfaceRelaxationLengthScale >= 0f ? SurfaceRelaxationLengthScale : defaults.RelaxationLengthScale,
-				PeakSlipRatioScale = SurfaceSlipTolerance >= 0f ? SurfaceSlipTolerance : defaults.PeakSlipRatioScale,
+				PeakSlipRatioScale = SurfacePeakSlipRatioScale >= 0f ? SurfacePeakSlipRatioScale : defaults.PeakSlipRatioScale,
 				DeformationFactor = SurfaceDeformationScale >= 0f ? SurfaceDeformationScale : defaults.DeformationFactor,
 				NoiseFactor = SurfaceNoiseFactor >= 0f ? SurfaceNoiseFactor : defaults.NoiseFactor,
 			};
