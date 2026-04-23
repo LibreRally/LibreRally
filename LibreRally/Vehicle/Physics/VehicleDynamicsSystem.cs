@@ -589,14 +589,16 @@ namespace LibreRally.Vehicle.Physics
 			// Center diff splits to front and rear axles
 			var omegaFrontAxle = (WheelStates[FL].AngularVelocity + WheelStates[FR].AngularVelocity) * 0.5f;
 			var omegaRearAxle = (WheelStates[RL].AngularVelocity + WheelStates[RR].AngularVelocity) * 0.5f;
+			var frontDiffForCapacity = FrontDiff;
+			var rearDiffForCapacity = RearDiff;
 			var frontAxleTractionLimit = DifferentialSolver.ComputeMaximumDeliveredTorque(
-				in FrontDiff,
+				in frontDiffForCapacity,
 				WheelStates[FL].AngularVelocity,
 				WheelStates[FR].AngularVelocity,
 				wheelTractionLimits[FL],
 				wheelTractionLimits[FR]);
 			var rearAxleTractionLimit = DifferentialSolver.ComputeMaximumDeliveredTorque(
-				in RearDiff,
+				in rearDiffForCapacity,
 				WheelStates[RL].AngularVelocity,
 				WheelStates[RR].AngularVelocity,
 				wheelTractionLimits[RL],
