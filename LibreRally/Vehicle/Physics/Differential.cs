@@ -298,11 +298,11 @@ namespace LibreRally.Vehicle.Physics
 			var lockingTorque = (preloadTorque + dynamicLockingTorque) * lockScale;
 
 			var minimumTransfer = MathF.Max(0f, half - otherLimit);
+			var maxTransferByPreferredCapacity = MathF.Max(0f, preferredLimit - half);
+			var maxTransferByBiasRatio = half * (biasRatio - 1f) / (biasRatio + 1f);
 			var maximumTransfer = MathF.Min(
 				half,
-				MathF.Min(
-					MathF.Max(0f, preferredLimit - half),
-					half * (biasRatio - 1f) / (biasRatio + 1f)));
+				MathF.Min(maxTransferByPreferredCapacity, maxTransferByBiasRatio));
 			var transfer = maximumTransfer >= minimumTransfer
 				? Math.Clamp(lockingTorque, minimumTransfer, maximumTransfer)
 				: minimumTransfer;
