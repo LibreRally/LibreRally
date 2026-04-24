@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace LibreRally.Vehicle.Content
 {
@@ -13,6 +14,7 @@ namespace LibreRally.Vehicle.Content
 	{
 		/// <summary>Vehicle content stored as a directory on disk.</summary>
 		Folder,
+
 		/// <summary>Vehicle content stored inside a BeamNG zip archive.</summary>
 		ZipArchive,
 	}
@@ -32,6 +34,45 @@ namespace LibreRally.Vehicle.Content
 		public string DisplayName => SourceKind == BeamNgVehicleSourceKind.ZipArchive
 			? $"{VehicleId} [zip]"
 			: VehicleId;
+	}
+
+	/// <summary>Describes one selectable BeamNG <paramref name="Vehicle" /> variant backed by an optional <c>.pc</c> configuration.</summary>
+	/// <param name="Vehicle">The parent discovered BeamNG vehicle package.</param>
+	/// <param name="ConfigFileName">The configuration file name to load, or <see langword="null" /> for JBeam defaults.</param>
+	/// <param name="VariantId">Stable identifier for the variant within the package.</param>
+	/// <param name="VehicleDisplayName">The user-facing parent package name shown in menus.</param>
+	/// <param name="VariantDisplayName">User-facing variant/configuration name shown in menus.</param>
+	/// <param name="Description">Optional descriptive copy for the variant.</param>
+	/// <param name="ThumbnailPath">Absolute path to the preview thumbnail image when available.</param>
+	/// <param name="ConfigType">Optional classification such as Factory or Rally.</param>
+	/// <param name="IsDefaultVariant">Indicates whether the variant matches the package default configuration.</param>
+	public sealed record BeamNgVehicleVariantDescriptor(
+		BeamNgVehicleDescriptor Vehicle,
+		string? ConfigFileName,
+		string VariantId,
+		string VehicleDisplayName,
+		string VariantDisplayName,
+		string Description,
+		string? ThumbnailPath,
+		string? ConfigType,
+		bool IsDefaultVariant)
+	{
+		/// <summary>Gets the BeamNG identifier for the parent package.</summary>
+		public string VehicleId => Vehicle.VehicleId;
+
+		/// <summary>Gets the directory or archive path that contains the parent package.</summary>
+		public string SourcePath => Vehicle.SourcePath;
+
+		/// <summary>Gets the origin of the parent package.</summary>
+		public BeamNgVehicleSourceKind SourceKind => Vehicle.SourceKind;
+
+		/// <summary>Gets the source label for the parent package.</summary>
+		public string SourceLabel => Vehicle.SourceLabel;
+
+		/// <summary>Gets a combined user-facing label for the vehicle and variant.</summary>
+		public string DisplayName => string.IsNullOrWhiteSpace(VehicleDisplayName)
+			? VariantDisplayName
+			: $"{VehicleDisplayName} — {VariantDisplayName}";
 	}
 
 	/// <summary>Represents a resolved BeamNG vehicle together with its asset lookup context.</summary>
@@ -57,12 +98,16 @@ namespace LibreRally.Vehicle.Content
 
 		/// <summary>Gets the BeamNG vehicle identifier.</summary>
 		public string VehicleId { get; }
+
 		/// <summary>Gets the extracted or source folder that contains the active vehicle files.</summary>
 		public string VehicleFolderPath { get; }
+
 		/// <summary>Gets the folders searched for JBeam and related vehicle content.</summary>
 		public IReadOnlyList<string> JBeamSearchFolders { get; }
+
 		/// <summary>Gets the root directories used to resolve BeamNG virtual vehicle paths.</summary>
 		public IReadOnlyList<string> VehiclesRootDirectories { get; }
+
 		/// <summary>Gets a human-readable description of the source package.</summary>
 		public string SourceDescription { get; }
 
@@ -87,13 +132,16 @@ namespace LibreRally.Vehicle.Content
 	public sealed class BeamNgVehicleCatalog
 	{
 		private static readonly string[] PngFallbackExtensions = [".png", ".jpg", ".jpeg", ".tga"];
+		private static readonly string[] ThumbnailExtensions = [".jpg", ".jpeg", ".png"];
 		private static readonly string[] CommonMetadataExtensions = [".jbeam", ".json", ".pc"];
+		private static readonly JsonDocumentOptions JsonOptions = new() { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip, };
 		private readonly string _bundledVehiclesRoot;
 		private readonly string? _beamNgContentVehiclesRoot;
 		private readonly string _cacheRoot;
 		private readonly Dictionary<string, BeamNgVehicleDescriptor> _bundledVehiclesById = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, IReadOnlyList<string>> _colladaFilesByPackageAndMeshSet = new(StringComparer.OrdinalIgnoreCase);
 		private IReadOnlyList<BeamNgVehicleDescriptor>? _discoveredVehicles;
+		private IReadOnlyList<BeamNgVehicleVariantDescriptor>? _discoveredVehicleVariants;
 
 		/// <summary>Initializes a new vehicle catalog rooted at the given bundled and BeamNG content directories.</summary>
 		/// <param name="bundledVehiclesRoot">Root directory that contains bundled vehicle folders or archives.</param>
@@ -134,6 +182,7 @@ namespace LibreRally.Vehicle.Content
 			var vehicles = new List<BeamNgVehicleDescriptor>();
 			_bundledVehiclesById.Clear();
 			_colladaFilesByPackageAndMeshSet.Clear();
+			_discoveredVehicleVariants = null;
 
 			if (Directory.Exists(_bundledVehiclesRoot))
 			{
@@ -170,6 +219,30 @@ namespace LibreRally.Vehicle.Content
 				.ThenBy(vehicle => vehicle.SourceKind)
 				.ToArray();
 			return _discoveredVehicles;
+		}
+
+		/// <summary>Discovers every selectable bundled vehicle variant, including per-configuration metadata and thumbnails.</summary>
+		/// <returns>Cached descriptors for every discovered variant across bundled folders and archives.</returns>
+		public IReadOnlyList<BeamNgVehicleVariantDescriptor> DiscoverBundledVehicleVariants()
+		{
+			if (_discoveredVehicleVariants != null)
+			{
+				return _discoveredVehicleVariants;
+			}
+
+			var variants = new List<BeamNgVehicleVariantDescriptor>();
+			foreach (var vehicle in DiscoverBundledVehicles())
+			{
+				variants.AddRange(DiscoverVehicleVariants(vehicle));
+			}
+
+			_discoveredVehicleVariants = variants
+				.OrderBy(variant => variant.VehicleDisplayName, StringComparer.OrdinalIgnoreCase)
+				.ThenByDescending(variant => variant.IsDefaultVariant)
+				.ThenBy(variant => variant.VariantDisplayName, StringComparer.OrdinalIgnoreCase)
+				.ThenBy(variant => variant.Vehicle.SourceKind)
+				.ToArray();
+			return _discoveredVehicleVariants;
 		}
 
 		/// <summary>Resolves a requested vehicle identifier or path into a loadable BeamNG vehicle source.</summary>
@@ -392,6 +465,60 @@ namespace LibreRally.Vehicle.Content
 				$"folder:{sourceDescription}");
 		}
 
+		private IReadOnlyList<BeamNgVehicleVariantDescriptor> DiscoverVehicleVariants(BeamNgVehicleDescriptor vehicle)
+		{
+			if (vehicle.SourceKind == BeamNgVehicleSourceKind.ZipArchive)
+			{
+				var extractedVehiclesRoot = EnsureZipExtracted(vehicle.SourcePath);
+				var extractedVehicleFolder = Path.Combine(extractedVehiclesRoot, vehicle.VehicleId);
+				return DiscoverVehicleVariantsFromFolder(vehicle, extractedVehicleFolder);
+			}
+
+			return DiscoverVehicleVariantsFromFolder(vehicle, vehicle.SourcePath);
+		}
+
+		private static IReadOnlyList<BeamNgVehicleVariantDescriptor> DiscoverVehicleVariantsFromFolder(
+			BeamNgVehicleDescriptor vehicle,
+			string vehicleFolderPath)
+		{
+			if (!Directory.Exists(vehicleFolderPath))
+			{
+				return [];
+			}
+
+			var baseInfo = ReadVehicleInfo(Path.Combine(vehicleFolderPath, "info.json"));
+			var vehicleDisplayName = BuildVehicleDisplayName(vehicle.VehicleId, baseInfo.Brand, baseInfo.Name);
+			var configFiles = Directory
+				.EnumerateFiles(vehicleFolderPath, "*.pc", SearchOption.TopDirectoryOnly)
+				.Select(Path.GetFileName)
+				.Where(fileName => !string.IsNullOrWhiteSpace(fileName))
+				.OrderBy(fileName => fileName, StringComparer.OrdinalIgnoreCase)
+				.ToArray()!;
+			if (configFiles.Length == 0)
+			{
+				return
+				[
+					CreateVariantDescriptor(
+						vehicle,
+						vehicleFolderPath,
+						baseInfo,
+						vehicleDisplayName,
+						configFileName: null),
+				];
+			}
+
+			return configFiles
+				.Select(configFileName => CreateVariantDescriptor(
+					vehicle,
+					vehicleFolderPath,
+					baseInfo,
+					vehicleDisplayName,
+					configFileName))
+				.OrderByDescending(variant => variant.IsDefaultVariant)
+				.ThenBy(variant => variant.VariantDisplayName, StringComparer.OrdinalIgnoreCase)
+				.ToArray();
+		}
+
 		private BeamNgResolvedVehicle ResolveZipVehicle(string zipPath, string sourceDescription)
 		{
 			var extractedVehiclesRoot = EnsureZipExtracted(zipPath);
@@ -441,7 +568,12 @@ namespace LibreRally.Vehicle.Content
 			}
 
 			Directory.CreateDirectory(cacheRoot);
-			ZipFile.ExtractToDirectory(zipPath, cacheRoot, overwriteFiles: true);
+			using var archive = ZipFile.OpenRead(zipPath);
+			foreach (var entry in archive.Entries)
+			{
+				ExtractEntry(entry, cacheRoot);
+			}
+
 			File.WriteAllText(completionMarker, zipPath);
 			return vehiclesRoot;
 		}
@@ -792,6 +924,43 @@ namespace LibreRally.Vehicle.Content
 			       Directory.EnumerateFiles(folder, "*.pc", SearchOption.TopDirectoryOnly).Any();
 		}
 
+		private static BeamNgVehicleVariantDescriptor CreateVariantDescriptor(
+			BeamNgVehicleDescriptor vehicle,
+			string vehicleFolderPath,
+			VehicleInfo baseInfo,
+			string vehicleDisplayName,
+			string? configFileName)
+		{
+			var variantId = string.IsNullOrWhiteSpace(configFileName)
+				? "default"
+				: Path.GetFileNameWithoutExtension(configFileName);
+			var variantInfo = string.IsNullOrWhiteSpace(configFileName)
+				? default
+				: ReadVariantInfo(Path.Combine(vehicleFolderPath, $"info_{variantId}.json"));
+			var variantDisplayName = !string.IsNullOrWhiteSpace(variantInfo.Configuration)
+				? variantInfo.Configuration
+				: !string.IsNullOrWhiteSpace(baseInfo.Name) && string.IsNullOrWhiteSpace(configFileName)
+					? baseInfo.Name!
+					: FormatVariantFallbackLabel(variantId, configFileName);
+			var description = !string.IsNullOrWhiteSpace(variantInfo.Description)
+				? variantInfo.Description!
+				: baseInfo.Description ?? string.Empty;
+			var defaultConfigFileName = NormalizeConfigFileName(baseInfo.DefaultConfigFileName);
+			var normalizedConfigFileName = NormalizeConfigFileName(configFileName);
+			var thumbnailPath = ResolveThumbnailPath(vehicleFolderPath, variantId);
+			return new BeamNgVehicleVariantDescriptor(
+				vehicle,
+				normalizedConfigFileName,
+				variantId,
+				vehicleDisplayName,
+				variantDisplayName,
+				description,
+				thumbnailPath,
+				variantInfo.ConfigType,
+				!string.IsNullOrWhiteSpace(defaultConfigFileName) &&
+				string.Equals(defaultConfigFileName, normalizedConfigFileName, StringComparison.OrdinalIgnoreCase));
+		}
+
 		private static bool TryReadPrimaryVehicleId(string zipPath, out string vehicleId)
 		{
 			vehicleId = string.Empty;
@@ -833,6 +1002,129 @@ namespace LibreRally.Vehicle.Content
 
 			resolvedPath = null;
 			return false;
+		}
+
+		private static string BuildVehicleDisplayName(string vehicleId, string? brand, string? name)
+		{
+			if (!string.IsNullOrWhiteSpace(brand) && !string.IsNullOrWhiteSpace(name))
+			{
+				return $"{brand} {name}";
+			}
+
+			if (!string.IsNullOrWhiteSpace(name))
+			{
+				return name!;
+			}
+
+			return vehicleId;
+		}
+
+		private static string FormatVariantFallbackLabel(string variantId, string? configFileName)
+		{
+			if (string.IsNullOrWhiteSpace(configFileName))
+			{
+				return "Default setup";
+			}
+
+			return variantId.Replace('_', ' ');
+		}
+
+		private static string? NormalizeConfigFileName(string? configFileName)
+		{
+			if (string.IsNullOrWhiteSpace(configFileName))
+			{
+				return null;
+			}
+
+			var trimmed = configFileName.Trim();
+			return Path.GetExtension(trimmed).Equals(".pc", StringComparison.OrdinalIgnoreCase)
+				? Path.GetFileName(trimmed)
+				: Path.GetFileName(trimmed) + ".pc";
+		}
+
+		private static string? ResolveThumbnailPath(string vehicleFolderPath, string variantId)
+		{
+			foreach (var extension in ThumbnailExtensions)
+			{
+				var exactPath = Path.Combine(vehicleFolderPath, variantId + extension);
+				if (File.Exists(exactPath))
+				{
+					return exactPath;
+				}
+			}
+
+			foreach (var extension in ThumbnailExtensions)
+			{
+				var fallbackPath = Path.Combine(vehicleFolderPath, "default" + extension);
+				if (File.Exists(fallbackPath))
+				{
+					return fallbackPath;
+				}
+			}
+
+			return null;
+		}
+
+		private static VehicleInfo ReadVehicleInfo(string infoFilePath)
+		{
+			if (!TryLoadJsonDocument(infoFilePath, out var document))
+			{
+				return default;
+			}
+
+			using (document)
+			{
+				var root = document.RootElement;
+				return new VehicleInfo(
+					GetOptionalStringProperty(root, "Brand"),
+					GetOptionalStringProperty(root, "Name"),
+					GetOptionalStringProperty(root, "Description"),
+					GetOptionalStringProperty(root, "default_pc"));
+			}
+		}
+
+		private static VariantInfo ReadVariantInfo(string infoFilePath)
+		{
+			if (!TryLoadJsonDocument(infoFilePath, out var document))
+			{
+				return default;
+			}
+
+			using (document)
+			{
+				var root = document.RootElement;
+				return new VariantInfo(
+					GetOptionalStringProperty(root, "Configuration"),
+					GetOptionalStringProperty(root, "Description"),
+					GetOptionalStringProperty(root, "Config Type"));
+			}
+		}
+
+		private static bool TryLoadJsonDocument(string filePath, out JsonDocument? document)
+		{
+			document = null;
+			if (!File.Exists(filePath))
+			{
+				return false;
+			}
+
+			try
+			{
+				document = JsonDocument.Parse(File.ReadAllText(filePath), JsonOptions);
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
+		private static string? GetOptionalStringProperty(JsonElement element, string propertyName)
+		{
+			return element.TryGetProperty(propertyName, out var property) &&
+			       property.ValueKind == JsonValueKind.String
+				? property.GetString()
+				: null;
 		}
 
 		private static string? NormalizeVehiclePath(string vehiclePath)
@@ -966,5 +1258,16 @@ namespace LibreRally.Vehicle.Content
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.ToArray();
 		}
+
+		private readonly record struct VehicleInfo(
+			string? Brand,
+			string? Name,
+			string? Description,
+			string? DefaultConfigFileName);
+
+		private readonly record struct VariantInfo(
+			string? Configuration,
+			string? Description,
+			string? ConfigType);
 	}
 }

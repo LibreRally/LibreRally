@@ -935,16 +935,6 @@ namespace LibreRally.Vehicle.Physics
 		/// </summary>
 		/// <param name="v">Vector expressed in BeamNG coordinates (X right, Y forward, Z up).</param>
 		/// <returns>Equivalent vector in Stride coordinates (X right, Y up, Z backward).</returns>
-		/// <remarks>
-		/// <para>Uses the shared vehicle-physics convention that BeamNG forward becomes negative Z in Stride so downstream systems can continue treating <see cref="Matrix.Backward"/> as the forward direction.</para>
-		/// <para>The conversion is only an axis remap with sign inversion on the forward axis; it does not apply unit scaling or any additional rotation.</para>
-		/// <para>This helper is used when importing BeamNG-authored geometry and suspension metadata into runtime Stride entities, so keeping the transform here explicit avoids silent forward-axis mismatches elsewhere in the vehicle pipeline.</para>
-		/// <para>Coordinate system transform:</para>
-		/// <list type="bullet">
-		///   <item>BeamNG: X = right, Y = forward, Z = up</item>
-		///   <item>Stride: X = right, Y = up, Z = backward</item>
-		/// </list>
-		/// </remarks>
 		public static Vector3 BeamNGToStride(System.Numerics.Vector3 v)
 			=> new Vector3(v.X, v.Z, -v.Y);
 

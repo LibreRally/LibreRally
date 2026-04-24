@@ -22,6 +22,7 @@ namespace LibreRally.Tests
 			DeformationFactor = 0f,
 			NoiseFactor = 0f,
 		};
+
 		private static readonly SurfaceProperties WetTarmac = SurfaceProperties.ForType(SurfaceType.WetTarmac);
 
 		private static readonly SurfaceProperties DeterministicPacejkaSurface = new()
@@ -1462,6 +1463,9 @@ namespace LibreRally.Tests
 			Assert.Equal(1f, factor);
 		}
 
+		/// <summary>
+		/// Verifies that update uses applied drive torque before slip force calculation.
+		/// </summary>
 		[Fact]
 		public void Update_UsesAppliedDriveTorqueBeforeSlipForceCalculation()
 		{
@@ -1497,6 +1501,9 @@ namespace LibreRally.Tests
 			Assert.True(state.DriveTorque > 0f);
 		}
 
+		/// <summary>
+		/// Verifies that update stores tyre reaction torque and keeps brake from reversing wheel.
+		/// </summary>
 		[Fact]
 		public void Update_StoresTyreReactionTorqueAndKeepsBrakeFromReversingWheel()
 		{

@@ -6,6 +6,9 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the beam ng brake control metadata behavior.
+	/// </summary>
 	public class BeamNgBrakeControlMetadataTests
 	{
 		private static string CombineRelativePath(string basePath, string relativePath)
@@ -35,6 +38,9 @@ namespace LibreRally.Tests
 			throw new DirectoryNotFoundException($"Could not locate the repository root for '{vehicleFolderName}' tests.");
 		}
 
+		/// <summary>
+		/// Verifies that basic car does not enable abs by default.
+		/// </summary>
 		[Fact]
 		public void BasicCar_DoesNotEnableAbsByDefault()
 		{
@@ -46,6 +52,9 @@ namespace LibreRally.Tests
 			Assert.False(VehicleLoader.IsAbsEnabled(definition.BrakeControl));
 		}
 
+		/// <summary>
+		/// Verifies that sunburst 2 modern abs part parses enable flag.
+		/// </summary>
 		[Fact]
 		public void Sunburst2_ModernAbsPart_ParsesEnableFlag()
 		{
@@ -59,6 +68,9 @@ namespace LibreRally.Tests
 			Assert.True(VehicleLoader.IsAbsEnabled(brakeControl));
 		}
 
+		/// <summary>
+		/// Verifies that sunburst 2 brake parts parse abs target and legacy controller.
+		/// </summary>
 		[Fact]
 		public void Sunburst2_BrakeParts_ParseAbsTargetAndLegacyController()
 		{

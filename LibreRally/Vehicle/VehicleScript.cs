@@ -23,7 +23,7 @@ namespace LibreRally.Vehicle
 		public float BrakeTorque { get; set; } = 4000f;
 
 		/// <summary>Maximum steering angle in radians.</summary>
-		public float MaxSteerAngle { get; set; } = 0.45f;   // radians (~26°)
+		public float MaxSteerAngle { get; set; } = 0.45f; // radians (~26°)
 
 		/// <summary>Rate at which steering angle increases when steering input is held.</summary>
 		public float SteerSpeed { get; set; } = 2.5f;
@@ -32,7 +32,7 @@ namespace LibreRally.Vehicle
 		public float SteerReturnSpeed { get; set; } = 4f;
 
 		/// <summary>Maximum chassis speed in metres per second at which engine impulse is applied.</summary>
-		public float MaxSpeedMs { get; set; } = 70f;         // ~250 km/h
+		public float MaxSpeedMs { get; set; } = 70f; // ~250 km/h
 
 		// ──────────────────────────────────────────────────────────────────────────
 		// Internal state
@@ -46,6 +46,9 @@ namespace LibreRally.Vehicle
 
 		private float _steerAngle;
 
+		/// <summary>
+		/// Caches the assembled chassis and wheel rigid bodies from the spawned vehicle hierarchy.
+		/// </summary>
 		public override void Start()
 		{
 			// Find child entities by name
@@ -53,15 +56,18 @@ namespace LibreRally.Vehicle
 			{
 				switch (child.Name)
 				{
-					case "chassis":  _chassis  = child.Get<BodyComponent>(); break;
-					case "wheel_FL": _wheelFL  = child.Get<BodyComponent>(); break;
-					case "wheel_FR": _wheelFR  = child.Get<BodyComponent>(); break;
-					case "wheel_RL": _wheelRL  = child.Get<BodyComponent>(); break;
-					case "wheel_RR": _wheelRR  = child.Get<BodyComponent>(); break;
+					case "chassis": _chassis = child.Get<BodyComponent>(); break;
+					case "wheel_FL": _wheelFL = child.Get<BodyComponent>(); break;
+					case "wheel_FR": _wheelFR = child.Get<BodyComponent>(); break;
+					case "wheel_RL": _wheelRL = child.Get<BodyComponent>(); break;
+					case "wheel_RR": _wheelRR = child.Get<BodyComponent>(); break;
 				}
 			}
 		}
 
+		/// <summary>
+		/// Polls player input and applies the resulting drive, brake, and steering commands.
+		/// </summary>
 		public override void Update()
 		{
 			if (_chassis == null)

@@ -38,7 +38,9 @@ namespace LibreRally.Camera
 		/// </summary>
 		public float FollowLerpSpeed { get; set; } = 5f;
 
-		/// <summary>Bonnet/hood camera offset in car-local space (+Z = nose).</summary>
+		/// <summary>Gets or sets the bonnet camera offset in car-local space.</summary>
+		/// <value>A local-space offset whose positive Z axis points toward the car's nose.</value>
+
 		// Derived from sunburst2_body.jbeam camerasInternal: ["hood", 0.0, -0.67, 1.13, ...] → Stride (x, z, -y)
 		public Vector3 BonnetOffset { get; set; } = new Vector3(0, 1.13f, 0.67f);
 
@@ -46,6 +48,7 @@ namespace LibreRally.Camera
 		public Vector3 BumperOffset { get; set; } = new Vector3(0, 0.3f, 2.8f);
 
 		private enum CameraMode { Follow, Bonnet, Bumper }
+
 		private CameraMode _mode = CameraMode.Follow;
 		private const float LookDeadZone = 0.15f;
 		private const float FollowOrbitYawSpeed = 2.5f;
@@ -63,6 +66,9 @@ namespace LibreRally.Camera
 		private Vector2 _followLookAngles;
 		private Vector2 _cockpitLookAngles;
 
+		/// <summary>
+		/// Initializes the camera transform from the current target position and follow offset.
+		/// </summary>
 		public override void Start()
 		{
 			if (Target == null)
@@ -87,9 +93,13 @@ namespace LibreRally.Camera
 				pos += parent.Entity.Transform.Position;
 				parent = parent.Parent;
 			}
+
 			return pos;
 		}
 
+		/// <summary>
+		/// Updates the active camera mode, look input, and camera transform for the current frame.
+		/// </summary>
 		public override void Update()
 		{
 			if (Target == null)
@@ -111,7 +121,7 @@ namespace LibreRally.Camera
 				{
 					CameraMode.Follow => CameraMode.Bonnet,
 					CameraMode.Bonnet => CameraMode.Bumper,
-					_                 => CameraMode.Follow,
+					_ => CameraMode.Follow,
 				};
 			}
 
@@ -197,8 +207,8 @@ namespace LibreRally.Camera
 
 			lookDir.Normalize();
 			var horizontal = MathF.Sqrt(lookDir.X * lookDir.X + lookDir.Z * lookDir.Z);
-			var yaw   = MathF.Atan2(-lookDir.X, -lookDir.Z);
-			var pitch = MathF.Atan2(lookDir.Y,  horizontal);
+			var yaw = MathF.Atan2(-lookDir.X, -lookDir.Z);
+			var pitch = MathF.Atan2(lookDir.Y, horizontal);
 			Entity.Transform.Rotation = Quaternion.RotationYawPitchRoll(yaw, pitch, 0f);
 		}
 
@@ -213,6 +223,7 @@ namespace LibreRally.Camera
 			var worldOffset = Vector3.Transform(localOffset, targetTransform.Rotation);
 			Entity.Transform.Position = targetTransform.WorldMatrix.TranslationVector + worldOffset;
 			var lookOffset = Quaternion.RotationYawPitchRoll(_cockpitLookAngles.X, -_cockpitLookAngles.Y, 0f);
+
 			// Rotate into the car's +Z-facing frame, then apply the look offset in that car-facing space.
 			Entity.Transform.Rotation = targetTransform.Rotation * lookOffset * Quaternion.RotationY(MathF.PI);
 		}

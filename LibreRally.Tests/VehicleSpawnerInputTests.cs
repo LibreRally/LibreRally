@@ -2,8 +2,14 @@ using LibreRally;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the vehicle spawner input behavior.
+	/// </summary>
 	public class VehicleSpawnerInputTests
 	{
+		/// <summary>
+		/// Verifies that is pause menu toggle requested accepts controller start.
+		/// </summary>
 		[Fact]
 		public void IsPauseMenuToggleRequested_AcceptsControllerStart()
 		{
@@ -14,6 +20,9 @@ namespace LibreRally.Tests
 			Assert.True(requested);
 		}
 
+		/// <summary>
+		/// Verifies that is vehicle menu shortcut requested only accepts keyboard shortcut.
+		/// </summary>
 		[Fact]
 		public void IsVehicleMenuShortcutRequested_OnlyAcceptsKeyboardShortcut()
 		{
@@ -21,6 +30,9 @@ namespace LibreRally.Tests
 			Assert.False(VehicleSpawner.IsVehicleMenuShortcutRequested(keyboardTogglePressed: false));
 		}
 
+		/// <summary>
+		/// Verifies that resolve pause menu toggle routes start to pause flow.
+		/// </summary>
 		[Fact]
 		public void ResolvePauseMenuToggle_RoutesStartToPauseFlow()
 		{
@@ -29,6 +41,9 @@ namespace LibreRally.Tests
 			Assert.Equal(VehicleSpawner.MenuScreen.Pause, VehicleSpawner.ResolvePauseMenuToggle(VehicleSpawner.MenuScreen.VehicleSelection));
 		}
 
+		/// <summary>
+		/// Verifies that resolve vehicle selection close target returns pause only when opened from pause.
+		/// </summary>
 		[Fact]
 		public void ResolveVehicleSelectionCloseTarget_ReturnsPauseOnlyWhenOpenedFromPause()
 		{
@@ -36,6 +51,9 @@ namespace LibreRally.Tests
 			Assert.Equal(VehicleSpawner.MenuScreen.None, VehicleSpawner.ResolveVehicleSelectionCloseTarget(openedFromPauseMenu: false));
 		}
 
+		/// <summary>
+		/// Verifies that resolve telemetry menu action maps indexes to expected actions.
+		/// </summary>
 		[Fact]
 		public void ResolveTelemetryMenuAction_MapsIndexesToExpectedActions()
 		{
@@ -45,6 +63,9 @@ namespace LibreRally.Tests
 			Assert.Equal(TelemetryMenuAction.ReconnectOutSim, VehicleSpawner.ResolveTelemetryMenuAction(7));
 		}
 
+		/// <summary>
+		/// Verifies that is vehicle menu confirm requested accepts controller a.
+		/// </summary>
 		[Fact]
 		public void IsVehicleMenuConfirmRequested_AcceptsControllerA()
 		{
@@ -55,6 +76,9 @@ namespace LibreRally.Tests
 			Assert.True(requested);
 		}
 
+		/// <summary>
+		/// Verifies that is vehicle menu cancel requested accepts controller b.
+		/// </summary>
 		[Fact]
 		public void IsVehicleMenuCancelRequested_AcceptsControllerB()
 		{
@@ -65,6 +89,9 @@ namespace LibreRally.Tests
 			Assert.True(requested);
 		}
 
+		/// <summary>
+		/// Verifies that is vehicle menu move down requested accepts controller d pad down.
+		/// </summary>
 		[Fact]
 		public void IsVehicleMenuMoveDownRequested_AcceptsControllerDPadDown()
 		{
@@ -75,6 +102,9 @@ namespace LibreRally.Tests
 			Assert.True(requested);
 		}
 
+		/// <summary>
+		/// Verifies that is vehicle menu move up requested accepts controller d pad up.
+		/// </summary>
 		[Fact]
 		public void IsVehicleMenuMoveUpRequested_AcceptsControllerDPadUp()
 		{

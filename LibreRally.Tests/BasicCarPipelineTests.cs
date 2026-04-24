@@ -13,6 +13,9 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the basic car pipeline behavior.
+	/// </summary>
 	public class BasicCarPipelineTests
 	{
 		private static string CombineRelativePath(string basePath, string relativePath)
@@ -40,6 +43,9 @@ namespace LibreRally.Tests
 			throw new DirectoryNotFoundException("Could not locate the repository root for the basic_car tests.");
 		}
 
+		/// <summary>
+		/// Verifies that basic car should select template part tree.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldSelectTemplatePartTree()
 		{
@@ -53,6 +59,9 @@ namespace LibreRally.Tests
 			Assert.Equal(3.12f, config.Vars["gear_1"]);
 		}
 
+		/// <summary>
+		/// Verifies that basic car should parse template nodes and wheel groups.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldParseTemplateNodesAndWheelGroups()
 		{
@@ -79,6 +88,9 @@ namespace LibreRally.Tests
 			Assert.Contains(frontWheelData.PressureWheels, wheel => wheel.WheelKey == "wheel_FR" && wheel.NodeArm == "fh5r");
 		}
 
+		/// <summary>
+		/// Verifies that basic car should assemble vehicle.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldAssembleVehicle()
 		{
@@ -109,6 +121,9 @@ namespace LibreRally.Tests
 			Assert.Contains("hub_F", hubNode.Groups);
 		}
 
+		/// <summary>
+		/// Verifies that basic car should resolve template rear drive powertrain.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldResolveTemplateRearDrivePowertrain()
 		{
@@ -131,6 +146,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.89f, powertrain.GearRatios[^1], 2);
 		}
 
+		/// <summary>
+		/// Verifies that basic car should build physics.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldBuildPhysics()
 		{
@@ -179,6 +197,9 @@ namespace LibreRally.Tests
 			Assert.Equal(wheelFlSettings.SuspensionMaximumOffset, flLimit.MaximumOffset);
 		}
 
+		/// <summary>
+		/// Verifies that basic car should apply signed spring height to suspension target offset.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldApplySignedSpringHeightToSuspensionTargetOffset()
 		{
@@ -199,6 +220,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.02f, rr.SuspensionTargetOffset, 3);
 		}
 
+		/// <summary>
+		/// Verifies that basic car should include formula bee collada mesh.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldIncludeFormulaBeeColladaMesh()
 		{
@@ -208,6 +232,9 @@ namespace LibreRally.Tests
 			Assert.NotEmpty(ColladaLoader.Load(daePath));
 		}
 
+		/// <summary>
+		/// Verifies that basic car should match brake disc flexbody names to collada geometry.
+		/// </summary>
 		[Fact]
 		public void BasicCar_ShouldMatchBrakeDiscFlexbodyNamesToColladaGeometry()
 		{

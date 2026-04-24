@@ -2,8 +2,14 @@ using LibreRally.Vehicle.Physics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the vehicle physics builder behavior.
+	/// </summary>
 	public class VehiclePhysicsBuilderTests
 	{
+		/// <summary>
+		/// Verifies that compute suspension travel keeps generous landing headroom for typical rally loads.
+		/// </summary>
 		[Fact]
 		public void ComputeSuspensionTravel_KeepsGenerousLandingHeadroomForTypicalRallyLoads()
 		{
@@ -20,6 +26,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.16f, rearRebound, 3);
 		}
 
+		/// <summary>
+		/// Verifies that compute suspension travel scales from static sag before hitting clamps.
+		/// </summary>
 		[Fact]
 		public void ComputeSuspensionTravel_ScalesFromStaticSagBeforeHittingClamps()
 		{

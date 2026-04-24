@@ -28,14 +28,19 @@ namespace LibreRally
 	{
 		/// <summary>Resume the current driving session.</summary>
 		ResumeDriving,
+
 		/// <summary>Reset the vehicle to the spawn position.</summary>
 		ResetVehicle,
+
 		/// <summary>Open the garage setup/tuning menu.</summary>
 		GarageSetup,
+
 		/// <summary>Open the vehicle selection menu.</summary>
 		VehicleSelect,
+
 		/// <summary>Open the physics calibration menu.</summary>
 		PhysicsCalibration,
+
 		/// <summary>Open the telemetry controls menu.</summary>
 		Telemetry,
 	}
@@ -144,7 +149,7 @@ namespace LibreRally
 		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
 		private TelemetryOverlay? _telemetryOverlay;
 		private BeamNgVehicleCatalog? _vehicleCatalog;
-		private List<BeamNgVehicleDescriptor> _availableVehicles = [];
+		private List<BeamNgVehicleVariantDescriptor> _availableVehicles = [];
 		private readonly VehicleSetupOverrides _setupOverrides = new();
 		private int _selectedVehicleIndex;
 		private int _pauseMenuSelectedIndex;
@@ -186,6 +191,7 @@ namespace LibreRally
 		private const int PauseMenuTelemetryIndex = 5;
 		private const int PauseMenuItemCount = 6;
 		private const int TelemetryMenuItemCount = 8;
+
 		private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
 		[
 			new(new PauseMenuItem("Resume Driving", "Return to the stage and hand control back to the driver."), PauseMenuAction.ResumeDriving),
@@ -258,12 +264,18 @@ namespace LibreRally
 			}
 		}
 
-		private void LoadVehicle(BeamNgVehicleDescriptor? selectedVehicle = null)
+		private void LoadVehicle(BeamNgVehicleVariantDescriptor? selectedVehicle = null)
 		{
-			var requestedConfig = string.IsNullOrWhiteSpace(ConfigFileName) ? "<auto>" : ConfigFileName;
+			var selectedConfig = selectedVehicle?.ConfigFileName;
+			var requestedConfig = selectedVehicle != null
+				? selectedConfig ?? "<jbeam defaults>"
+				: string.IsNullOrWhiteSpace(ConfigFileName)
+					? "<auto>"
+					: ConfigFileName;
 			var requestedSource = selectedVehicle?.SourcePath ?? VehicleFolderPath;
 			if (selectedVehicle != null &&
-			    !selectedVehicle.SourcePath.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase))
+			    (!selectedVehicle.SourcePath.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
+			     !string.Equals(selectedVehicle.ConfigFileName, ConfigFileName, StringComparison.OrdinalIgnoreCase)))
 			{
 				_setupOverrides.Clear();
 			}
@@ -280,15 +292,22 @@ namespace LibreRally
 			Log.Info($"[VehicleSpawner] Load request: source='{requestedSource}' resolved='{basePath}' config='{requestedConfig}'");
 
 			var loader = new VehicleLoader((Game)Game);
+			var configToLoad = selectedVehicle != null
+				? selectedVehicle.ConfigFileName
+				: string.IsNullOrWhiteSpace(ConfigFileName)
+					? null
+					: ConfigFileName;
 			var vehicle = resolvedVehicle != null
-				? loader.Load(resolvedVehicle, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName, _setupOverrides)
-				: loader.Load(basePath, string.IsNullOrWhiteSpace(ConfigFileName) ? null : ConfigFileName, _setupOverrides);
+				? loader.Load(resolvedVehicle, configToLoad, _setupOverrides)
+				: loader.Load(basePath, configToLoad, _setupOverrides);
 
 			if (selectedVehicle != null)
 			{
 				VehicleFolderPath = selectedVehicle.SourcePath;
+				ConfigFileName = selectedVehicle.ConfigFileName ?? string.Empty;
 				_selectedVehicleIndex = _availableVehicles.FindIndex(vehicleDescriptor =>
-					vehicleDescriptor.SourcePath.Equals(selectedVehicle.SourcePath, StringComparison.OrdinalIgnoreCase));
+					vehicleDescriptor.SourcePath.Equals(selectedVehicle.SourcePath, StringComparison.OrdinalIgnoreCase) &&
+					string.Equals(vehicleDescriptor.ConfigFileName, selectedVehicle.ConfigFileName, StringComparison.OrdinalIgnoreCase));
 			}
 
 			UnloadVehicle();
@@ -353,12 +372,7 @@ namespace LibreRally
 				return;
 			}
 
-			_drivingHudOverlay = new DrivingHudOverlay(Services)
-			{
-				Car = _car,
-				StatusText = _status,
-				DebugOverlayVisible = _showDebug,
-			};
+			_drivingHudOverlay = new DrivingHudOverlay(Services) { Car = _car, StatusText = _status, DebugOverlayVisible = _showDebug, };
 
 			((Game)Game).GameSystems.Add(_drivingHudOverlay);
 		}
@@ -372,10 +386,7 @@ namespace LibreRally
 
 			_vehicleSelectionOverlay = new VehicleSelectionOverlay(Services)
 			{
-				Vehicles = _availableVehicles,
-				SelectedIndex = _selectedVehicleIndex,
-				OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection,
-				StatusText = _status,
+				Vehicles = _availableVehicles, SelectedIndex = _selectedVehicleIndex, OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection, StatusText = _status,
 			};
 			_vehicleSelectionOverlay.ItemActivated = selectedIndex =>
 			{
@@ -424,12 +435,7 @@ namespace LibreRally
 				return;
 			}
 
-			_setupUiShellOverlay = new SetupUiShellOverlay(Services)
-			{
-				OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup,
-				VehicleName = GetCurrentVehicleName(),
-				StatusText = _status,
-			};
+			_setupUiShellOverlay = new SetupUiShellOverlay(Services) { OverlayVisible = _activeMenuScreen == MenuScreen.GarageSetup, VehicleName = GetCurrentVehicleName(), StatusText = _status, };
 			_setupUiShellOverlay.ApplyRequested = ApplyGarageSetupChanges;
 			_setupUiShellOverlay.CloseRequested = CloseGarageSetup;
 
@@ -443,12 +449,7 @@ namespace LibreRally
 				return;
 			}
 
-			_physicsCalibrationOverlay = new PhysicsCalibrationOverlay(Services)
-			{
-				OverlayVisible = _activeMenuScreen == MenuScreen.PhysicsCalibration,
-				VehicleName = GetCurrentVehicleName(),
-				StatusText = _status,
-			};
+			_physicsCalibrationOverlay = new PhysicsCalibrationOverlay(Services) { OverlayVisible = _activeMenuScreen == MenuScreen.PhysicsCalibration, VehicleName = GetCurrentVehicleName(), StatusText = _status, };
 			_physicsCalibrationOverlay.CloseRequested = ClosePhysicsCalibration;
 
 			((Game)Game).GameSystems.Add(_physicsCalibrationOverlay);
@@ -505,7 +506,7 @@ namespace LibreRally
 			var bundledVehiclesRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "BeamNG Vehicles");
 			var beamNgContentVehiclesRoot = BeamNgVehicleCatalog.DetectBeamNgContentVehiclesRoot();
 			_vehicleCatalog = new BeamNgVehicleCatalog(bundledVehiclesRoot, beamNgContentVehiclesRoot);
-			_availableVehicles = _vehicleCatalog.DiscoverBundledVehicles().ToList();
+			_availableVehicles = _vehicleCatalog.DiscoverBundledVehicleVariants().ToList();
 			_selectedVehicleIndex = ResolveVehicleSelectionIndex();
 		}
 
@@ -521,7 +522,8 @@ namespace LibreRally
 				: Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, VehicleFolderPath));
 
 			var exactPathIndex = _availableVehicles.FindIndex(vehicle =>
-				vehicle.SourcePath.Equals(absoluteVehiclePath, StringComparison.OrdinalIgnoreCase));
+				vehicle.SourcePath.Equals(absoluteVehiclePath, StringComparison.OrdinalIgnoreCase) &&
+				string.Equals(vehicle.ConfigFileName, NormalizeConfigSelection(ConfigFileName), StringComparison.OrdinalIgnoreCase));
 			if (exactPathIndex >= 0)
 			{
 				return exactPathIndex;
@@ -530,7 +532,22 @@ namespace LibreRally
 			var idIndex = _availableVehicles.FindIndex(vehicle =>
 				vehicle.VehicleId.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
 				absoluteVehiclePath.EndsWith(Path.DirectorySeparatorChar + vehicle.VehicleId, StringComparison.OrdinalIgnoreCase));
-			return idIndex >= 0 ? idIndex : 0;
+			if (idIndex < 0)
+			{
+				return 0;
+			}
+
+			var preferredConfig = NormalizeConfigSelection(ConfigFileName);
+			if (string.IsNullOrWhiteSpace(preferredConfig))
+			{
+				return idIndex;
+			}
+
+			var matchingVariantIndex = _availableVehicles.FindIndex(vehicle =>
+				(vehicle.VehicleId.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
+				 absoluteVehiclePath.EndsWith(Path.DirectorySeparatorChar + vehicle.VehicleId, StringComparison.OrdinalIgnoreCase)) &&
+				string.Equals(vehicle.ConfigFileName, preferredConfig, StringComparison.OrdinalIgnoreCase));
+			return matchingVariantIndex >= 0 ? matchingVariantIndex : idIndex;
 		}
 
 		internal static bool IsPauseMenuToggleRequested(bool keyboardPausePressed, bool controllerStartPressed) =>
@@ -993,7 +1010,7 @@ namespace LibreRally
 			}
 		}
 
-		private BeamNgVehicleDescriptor? ResolveSelectedVehicleDescriptor()
+		private BeamNgVehicleVariantDescriptor? ResolveSelectedVehicleDescriptor()
 		{
 			return _selectedVehicleIndex >= 0 && _selectedVehicleIndex < _availableVehicles.Count
 				? _availableVehicles[_selectedVehicleIndex]
@@ -1010,6 +1027,19 @@ namespace LibreRally
 			return Path.GetFileName(VehicleFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 		}
 
+		private static string? NormalizeConfigSelection(string? configFileName)
+		{
+			if (string.IsNullOrWhiteSpace(configFileName))
+			{
+				return null;
+			}
+
+			var trimmed = Path.GetFileName(configFileName.Trim());
+			return Path.GetExtension(trimmed).Equals(".pc", StringComparison.OrdinalIgnoreCase)
+				? trimmed
+				: trimmed + ".pc";
+		}
+
 		private void AttachCamera(Entity chassis, RallyCarComponent car)
 		{
 			var cameraEntity = SceneSystem.SceneInstance.RootScene.Entities
@@ -1022,24 +1052,13 @@ namespace LibreRally
 			foreach (var s in cameraEntity.GetAll<SyncScript>().ToList())
 				cameraEntity.Remove(s);
 
-			cameraEntity.Add(new RallyCameraScript
-			{
-				Target = chassis,
-				CarComponent = car,
-			});
+			cameraEntity.Add(new RallyCameraScript { Target = chassis, CarComponent = car, });
 		}
 
 		private void AddGroundPhysics()
 		{
 			Entity.Transform.Position = new Vector3(Entity.Transform.Position.X, -0.5f, Entity.Transform.Position.Z);
-			Entity.Add(new StaticComponent
-			{
-				FrictionCoefficient = 1.5f,
-				Collider = new CompoundCollider
-				{
-					Colliders = { new BoxCollider { Size = new Vector3(500f, 1f, 500f) } }
-				}
-			});
+			Entity.Add(new StaticComponent { FrictionCoefficient = 1.5f, Collider = new CompoundCollider { Colliders = { new BoxCollider { Size = new Vector3(500f, 1f, 500f) } } } });
 
 			AddRoadTestSections();
 		}
@@ -1116,20 +1135,11 @@ namespace LibreRally
 		{
 			var halfWidth = segment.ColliderSize.X * 0.5f;
 			var halfLength = segment.ColliderSize.Z * 0.5f;
+
 			// Clamp UV tiling to a sane minimum to avoid near-zero texture repetition artifacts.
 			var uvScale = MathF.Max(MinTrackUvScale, segment.UvScale);
 
-			var vertices = new VertexPositionNormalTexture[]
-			{
-				new(new Vector3(-halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(0f, 0f)),
-				new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(1f, 0f)),
-				new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(1f, 1f)),
-				new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, 1f)),
-				new(new Vector3(-halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(0f, 0f)),
-				new(new Vector3(halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(1f, 0f)),
-				new(new Vector3(halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(1f, 1f)),
-				new(new Vector3(-halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(0f, 1f)),
-			};
+			var vertices = new VertexPositionNormalTexture[] { new(new Vector3(-halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(0f, 0f)), new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(1f, 0f)), new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(1f, 1f)), new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, 1f)), new(new Vector3(-halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(0f, 0f)), new(new Vector3(halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(1f, 0f)), new(new Vector3(halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(1f, 1f)), new(new Vector3(-halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(0f, 1f)), };
 			var indices = new[] { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6 };
 
 			var mesh = new Mesh
@@ -1165,31 +1175,14 @@ namespace LibreRally
 			               {
 				               Attributes = new MaterialAttributes
 				               {
-					               Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }),
-					               DiffuseModel = new MaterialDiffuseLambertModelFeature(),
-					               MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }),
-					               Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
+					               Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }), DiffuseModel = new MaterialDiffuseLambertModelFeature(), MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }), Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
 				               },
 			               });
 
 			var trackEntity = new Entity(segment.Name);
 			trackEntity.Transform.Position = segment.LocalPosition + new Vector3(0f, TrackSurfaceLift, 0f);
 			trackEntity.Transform.Rotation = segment.LocalRotation;
-			trackEntity.Add(new StaticComponent
-			{
-				FrictionCoefficient = segment.FrictionCoefficient,
-				Collider = new CompoundCollider
-				{
-					Colliders =
-					{
-						new BoxCollider
-						{
-							Size = segment.ColliderSize,
-							PositionLocal = new Vector3(0f, -segment.ColliderSize.Y * 0.5f, 0f),
-						},
-					},
-				},
-			});
+			trackEntity.Add(new StaticComponent { FrictionCoefficient = segment.FrictionCoefficient, Collider = new CompoundCollider { Colliders = { new BoxCollider { Size = segment.ColliderSize, PositionLocal = new Vector3(0f, -segment.ColliderSize.Y * 0.5f, 0f), }, }, }, });
 			trackEntity.Add(new TrackSurfaceComponent { SurfaceType = segment.SurfaceType });
 			trackEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
 
@@ -1275,6 +1268,7 @@ namespace LibreRally
 				{
 					DisposeOutGaugeClient();
 				}
+
 				return;
 			}
 
@@ -1371,6 +1365,7 @@ namespace LibreRally
 				{
 					DisposeOutSimClient();
 				}
+
 				return;
 			}
 
@@ -1456,6 +1451,7 @@ namespace LibreRally
 				DisposeOutSimClient();
 				return;
 			}
+
 			_outSimSendFailed = false;
 			_outSimNextFailureLogTimeSeconds = 0d;
 		}

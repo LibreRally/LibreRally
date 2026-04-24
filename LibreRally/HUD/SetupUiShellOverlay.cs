@@ -140,10 +140,7 @@ namespace LibreRally.HUD
 			}
 
 			MyraEnvironment.Game = _game;
-			_desktop = new Desktop
-			{
-				Root = BuildRoot(),
-			};
+			_desktop = new Desktop { Root = BuildRoot(), };
 
 			if (_categoryButtons.Count > 0)
 			{
@@ -212,10 +209,7 @@ namespace LibreRally.HUD
 
 		private Widget BuildRoot()
 		{
-			var root = new Panel
-			{
-				Background = Brush(BackdropColor),
-			};
+			var root = new Panel { Background = Brush(BackdropColor), };
 
 			var shellFrame = new Panel
 			{
@@ -277,11 +271,7 @@ namespace LibreRally.HUD
 
 		private Panel BuildHeader()
 		{
-			var panel = new Panel
-			{
-				Height = 96,
-				Background = Brush(PanelAltColor),
-			};
+			var panel = new Panel { Height = 96, Background = Brush(PanelAltColor), };
 
 			var header = new Grid
 			{
@@ -296,18 +286,9 @@ namespace LibreRally.HUD
 			header.RowsProportions.Add(new Proportion(ProportionType.Auto));
 			header.RowsProportions.Add(new Proportion(ProportionType.Auto));
 
-			header.Widgets.Add(new Label
-			{
-				Text = _shell.Title,
-				TextColor = TitleColor,
-			});
+			header.Widgets.Add(new Label { Text = _shell.Title, TextColor = TitleColor, });
 
-			var subtitle = new Label
-			{
-				Text = _shell.Subtitle,
-				TextColor = CopyColor,
-				Wrap = true,
-			};
+			var subtitle = new Label { Text = _shell.Subtitle, TextColor = CopyColor, Wrap = true, };
 			Grid.SetRow(subtitle, 1);
 			header.Widgets.Add(subtitle);
 
@@ -335,7 +316,12 @@ namespace LibreRally.HUD
 			content.HorizontalAlignment = HorizontalAlignment.Center;
 			content.VerticalAlignment = VerticalAlignment.Top;
 			content.Widgets.Add(CreateSectionTitle("Garage Systems"));
-			content.Widgets.Add(CreateSectionBody("Choose a setup category. Shoulder buttons or left/right switch pane focus."));
+			content.Widgets.Add(CreateSectionBody("Choose a setup category."));
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"LB/RB change pane focus",
+				GamePadPromptWidgets.Prompt("Change pane", GamePadPromptIcon.LeftBumper, GamePadPromptIcon.RightBumper)));
 			content.Widgets.Add(CreateSpacer(6));
 
 			foreach (var category in _shell.Categories)
@@ -356,19 +342,10 @@ namespace LibreRally.HUD
 			content.VerticalAlignment = VerticalAlignment.Top;
 
 			_categoryTitleLabel = CreateSectionTitle(string.Empty);
-			_categoryTaglineLabel = new Label
-			{
-				TextColor = ValueColor,
-			};
+			_categoryTaglineLabel = new Label { TextColor = ValueColor, };
 			_categoryDescriptionLabel = CreateSectionBody(string.Empty);
-			_fieldWindowLabel = new Label
-			{
-				TextColor = MutedColor,
-			};
-			_editorStack = new VerticalStackPanel
-			{
-				Spacing = 12,
-			};
+			_fieldWindowLabel = new Label { TextColor = MutedColor, };
+			_editorStack = new VerticalStackPanel { Spacing = 12, };
 
 			content.Widgets.Add(_categoryTitleLabel);
 			content.Widgets.Add(_categoryTaglineLabel);
@@ -393,33 +370,31 @@ namespace LibreRally.HUD
 			content.Widgets.Add(CreateSectionBody("Vehicle context and the currently visible setup slice."));
 			content.Widgets.Add(CreateSpacer(8));
 
-			_vehicleNameLabel = new Label
-			{
-				TextColor = TitleColor,
-			};
+			_vehicleNameLabel = new Label { TextColor = TitleColor, };
 			_statusLabel = CreateSectionBody(string.Empty);
 
 			content.Widgets.Add(_vehicleNameLabel);
 			content.Widgets.Add(_statusLabel);
 			content.Widgets.Add(CreateSpacer(10));
-			content.Widgets.Add(new Label
-			{
-				Text = "Visible values",
-				TextColor = MutedColor,
-			});
+			content.Widgets.Add(new Label { Text = "Visible values", TextColor = MutedColor, });
 
-			_summaryStack = new VerticalStackPanel
-			{
-				Spacing = 8,
-			};
+			_summaryStack = new VerticalStackPanel { Spacing = 8, };
 			content.Widgets.Add(_summaryStack);
 			content.Widgets.Add(CreateSpacer(8));
-			content.Widgets.Add(new Label
-			{
-				Text = "D-Pad Up/Down moves the active list. Left/Right adjusts or changes pane. Esc/B/Start returns to pause.",
-				TextColor = MutedColor,
-				Wrap = true,
-			});
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"D-Pad Up/Down move  •  D-Pad Left/Right adjust  •  A activate",
+				GamePadPromptWidgets.Prompt("Move", GamePadPromptIcon.DPadUp, GamePadPromptIcon.DPadDown),
+				GamePadPromptWidgets.Prompt("Adjust", GamePadPromptIcon.DPadLeft, GamePadPromptIcon.DPadRight),
+				GamePadPromptWidgets.Prompt("Activate", GamePadPromptIcon.A)));
+			content.Widgets.Add(CreateSpacer(4));
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"LB/RB change pane  •  B/Menu back",
+				GamePadPromptWidgets.Prompt("Change pane", GamePadPromptIcon.LeftBumper, GamePadPromptIcon.RightBumper),
+				GamePadPromptWidgets.Prompt("Back", GamePadPromptIcon.B, GamePadPromptIcon.Menu)));
 
 			panel.Widgets.Add(content);
 			return panel;
@@ -427,33 +402,16 @@ namespace LibreRally.HUD
 
 		private Widget BuildFooter()
 		{
-			var footer = new Grid
-			{
-				ColumnSpacing = 12,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-			};
+			var footer = new Grid { ColumnSpacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch, };
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
-			_pendingSummaryLabel = new Label
-			{
-				TextColor = CopyColor,
-				Wrap = true,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-			};
+			_pendingSummaryLabel = new Label { TextColor = CopyColor, Wrap = true, HorizontalAlignment = HorizontalAlignment.Stretch, };
 			footer.Widgets.Add(_pendingSummaryLabel);
 
-			_discardButton = new Button
-			{
-				Background = Brush(PanelAltColor),
-				Content = new Label
-				{
-					Text = "Revert",
-					TextColor = CopyColor,
-				},
-			};
+			_discardButton = new Button { Background = Brush(PanelAltColor), Content = new Label { Text = "Revert", TextColor = CopyColor, }, };
 			_discardButton.Click += (_, _) =>
 			{
 				_selectedPane = SetupPane.Footer;
@@ -464,15 +422,7 @@ namespace LibreRally.HUD
 			Grid.SetColumn(_discardButton, 1);
 			footer.Widgets.Add(_discardButton);
 
-			_resetDefaultsButton = new Button
-			{
-				Background = Brush(PanelAltColor),
-				Content = new Label
-				{
-					Text = "Defaults",
-					TextColor = CopyColor,
-				},
-			};
+			_resetDefaultsButton = new Button { Background = Brush(PanelAltColor), Content = new Label { Text = "Defaults", TextColor = CopyColor, }, };
 			_resetDefaultsButton.Click += (_, _) =>
 			{
 				_selectedPane = SetupPane.Footer;
@@ -483,15 +433,7 @@ namespace LibreRally.HUD
 			Grid.SetColumn(_resetDefaultsButton, 2);
 			footer.Widgets.Add(_resetDefaultsButton);
 
-			_applyButton = new Button
-			{
-				Background = Brush(AccentSoftColor),
-				Content = new Label
-				{
-					Text = "Apply Setup",
-					TextColor = ValueColor,
-				},
-			};
+			_applyButton = new Button { Background = Brush(AccentSoftColor), Content = new Label { Text = "Apply Setup", TextColor = ValueColor, }, };
 			_applyButton.Click += (_, _) => ApplyPreviewChanges();
 			Grid.SetColumn(_applyButton, 3);
 			footer.Widgets.Add(_applyButton);
@@ -501,19 +443,9 @@ namespace LibreRally.HUD
 
 		private Button CreateCategoryButton(SetupUiCategoryModel category)
 		{
-			var label = new Label
-			{
-				Text = $"{category.Title}\n{category.Tagline}",
-				TextColor = CopyColor,
-				Wrap = true,
-			};
+			var label = new Label { Text = $"{category.Title}\n{category.Tagline}", TextColor = CopyColor, Wrap = true, };
 
-			var button = new Button
-			{
-				Background = Brush(PanelAltColor),
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-				Content = label,
-			};
+			var button = new Button { Background = Brush(PanelAltColor), HorizontalAlignment = HorizontalAlignment.Stretch, Content = label, };
 
 			var buttonIndex = _categoryButtons.Count;
 			button.Click += (_, _) =>
@@ -543,60 +475,28 @@ namespace LibreRally.HUD
 			content.VerticalAlignment = VerticalAlignment.Center;
 			content.Spacing = 6;
 
-			var header = new Grid
-			{
-				ColumnSpacing = 8,
-			};
+			var header = new Grid { ColumnSpacing = 8, };
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
-			header.Widgets.Add(new Label
-			{
-				Text = field.Label,
-				TextColor = TitleColor,
-			});
+			header.Widgets.Add(new Label { Text = field.Label, TextColor = TitleColor, });
 
-			var currentValue = new Label
-			{
-				Text = field.DisplayValue,
-				TextColor = isSelected ? TitleColor : ValueColor,
-			};
+			var currentValue = new Label { Text = field.DisplayValue, TextColor = isSelected ? TitleColor : ValueColor, };
 			Grid.SetColumn(currentValue, 1);
 			header.Widgets.Add(currentValue);
 
 			content.Widgets.Add(header);
 			content.Widgets.Add(CreateSectionBody(field.Description));
-			content.Widgets.Add(new Label
-			{
-				Text = field.ApplyHint,
-				TextColor = isSelected ? TitleColor : field.ApplyMode == SetupUiApplyMode.Live ? ValueColor : MutedColor,
-			});
+			content.Widgets.Add(new Label { Text = field.ApplyHint, TextColor = isSelected ? TitleColor : field.ApplyMode == SetupUiApplyMode.Live ? ValueColor : MutedColor, });
 
-			var defaultRow = new Grid
-			{
-				ColumnSpacing = 8,
-			};
+			var defaultRow = new Grid { ColumnSpacing = 8, };
 			defaultRow.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			defaultRow.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
-			defaultRow.Widgets.Add(new Label
-			{
-				Text = $"Default • {field.DefaultDisplayValue}",
-				TextColor = field.CanResetToDefault ? ValueColor : MutedColor,
-				Wrap = true,
-			});
+			defaultRow.Widgets.Add(new Label { Text = $"Default • {field.DefaultDisplayValue}", TextColor = field.CanResetToDefault ? ValueColor : MutedColor, Wrap = true, });
 
 			if (field.CanResetToDefault)
 			{
-				var resetButton = new Button
-				{
-					Background = Brush(isSelected ? AccentColor : AccentSoftColor),
-					HorizontalAlignment = HorizontalAlignment.Right,
-					Content = new Label
-					{
-						Text = "Reset",
-						TextColor = ValueColor,
-					},
-				};
+				var resetButton = new Button { Background = Brush(isSelected ? AccentColor : AccentSoftColor), HorizontalAlignment = HorizontalAlignment.Right, Content = new Label { Text = "Reset", TextColor = ValueColor, }, };
 				resetButton.Click += (_, _) =>
 				{
 					field.ResetToDefaultValue();
@@ -625,20 +525,14 @@ namespace LibreRally.HUD
 		{
 			var clampedValue = Math.Clamp(field.NumericValue, field.Minimum, field.Maximum);
 
-			var editor = new Grid
-			{
-				ColumnSpacing = 10,
-			};
+			var editor = new Grid { ColumnSpacing = 10, };
 			editor.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			editor.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 			editor.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
 			var slider = new HorizontalSlider
 			{
-				Minimum = field.Minimum,
-				Maximum = field.Maximum,
-				Value = clampedValue,
-				VerticalAlignment = VerticalAlignment.Center,
+				Minimum = field.Minimum, Maximum = field.Maximum, Value = clampedValue, VerticalAlignment = VerticalAlignment.Center,
 			};
 			slider.ValueChangedByUser += (_, args) =>
 			{
@@ -668,12 +562,7 @@ namespace LibreRally.HUD
 			Grid.SetColumn(spinButton, 1);
 			editor.Widgets.Add(spinButton);
 
-			var unitLabel = new Label
-			{
-				Text = field.Unit,
-				TextColor = isSelected ? ValueColor : MutedColor,
-				VerticalAlignment = VerticalAlignment.Center,
-			};
+			var unitLabel = new Label { Text = field.Unit, TextColor = isSelected ? ValueColor : MutedColor, VerticalAlignment = VerticalAlignment.Center, };
 			Grid.SetColumn(unitLabel, 2);
 			editor.Widgets.Add(unitLabel);
 
@@ -682,16 +571,7 @@ namespace LibreRally.HUD
 
 		private Widget CreateChoiceEditor(SetupUiFieldModel field, bool isSelected)
 		{
-			var choiceButton = new Button
-			{
-				Background = Brush(isSelected ? AccentColor : AccentSoftColor),
-				HorizontalAlignment = HorizontalAlignment.Left,
-				Content = new Label
-				{
-					Text = field.DisplayValue,
-					TextColor = ValueColor,
-				},
-			};
+			var choiceButton = new Button { Background = Brush(isSelected ? AccentColor : AccentSoftColor), HorizontalAlignment = HorizontalAlignment.Left, Content = new Label { Text = field.DisplayValue, TextColor = ValueColor, }, };
 			choiceButton.Click += (_, _) =>
 			{
 				field.CycleChoice();
@@ -703,16 +583,7 @@ namespace LibreRally.HUD
 
 		private Widget CreateToggleEditor(SetupUiFieldModel field, bool isSelected)
 		{
-			var toggleButton = new Button
-			{
-				Background = Brush(isSelected ? AccentColor : field.ToggleValue ? AccentSoftColor : PanelColor),
-				HorizontalAlignment = HorizontalAlignment.Left,
-				Content = new Label
-				{
-					Text = field.DisplayValue,
-					TextColor = field.ToggleValue || isSelected ? ValueColor : CopyColor,
-				},
-			};
+			var toggleButton = new Button { Background = Brush(isSelected ? AccentColor : field.ToggleValue ? AccentSoftColor : PanelColor), HorizontalAlignment = HorizontalAlignment.Left, Content = new Label { Text = field.DisplayValue, TextColor = field.ToggleValue || isSelected ? ValueColor : CopyColor, }, };
 			toggleButton.Click += (_, _) =>
 			{
 				field.SetToggleValue(!field.ToggleValue);
@@ -755,7 +626,7 @@ namespace LibreRally.HUD
 				var last = Math.Min(category.Fields.Count, _fieldScrollOffset + MaxVisibleEditorFields);
 				_fieldWindowLabel.Text = category.Fields.Count == 0
 					? "No editable values in this category."
-					: $"Showing {first}-{last} of {category.Fields.Count} values  •  D-Pad Left/Right adjusts";
+					: $"Showing {first}-{last} of {category.Fields.Count} values.";
 			}
 
 			var visibleFields = category.Fields
@@ -781,26 +652,14 @@ namespace LibreRally.HUD
 
 			var row = new Grid
 			{
-				Width = 248,
-				HorizontalAlignment = HorizontalAlignment.Center,
-				VerticalAlignment = VerticalAlignment.Center,
-				ColumnSpacing = 8,
+				Width = 248, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, ColumnSpacing = 8,
 			};
 			row.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			row.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
-			row.Widgets.Add(new Label
-			{
-				Text = field.Label,
-				TextColor = CopyColor,
-				Wrap = true,
-			});
+			row.Widgets.Add(new Label { Text = field.Label, TextColor = CopyColor, Wrap = true, });
 
-			var value = new Label
-			{
-				Text = field.DisplayValue,
-				TextColor = isSelected ? TitleColor : ValueColor,
-			};
+			var value = new Label { Text = field.DisplayValue, TextColor = isSelected ? TitleColor : ValueColor, };
 			Grid.SetColumn(value, 1);
 			row.Widgets.Add(value);
 
@@ -842,8 +701,8 @@ namespace LibreRally.HUD
 			{
 				_pendingSummaryLabel.Text = _shell.PendingChangeCount == 0
 					? (_shell.CanResetToDefaults
-						? $"{_shell.NonDefaultChangeCount} value(s) off default  •  D-Pad Up/Down move  •  Left/Right adjust  •  A activate"
-						: "Setup synced  •  D-Pad Up/Down move  •  Left/Right adjust  •  A activate")
+						? $"{_shell.NonDefaultChangeCount} value(s) off default."
+						: "Setup synced.")
 					: $"{_shell.PendingChangeCount} pending change(s) • {_shell.PendingLiveChangeCount} live • {_shell.PendingReloadChangeCount} reload";
 			}
 
@@ -986,6 +845,7 @@ namespace LibreRally.HUD
 					{
 						_desktop.FocusedKeyboardWidget = _categoryButtons[_shell.SelectedCategoryIndex].Button;
 					}
+
 					break;
 				case SetupPane.Fields:
 					if (_shell.SelectedCategory.Fields.Count == 0)
@@ -1035,6 +895,7 @@ namespace LibreRally.HUD
 							RefreshCategoryContent();
 							break;
 					}
+
 					break;
 				case SetupPane.Footer:
 					_selectedFooterIndex = Math.Clamp(_selectedFooterIndex + delta, 0, FooterActionCount - 1);
@@ -1070,6 +931,7 @@ namespace LibreRally.HUD
 					{
 						ApplyPreviewChanges();
 					}
+
 					break;
 			}
 		}
@@ -1112,6 +974,7 @@ namespace LibreRally.HUD
 				{
 					_selectedPane = SetupPane.Footer;
 				}
+
 				return;
 			}
 
@@ -1140,34 +1003,15 @@ namespace LibreRally.HUD
 			_fieldScrollOffset = Math.Clamp(_fieldScrollOffset, 0, Math.Max(0, fieldCount - MaxVisibleEditorFields));
 		}
 
-		private static Label CreateSectionTitle(string text) => new()
-		{
-			Text = text,
-			TextColor = TitleColor,
-		};
+		private static Label CreateSectionTitle(string text) => new() { Text = text, TextColor = TitleColor, };
 
-		private static Label CreateSectionBody(string text) => new()
-		{
-			Text = text,
-			TextColor = CopyColor,
-			Wrap = true,
-		};
+		private static Label CreateSectionBody(string text) => new() { Text = text, TextColor = CopyColor, Wrap = true, };
 
-		private static Panel CreateCardPanel(int width, Color background) => new()
-		{
-			Width = width,
-			Background = Brush(background),
-		};
+		private static Panel CreateCardPanel(int width, Color background) => new() { Width = width, Background = Brush(background), };
 
-		private static VerticalStackPanel CreateCardContent() => new()
-		{
-			Spacing = 8,
-		};
+		private static VerticalStackPanel CreateCardContent() => new() { Spacing = 8, };
 
-		private static Panel CreateSpacer(int height) => new()
-		{
-			Height = height,
-		};
+		private static Panel CreateSpacer(int height) => new() { Height = height, };
 
 		private static int ResolveDecimalPlaces(float step)
 		{

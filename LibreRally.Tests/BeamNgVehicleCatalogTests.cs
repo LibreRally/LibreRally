@@ -9,8 +9,14 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the beam ng vehicle catalog behavior.
+	/// </summary>
 	public sealed class BeamNgVehicleCatalogTests
 	{
+		/// <summary>
+		/// Verifies that discover bundled vehicles finds loose folders and zip packages.
+		/// </summary>
 		[Fact]
 		public void DiscoverBundledVehicles_FindsLooseFoldersAndZipPackages()
 		{
@@ -37,6 +43,89 @@ namespace LibreRally.Tests
 				vehicle.SourceKind == BeamNgVehicleSourceKind.ZipArchive);
 		}
 
+		/// <summary>
+		/// Verifies that discover bundled vehicle variants reads config metadata and thumbnails.
+		/// </summary>
+		[Fact]
+		public void DiscoverBundledVehicleVariants_ReadsConfigMetadataAndThumbnails()
+		{
+			using var workspace = new TempWorkspace();
+			string bundledRoot = Path.Combine(workspace.RootPath, "bundled");
+			string vehicleFolder = Path.Combine(bundledRoot, "sunburst2");
+			Directory.CreateDirectory(vehicleFolder);
+			File.WriteAllText(Path.Combine(vehicleFolder, "sunburst2.jbeam"), "{}");
+			File.WriteAllText(
+				Path.Combine(vehicleFolder, "info.json"),
+				"""
+				{
+				  "Brand": "Hirochi",
+				  "Name": "Sunburst",
+				  "default_pc": "rally_pro_asphalt"
+				}
+				""");
+			File.WriteAllText(Path.Combine(vehicleFolder, "rally_pro_asphalt.pc"), "{}");
+			File.WriteAllText(Path.Combine(vehicleFolder, "base_CVT.pc"), "{}");
+			File.WriteAllText(
+				Path.Combine(vehicleFolder, "info_rally_pro_asphalt.json"),
+				"""
+				{
+				  "Configuration": "NGRC1 - Asphalt Rally (Sequential)",
+				  "Description": "Full championship-spec rally car for asphalt stages",
+				  "Config Type": "Rally"
+				}
+				""");
+			File.WriteAllText(Path.Combine(vehicleFolder, "rally_pro_asphalt.jpg"), "thumbnail");
+			File.WriteAllText(Path.Combine(vehicleFolder, "default.jpg"), "fallback");
+
+			BeamNgVehicleCatalog catalog = new(bundledRoot, cacheRoot: Path.Combine(workspace.RootPath, "cache"));
+
+			BeamNgVehicleVariantDescriptor[] variants = catalog.DiscoverBundledVehicleVariants().ToArray();
+			BeamNgVehicleVariantDescriptor rallyVariant = Assert.Single(variants, variant =>
+				variant.ConfigFileName == "rally_pro_asphalt.pc");
+			BeamNgVehicleVariantDescriptor baseVariant = Assert.Single(variants, variant =>
+				variant.ConfigFileName == "base_CVT.pc");
+
+			Assert.Equal("Hirochi Sunburst", rallyVariant.VehicleDisplayName);
+			Assert.Equal("NGRC1 - Asphalt Rally (Sequential)", rallyVariant.VariantDisplayName);
+			Assert.Equal("Rally", rallyVariant.ConfigType);
+			Assert.True(rallyVariant.IsDefaultVariant);
+			Assert.EndsWith("rally_pro_asphalt.jpg", rallyVariant.ThumbnailPath, StringComparison.OrdinalIgnoreCase);
+			Assert.EndsWith("default.jpg", baseVariant.ThumbnailPath, StringComparison.OrdinalIgnoreCase);
+		}
+
+		/// <summary>
+		/// Verifies that discover bundled vehicle variants extracts zip variants before reading metadata.
+		/// </summary>
+		[Fact]
+		public void DiscoverBundledVehicleVariants_ExtractsZipVariantsBeforeReadingMetadata()
+		{
+			using var workspace = new TempWorkspace();
+			string bundledRoot = Path.Combine(workspace.RootPath, "bundled");
+			Directory.CreateDirectory(bundledRoot);
+
+			string zipPath = Path.Combine(bundledRoot, "sunburst-pack.zip");
+			CreateZip(
+				zipPath,
+				("vehicles/sunburst2/info.json", "{ \"Brand\": \"Hirochi\", \"Name\": \"Sunburst\", \"default_pc\": \"track_attack\" }"),
+				("vehicles/sunburst2/track_attack.pc", "{}"),
+				("vehicles/sunburst2/info_track_attack.json", "{ \"Configuration\": \"Track Attack\", \"Config Type\": \"Race\" }"),
+				("vehicles/sunburst2/track_attack.jpg", "thumbnail"));
+
+			BeamNgVehicleCatalog catalog = new(bundledRoot, cacheRoot: Path.Combine(workspace.RootPath, "cache"));
+
+			BeamNgVehicleVariantDescriptor variant = Assert.Single(catalog.DiscoverBundledVehicleVariants());
+
+			Assert.Equal("sunburst2", variant.VehicleId);
+			Assert.Equal("track_attack.pc", variant.ConfigFileName);
+			Assert.Equal("Track Attack", variant.VariantDisplayName);
+			Assert.True(variant.IsDefaultVariant);
+			Assert.Equal(BeamNgVehicleSourceKind.ZipArchive, variant.SourceKind);
+			Assert.True(File.Exists(variant.ThumbnailPath));
+		}
+
+		/// <summary>
+		/// Verifies that resolve vehicle extracts zip packages and common metadata.
+		/// </summary>
 		[Fact]
 		public void ResolveVehicle_ExtractsZipPackagesAndCommonMetadata()
 		{
@@ -67,6 +156,9 @@ namespace LibreRally.Tests
 			Assert.True(File.Exists(Path.Combine(commonSearchFolder, "shared", "common_part.jbeam")));
 		}
 
+		/// <summary>
+		/// Verifies that resolve vehicle does not extract unsafe zip paths outside cache.
+		/// </summary>
 		[Fact]
 		public void ResolveVehicle_DoesNotExtractUnsafeZipPathsOutsideCache()
 		{
@@ -89,6 +181,9 @@ namespace LibreRally.Tests
 			Assert.False(File.Exists(Path.Combine(workspace.RootPath, "outside.txt")));
 		}
 
+		/// <summary>
+		/// Verifies that resolve vehicle asset path materializes beam ng content assets on demand.
+		/// </summary>
 		[Fact]
 		public void ResolveVehicleAssetPath_MaterializesBeamNgContentAssetsOnDemand()
 		{
@@ -117,6 +212,9 @@ namespace LibreRally.Tests
 			Assert.Equal("png-data", File.ReadAllText(materialized));
 		}
 
+		/// <summary>
+		/// Verifies that resolve collada files for meshes materializes shared common dae on demand.
+		/// </summary>
 		[Fact]
 		public void ResolveColladaFilesForMeshes_MaterializesSharedCommonDaeOnDemand()
 		{
@@ -157,6 +255,9 @@ namespace LibreRally.Tests
 			Assert.True(File.Exists(commonMaterialFile));
 		}
 
+		/// <summary>
+		/// Verifies that resolve collada files for meshes searches other installed vehicle packages.
+		/// </summary>
 		[Fact]
 		public void ResolveColladaFilesForMeshes_SearchesOtherInstalledVehiclePackages()
 		{
@@ -192,6 +293,9 @@ namespace LibreRally.Tests
 			Assert.True(File.Exists(rootMaterialFile));
 		}
 
+		/// <summary>
+		/// Verifies that resolve collada files for meshes prefers plain dae over compressed cdae.
+		/// </summary>
 		[Fact]
 		public void ResolveColladaFilesForMeshes_PrefersPlainDaeOverCompressedCdae()
 		{
@@ -224,6 +328,9 @@ namespace LibreRally.Tests
 			Assert.False(colladaFile.EndsWith(".cdae", StringComparison.OrdinalIgnoreCase));
 		}
 
+		/// <summary>
+		/// Verifies that assemble search folders resolves supplemental common parts.
+		/// </summary>
 		[Fact]
 		public void Assemble_SearchFolders_ResolvesSupplementalCommonParts()
 		{
@@ -266,6 +373,9 @@ namespace LibreRally.Tests
 			Assert.Contains("w1", definition.Nodes.Keys);
 		}
 
+		/// <summary>
+		/// Verifies that assemble blank pc override falls back to slot default.
+		/// </summary>
 		[Fact]
 		public void Assemble_BlankPcOverride_FallsBackToSlotDefault()
 		{
@@ -294,21 +404,16 @@ namespace LibreRally.Tests
 				}
 				""");
 
-			PcConfig pcConfig = new()
-			{
-				MainPartName = "test_car",
-				Parts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-				{
-					["shared_slot"] = "",
-				},
-				Vars = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase),
-			};
+			PcConfig pcConfig = new() { MainPartName = "test_car", Parts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["shared_slot"] = "", }, Vars = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase), };
 
 			VehicleDefinition definition = JBeamAssembler.Assemble(vehicleFolder, pcConfig);
 
 			Assert.Contains("w1", definition.Nodes.Keys);
 		}
 
+		/// <summary>
+		/// Verifies that assemble wheel slot offset applies outward per side.
+		/// </summary>
 		[Fact]
 		public void Assemble_WheelSlotOffset_AppliesOutwardPerSide()
 		{

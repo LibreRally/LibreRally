@@ -26,6 +26,9 @@ namespace LibreRally.Vehicle.Physics
 
 		private bool _broken;
 
+		/// <summary>
+		/// Monitors the weld constraint and detaches the part when the break threshold is exceeded.
+		/// </summary>
 		public override void Update()
 		{
 			if (_broken || WeldConstraint == null || !WeldConstraint.Attached)

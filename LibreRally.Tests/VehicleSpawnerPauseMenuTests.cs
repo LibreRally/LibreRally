@@ -2,8 +2,14 @@ using LibreRally;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the vehicle spawner pause menu behavior.
+	/// </summary>
 	public class VehicleSpawnerPauseMenuTests
 	{
+		/// <summary>
+		/// Verifies that pause menu entries expose respawn setup and vehicle select actions.
+		/// </summary>
 		[Fact]
 		public void PauseMenuEntries_ExposeRespawnSetupAndVehicleSelectActions()
 		{
@@ -32,6 +38,9 @@ namespace LibreRally.Tests
 				});
 		}
 
+		/// <summary>
+		/// Verifies that resolve pause menu action returns garage setup for third slot.
+		/// </summary>
 		[Fact]
 		public void ResolvePauseMenuAction_ReturnsGarageSetupForThirdSlot()
 		{
@@ -40,6 +49,9 @@ namespace LibreRally.Tests
 			Assert.Equal(PauseMenuAction.GarageSetup, action);
 		}
 
+		/// <summary>
+		/// Verifies that resolve pause menu action returns telemetry for sixth slot.
+		/// </summary>
 		[Fact]
 		public void ResolvePauseMenuAction_ReturnsTelemetryForSixthSlot()
 		{

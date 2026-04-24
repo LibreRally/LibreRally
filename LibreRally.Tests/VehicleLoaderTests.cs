@@ -12,6 +12,9 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the vehicle loader behavior.
+	/// </summary>
 	public class VehicleLoaderTests
 	{
 		private static string GetVehicleFolder()
@@ -31,6 +34,9 @@ namespace LibreRally.Tests
 			throw new DirectoryNotFoundException("Could not locate the repository root for the basic_car tests.");
 		}
 
+		/// <summary>
+		/// Verifies that select chassis meshes for dts sources keeps only active non wheel flexbodies.
+		/// </summary>
 		[Fact]
 		public void SelectChassisMeshes_ForDtsSources_KeepsOnlyActiveNonWheelFlexbodies()
 		{
@@ -55,6 +61,9 @@ namespace LibreRally.Tests
 				mesh => Assert.Equal("fgx_interior", mesh.GeometryName));
 		}
 
+		/// <summary>
+		/// Verifies that select chassis meshes for non dts sources preserves fallback meshes when names do not match.
+		/// </summary>
 		[Fact]
 		public void SelectChassisMeshes_ForNonDtsSources_PreservesFallbackMeshesWhenNamesDoNotMatch()
 		{
@@ -78,6 +87,9 @@ namespace LibreRally.Tests
 				mesh => Assert.Equal("FormulaBeeSuspension", mesh.GeometryName));
 		}
 
+		/// <summary>
+		/// Verifies that select supplemental chassis meshes keeps only requested non wheel meshes.
+		/// </summary>
 		[Fact]
 		public void SelectSupplementalChassisMeshes_KeepsOnlyRequestedNonWheelMeshes()
 		{
@@ -101,6 +113,9 @@ namespace LibreRally.Tests
 				mesh => Assert.Equal("autobello_shifter_5M", mesh.GeometryName));
 		}
 
+		/// <summary>
+		/// Verifies that should treat wheel geometry as pre positioned requires geometry to match flexbody position.
+		/// </summary>
 		[Fact]
 		public void ShouldTreatWheelGeometryAsPrePositioned_RequiresGeometryToMatchFlexbodyPosition()
 		{
@@ -122,6 +137,9 @@ namespace LibreRally.Tests
 			Assert.False(VehicleLoader.ShouldTreatWheelGeometryAsPrePositioned(sourceMeshes, expectedPosition));
 		}
 
+		/// <summary>
+		/// Verifies that should treat wheel geometry as pre positioned accepts geometry already at flexbody position.
+		/// </summary>
 		[Fact]
 		public void ShouldTreatWheelGeometryAsPrePositioned_AcceptsGeometryAlreadyAtFlexbodyPosition()
 		{
@@ -143,6 +161,9 @@ namespace LibreRally.Tests
 			Assert.True(VehicleLoader.ShouldTreatWheelGeometryAsPrePositioned(sourceMeshes, expectedPosition));
 		}
 
+		/// <summary>
+		/// Verifies that is suspension kinematic flex body classifies moving link meshes.
+		/// </summary>
 		[Theory]
 		[InlineData("autobello_upperarm_wide_F", true)]
 		[InlineData("autobello_coilover_R", true)]
@@ -156,6 +177,9 @@ namespace LibreRally.Tests
 			Assert.Equal(expected, SuspensionVisualKinematicsRigBuilder.IsSuspensionKinematicFlexBody(flexBody));
 		}
 
+		/// <summary>
+		/// Verifies that build link specs basic car creates suspension and rear halfshaft links.
+		/// </summary>
 		[Fact]
 		public void BuildLinkSpecs_BasicCarCreatesSuspensionAndRearHalfshaftLinks()
 		{
@@ -178,6 +202,9 @@ namespace LibreRally.Tests
 				Assert.NotEqual(spec.StartLocalPosition, spec.EndLocalPosition));
 		}
 
+		/// <summary>
+		/// Verifies that transform wheel local position without spin ignores wheel spin around axle.
+		/// </summary>
 		[Fact]
 		public void TransformWheelLocalPositionWithoutSpin_IgnoresWheelSpinAroundAxle()
 		{
