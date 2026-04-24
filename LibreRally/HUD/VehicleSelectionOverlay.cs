@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Myra;
 using Myra.Graphics2D.Brushes;
+using Myra.Graphics2D.TextureAtlases;
 using Myra.Graphics2D.UI;
 using LibreRally.Vehicle.Content;
 using Stride.Core;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Games;
+using Stride.Graphics;
+using StrideTextureImage = Stride.Graphics.Image;
 
 namespace LibreRally.HUD
 {
@@ -16,6 +20,9 @@ namespace LibreRally.HUD
 	/// </summary>
 	public sealed class VehicleSelectionOverlay : GameSystemBase
 	{
+		private const int ButtonHeight = 116;
+		private const int ButtonSpacing = 8;
+		private const int ScrollViewportHeight = 442;
 		private static readonly Color BackdropColor = new(5, 8, 14, 180);
 		private static readonly Color ShellColor = new(16, 22, 30, 242);
 		private static readonly Color AccentSoftColor = new(214, 148, 78, 84);
@@ -29,20 +36,23 @@ namespace LibreRally.HUD
 		private static readonly SolidBrush SelectedItemBrush = new(AccentSoftColor);
 		private static readonly SolidBrush UnselectedItemBrush = new(PanelColor);
 
-		private readonly List<(Button Button, Label Title, Label Detail)> _buttons = [];
-		private IReadOnlyList<BeamNgVehicleDescriptor> _vehicles = [];
+		private readonly List<(Button Button, Label Title, Label Detail, Label Description)> _buttons = [];
+		private readonly Dictionary<string, Texture> _thumbnailTextures = new(StringComparer.OrdinalIgnoreCase);
+		private readonly Dictionary<string, TextureRegion?> _thumbnailRegions = new(StringComparer.OrdinalIgnoreCase);
+		private IReadOnlyList<BeamNgVehicleVariantDescriptor> _vehicles = [];
 		private int _selectedIndex;
 		private bool _overlayVisible;
 		private string _statusText = string.Empty;
 		private Game? _game;
 		private Desktop? _desktop;
+		private ScrollViewer? _listScrollViewer;
 		private Label? _statusLabel;
 		private Label? _selectionLabel;
 
 		/// <summary>
 		/// Gets or sets the list of vehicles available for selection.
 		/// </summary>
-		public IReadOnlyList<BeamNgVehicleDescriptor> Vehicles
+		public IReadOnlyList<BeamNgVehicleVariantDescriptor> Vehicles
 		{
 			get => _vehicles;
 			set
@@ -124,15 +134,19 @@ namespace LibreRally.HUD
 			}
 
 			MyraEnvironment.Game = _game;
-			_desktop = new Desktop
-			{
-				Root = BuildRoot(),
-			};
+			_desktop = new Desktop { Root = BuildRoot(), };
 			FocusSelectedButton();
 		}
 
 		protected override void Destroy()
 		{
+			foreach (var texture in _thumbnailTextures.Values)
+			{
+				texture.Dispose();
+			}
+
+			_thumbnailRegions.Clear();
+			_thumbnailTextures.Clear();
 			_desktop?.Dispose();
 			base.Destroy();
 		}
@@ -162,16 +176,14 @@ namespace LibreRally.HUD
 		private Widget BuildRoot()
 		{
 			_buttons.Clear();
+			_listScrollViewer = null;
 
-			var root = new Panel
-			{
-				Background = BackdropBrush,
-			};
+			var root = new Panel { Background = BackdropBrush, };
 
 			var shellFrame = new Panel
 			{
-				Width = 880,
-				Height = 620,
+				Width = 980,
+				Height = 690,
 				HorizontalAlignment = HorizontalAlignment.Center,
 				VerticalAlignment = VerticalAlignment.Center,
 				Background = ShellBrush,
@@ -179,58 +191,42 @@ namespace LibreRally.HUD
 
 			var shell = new VerticalStackPanel
 			{
-				Width = 820,
-				Height = 560,
+				Width = 920,
+				Height = 630,
 				HorizontalAlignment = HorizontalAlignment.Center,
 				VerticalAlignment = VerticalAlignment.Center,
 				Spacing = 12,
 			};
 
-			shell.Widgets.Add(new Label
-			{
-				Text = "Vehicle Select",
-				TextColor = TitleColor,
-			});
+			shell.Widgets.Add(new Label { Text = "Vehicle Select", TextColor = TitleColor, });
 
-			shell.Widgets.Add(new Label
-			{
-				Text = "Choose a bundled BeamNG vehicle. D-Pad Up/Down select  •  A load  •  B/Esc/Start back out",
-				TextColor = CopyColor,
-				Wrap = true,
-			});
+			shell.Widgets.Add(new Label { Text = "Choose a bundled BeamNG vehicle variant.", TextColor = CopyColor, Wrap = true, });
+			shell.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				CopyColor,
+				"D-Pad Up/Down select  •  A load  •  B/Menu back out",
+				GamePadPromptWidgets.Prompt("Select", GamePadPromptIcon.DPadUp, GamePadPromptIcon.DPadDown),
+				GamePadPromptWidgets.Prompt("Load", GamePadPromptIcon.A),
+				GamePadPromptWidgets.Prompt("Back", GamePadPromptIcon.B, GamePadPromptIcon.Menu)));
 
-			_selectionLabel = new Label
-			{
-				TextColor = ValueColor,
-				Wrap = true,
-			};
+			_selectionLabel = new Label { TextColor = ValueColor, Wrap = true, };
 			shell.Widgets.Add(_selectionLabel);
 
-			var listFrame = new Panel
-			{
-				Height = 410,
-				Background = PanelBrush,
-			};
+			var listFrame = new Panel { Height = 470, Background = PanelBrush, };
 
 			Widget listWidget;
 			if (_vehicles.Count == 0)
 			{
 				listWidget = new Label
 				{
-					Text = "No vehicles found in Resources\\BeamNG Vehicles.",
-					TextColor = TitleColor,
-					HorizontalAlignment = HorizontalAlignment.Center,
-					VerticalAlignment = VerticalAlignment.Center,
+					Text = "No vehicles found in Resources\\BeamNG Vehicles.", TextColor = TitleColor, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
 				};
 			}
 			else
 			{
 				var list = new VerticalStackPanel
 				{
-					Width = 760,
-					HorizontalAlignment = HorizontalAlignment.Center,
-					VerticalAlignment = VerticalAlignment.Top,
-					Spacing = 8,
+					Width = 860, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top, Spacing = 8,
 				};
 
 				for (var index = 0; index < _vehicles.Count; index++)
@@ -238,22 +234,14 @@ namespace LibreRally.HUD
 					list.Widgets.Add(CreateVehicleButton(_vehicles[index], index));
 				}
 
-				listWidget = new ScrollViewer
-				{
-					Content = list,
-					Height = 382,
-					VerticalAlignment = VerticalAlignment.Stretch,
-				};
+				_listScrollViewer = new ScrollViewer { Content = list, Height = 442, VerticalAlignment = VerticalAlignment.Stretch, };
+				listWidget = _listScrollViewer;
 			}
 
 			listFrame.Widgets.Add(listWidget);
 			shell.Widgets.Add(listFrame);
 
-			_statusLabel = new Label
-			{
-				TextColor = CopyColor,
-				Wrap = true,
-			};
+			_statusLabel = new Label { TextColor = CopyColor, Wrap = true, };
 			shell.Widgets.Add(_statusLabel);
 
 			shellFrame.Widgets.Add(shell);
@@ -264,40 +252,54 @@ namespace LibreRally.HUD
 			return root;
 		}
 
-		private Button CreateVehicleButton(BeamNgVehicleDescriptor vehicle, int index)
+		private Button CreateVehicleButton(BeamNgVehicleVariantDescriptor vehicle, int index)
 		{
+			var preview = CreateThumbnailWidget(vehicle);
 			var titleLabel = new Label
 			{
-				Text = vehicle.DisplayName,
+				Text = vehicle.IsDefaultVariant
+					? $"{vehicle.VariantDisplayName}  [default]"
+					: vehicle.VariantDisplayName,
 				TextColor = TitleColor,
 			};
 			var detailLabel = new Label
 			{
-				Text = $"{vehicle.SourceLabel}  //  {vehicle.VehicleId}",
+				Text = string.IsNullOrWhiteSpace(vehicle.ConfigType)
+					? $"{vehicle.VehicleDisplayName}  //  {vehicle.SourceLabel}"
+					: $"{vehicle.VehicleDisplayName}  //  {vehicle.ConfigType}  //  {vehicle.SourceLabel}",
+				TextColor = CopyColor,
+				Wrap = true,
+			};
+			var descriptionLabel = new Label
+			{
+				Text = string.IsNullOrWhiteSpace(vehicle.Description)
+					? $"Config: {vehicle.ConfigFileName ?? "<jbeam defaults>"}"
+					: vehicle.Description,
 				TextColor = CopyColor,
 				Wrap = true,
 			};
 
-			var content = new VerticalStackPanel
-			{
-				Spacing = 4,
-			};
-			content.Widgets.Add(titleLabel);
-			content.Widgets.Add(detailLabel);
+			var textContent = new VerticalStackPanel { Spacing = 4, };
+			textContent.Widgets.Add(titleLabel);
+			textContent.Widgets.Add(detailLabel);
+			textContent.Widgets.Add(descriptionLabel);
 
-			var button = new Button
-			{
-				Height = 70,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-				Content = content,
-			};
+			var content = new Grid { Width = 824, Height = 102, ColumnSpacing = 12, };
+			content.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
+			content.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
+			content.RowsProportions.Add(new Proportion(ProportionType.Fill));
+			content.Widgets.Add(preview);
+			Grid.SetColumn(textContent, 1);
+			content.Widgets.Add(textContent);
+
+			var button = new Button { Height = ButtonHeight, HorizontalAlignment = HorizontalAlignment.Stretch, Content = content, };
 			button.Click += (_, _) =>
 			{
 				SelectedIndex = index;
 				ItemActivated?.Invoke(index);
 			};
 
-			_buttons.Add((button, titleLabel, detailLabel));
+			_buttons.Add((button, titleLabel, detailLabel, descriptionLabel));
 			return button;
 		}
 
@@ -317,10 +319,11 @@ namespace LibreRally.HUD
 			for (var i = 0; i < _buttons.Count; i++)
 			{
 				var isSelected = i == Math.Clamp(_selectedIndex, 0, Math.Max(_buttons.Count - 1, 0));
-				var (button, title, detail) = _buttons[i];
+				var (button, title, detail, description) = _buttons[i];
 				button.Background = isSelected ? SelectedItemBrush : UnselectedItemBrush;
 				title.TextColor = isSelected ? ValueColor : TitleColor;
 				detail.TextColor = isSelected ? ValueColor : CopyColor;
+				description.TextColor = isSelected ? ValueColor : CopyColor;
 			}
 		}
 
@@ -344,7 +347,7 @@ namespace LibreRally.HUD
 
 			var index = Math.Clamp(_selectedIndex, 0, _vehicles.Count - 1);
 			var vehicle = _vehicles[index];
-			_selectionLabel.Text = $"Selected: {vehicle.DisplayName}  //  {vehicle.SourceLabel}";
+			_selectionLabel.Text = $"Selected: {vehicle.VehicleDisplayName}  //  {vehicle.VariantDisplayName}";
 		}
 
 		private void FocusSelectedButton()
@@ -355,7 +358,77 @@ namespace LibreRally.HUD
 			}
 
 			var index = Math.Clamp(_selectedIndex, 0, _buttons.Count - 1);
-			_desktop.FocusedKeyboardWidget = _buttons[index].Button;
+			var button = _buttons[index].Button;
+			_desktop.FocusedKeyboardWidget = button;
+			EnsureSelectedButtonVisible();
+		}
+
+		private void EnsureSelectedButtonVisible()
+		{
+			if (_listScrollViewer == null)
+			{
+				return;
+			}
+
+			var scrollPosition = _listScrollViewer.ScrollPosition;
+			var targetScroll = MenuScrollHelper.ComputeVisibleVerticalScrollForFixedList(
+				scrollPosition.Y,
+				ScrollViewportHeight,
+				_selectedIndex,
+				ButtonHeight,
+				ButtonSpacing,
+				_buttons.Count);
+			if (targetScroll != scrollPosition.Y)
+			{
+				_listScrollViewer.ScrollPosition = new Point(scrollPosition.X, targetScroll);
+			}
+		}
+
+		private Widget CreateThumbnailWidget(BeamNgVehicleVariantDescriptor vehicle)
+		{
+			var frame = new Panel { Width = 160, Height = 90, Background = UnselectedItemBrush, };
+
+			var renderable = TryGetThumbnailRegion(vehicle.ThumbnailPath);
+			if (renderable != null)
+			{
+				frame.Widgets.Add(new Myra.Graphics2D.UI.Image { Width = 160, Height = 90, Renderable = renderable, });
+				return frame;
+			}
+
+			frame.Widgets.Add(new Label
+			{
+				Text = "No preview", TextColor = CopyColor, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+			});
+			return frame;
+		}
+
+		private TextureRegion? TryGetThumbnailRegion(string? thumbnailPath)
+		{
+			if (_game == null || string.IsNullOrWhiteSpace(thumbnailPath) || !File.Exists(thumbnailPath))
+			{
+				return null;
+			}
+
+			if (_thumbnailRegions.TryGetValue(thumbnailPath, out var cached))
+			{
+				return cached;
+			}
+
+			try
+			{
+				using var stream = File.OpenRead(thumbnailPath);
+				using var image = StrideTextureImage.Load(stream);
+				var texture = Texture.New(_game.GraphicsDevice, image);
+				var region = new TextureRegion(texture);
+				_thumbnailTextures[thumbnailPath] = texture;
+				_thumbnailRegions[thumbnailPath] = region;
+				return region;
+			}
+			catch
+			{
+				_thumbnailRegions[thumbnailPath] = null;
+				return null;
+			}
 		}
 	}
 }

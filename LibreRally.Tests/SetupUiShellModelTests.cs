@@ -6,8 +6,14 @@ using Stride.Engine;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the setup ui shell model behavior.
+	/// </summary>
 	public class SetupUiShellModelTests
 	{
+		/// <summary>
+		/// Verifies that create from vehicle setup uses overrides and creates apply payload.
+		/// </summary>
 		[Fact]
 		public void CreateFromVehicleSetup_UsesOverridesAndCreatesApplyPayload()
 		{
@@ -34,20 +40,14 @@ namespace LibreRally.Tests
 					new AssembledPressureWheelOptions(
 						"wheeldata_front",
 						"wheeldata_F",
-						new JBeamPressureWheelOptions
-						{
-							PressurePsi = 27f,
-						}),
+						new JBeamPressureWheelOptions { PressurePsi = 27f, }),
 				],
 			};
 			definition.Vars["spring_F_asphalt"] = 62000f;
 
 			var overrides = new VehicleSetupOverrides();
 			overrides.VariableOverrides["spring_F_asphalt"] = 63000f;
-			overrides.PressureWheelOverrides[VehicleSetupAxle.Front] = new VehiclePressureWheelOverrides
-			{
-				PressurePsi = 29f,
-			};
+			overrides.PressureWheelOverrides[VehicleSetupAxle.Front] = new VehiclePressureWheelOverrides { PressurePsi = 29f, };
 
 			var shell = SetupUiShellModel.CreateFromVehicleSetup(CreateLoadedVehicle(definition), overrides, "Test Car", "Ready");
 			var suspensionField = Assert.Single(shell.Categories.Single(category => category.Title == "Suspension").Fields);
@@ -64,6 +64,9 @@ namespace LibreRally.Tests
 			Assert.Equal(30f, payload.PressureOverrides[VehicleSetupAxle.Front], 3);
 		}
 
+		/// <summary>
+		/// Verifies that create from vehicle setup uses display range hints for percent like variables.
+		/// </summary>
 		[Fact]
 		public void CreateFromVehicleSetup_UsesDisplayRangeHintsForPercentLikeVariables()
 		{

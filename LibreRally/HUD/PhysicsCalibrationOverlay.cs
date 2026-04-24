@@ -22,20 +22,28 @@ namespace LibreRally.HUD
 	{
 		/// <summary>Gets the stable field identifier.</summary>
 		public string Id { get; init; } = string.Empty;
+
 		/// <summary>Gets the display label.</summary>
 		public string Label { get; init; } = string.Empty;
+
 		/// <summary>Gets the detailed description, including the value source tag.</summary>
 		public string Description { get; init; } = string.Empty;
+
 		/// <summary>Gets the value read from the live car/tyre model.</summary>
 		public Func<float> GetValue { get; init; } = static () => 0f;
+
 		/// <summary>Writes a validated value back to the live car/tyre model.</summary>
 		public Action<float> SetValue { get; init; } = static _ => { };
+
 		/// <summary>Gets the minimum allowed value.</summary>
 		public float Minimum { get; init; }
+
 		/// <summary>Gets the maximum allowed value.</summary>
 		public float Maximum { get; init; }
+
 		/// <summary>Gets the UI step increment.</summary>
 		public float Step { get; init; } = 0.01f;
+
 		/// <summary>Gets the unit label.</summary>
 		public string Unit { get; init; } = string.Empty;
 	}
@@ -47,12 +55,16 @@ namespace LibreRally.HUD
 	{
 		/// <summary>Gets the category identifier.</summary>
 		public string Id { get; init; } = string.Empty;
+
 		/// <summary>Gets the display title.</summary>
 		public string Title { get; init; } = string.Empty;
+
 		/// <summary>Gets the short tagline.</summary>
 		public string Tagline { get; init; } = string.Empty;
+
 		/// <summary>Gets the detailed description shown when the category is selected.</summary>
 		public string Description { get; init; } = string.Empty;
+
 		/// <summary>Gets the list of fields in this category.</summary>
 		public IReadOnlyList<PhysCalField> Fields { get; init; } = [];
 	}
@@ -501,7 +513,14 @@ namespace LibreRally.HUD
 			var tyreFL = GetTyreModel(car, VehicleDynamicsSystem.FL);
 			if (tyreFL == null)
 			{
-				return new PhysCalCategory { Id = "brush", Title = "Brush Model", Tagline = "No tyre", Description = "No tyre model found.", Fields = [] };
+				return new PhysCalCategory
+				{
+					Id = "brush",
+					Title = "Brush Model",
+					Tagline = "No tyre",
+					Description = "No tyre model found.",
+					Fields = []
+				};
 			}
 
 			return new PhysCalCategory
@@ -621,7 +640,14 @@ namespace LibreRally.HUD
 			var tyreFL = GetTyreModel(car, VehicleDynamicsSystem.FL);
 			if (tyreFL == null)
 			{
-				return new PhysCalCategory { Id = "pacejka", Title = "Pacejka", Tagline = "No tyre", Description = "No tyre model found.", Fields = [] };
+				return new PhysCalCategory
+				{
+					Id = "pacejka",
+					Title = "Pacejka",
+					Tagline = "No tyre",
+					Description = "No tyre model found.",
+					Fields = []
+				};
 			}
 
 			return new PhysCalCategory
@@ -645,27 +671,27 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalB = v),
 						Minimum = 2f,
 						Maximum = 30f,
-					Step = 0.1f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "long-b-load-sensitivity",
-					Label = "Longitudinal B load sensitivity",
-					Description = "Load sensitivity for longitudinal pure-slip stiffness evaluation. " +
-					              "Higher = drive/brake stiffness rises more with vertical load. " +
-					              "(magic number — default 0.04)",
-					GetValue = () => tyreFL.LongitudinalLoadStiffnessSensitivity,
-					SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalLoadStiffnessSensitivity = v),
-					Minimum = -0.5f,
-					Maximum = 0.5f,
-					Step = 0.01f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "long-c",
-					Label = "Longitudinal C (shape factor)",
+						Step = 0.1f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "long-b-load-sensitivity",
+						Label = "Longitudinal B load sensitivity",
+						Description = "Load sensitivity for longitudinal pure-slip stiffness evaluation. " +
+						              "Higher = drive/brake stiffness rises more with vertical load. " +
+						              "(magic number — default 0.04)",
+						GetValue = () => tyreFL.LongitudinalLoadStiffnessSensitivity,
+						SetValue = v => ApplyToAllTyres(car, t => t.LongitudinalLoadStiffnessSensitivity = v),
+						Minimum = -0.5f,
+						Maximum = 0.5f,
+						Step = 0.01f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "long-c",
+						Label = "Longitudinal C (shape factor)",
 						Description = "Pacejka shape factor for the longitudinal curve. " +
 						              "Typical range 1.5–1.8; higher rounds the peak less sharply. " +
 						              "(magic number — default 1.65)",
@@ -701,27 +727,27 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LateralB = v),
 						Minimum = 2f,
 						Maximum = 30f,
-					Step = 0.1f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "lat-b-load-sensitivity",
-					Label = "Lateral B load sensitivity",
-					Description = "Load sensitivity for lateral pure-slip stiffness evaluation. " +
-					              "Higher = cornering stiffness rises more with vertical load. " +
-					              "(magic number — default 0.06)",
-					GetValue = () => tyreFL.LateralLoadStiffnessSensitivity,
-					SetValue = v => ApplyToAllTyres(car, t => t.LateralLoadStiffnessSensitivity = v),
-					Minimum = -0.5f,
-					Maximum = 0.5f,
-					Step = 0.01f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "lat-c",
-					Label = "Lateral C (shape factor)",
+						Step = 0.1f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "lat-b-load-sensitivity",
+						Label = "Lateral B load sensitivity",
+						Description = "Load sensitivity for lateral pure-slip stiffness evaluation. " +
+						              "Higher = cornering stiffness rises more with vertical load. " +
+						              "(magic number — default 0.06)",
+						GetValue = () => tyreFL.LateralLoadStiffnessSensitivity,
+						SetValue = v => ApplyToAllTyres(car, t => t.LateralLoadStiffnessSensitivity = v),
+						Minimum = -0.5f,
+						Maximum = 0.5f,
+						Step = 0.01f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "lat-c",
+						Label = "Lateral C (shape factor)",
 						Description = "Pacejka shape factor for the lateral curve. " +
 						              "Typical range 1.1–1.4 for passenger/rally tyres. " +
 						              "(magic number — default 1.3)",
@@ -743,40 +769,40 @@ namespace LibreRally.HUD
 						SetValue = v => ApplyToAllTyres(car, t => t.LateralE = v),
 						Minimum = -5f,
 						Maximum = 1f,
-					Step = 0.05f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "lat-b-camber-sensitivity",
-					Label = "Lateral B camber sensitivity",
-					Description = "Camber sensitivity for lateral pure-slip stiffness evaluation. " +
-					              "Higher = cambered tyres build cornering force more aggressively. " +
-					              "(magic number — default 0.35)",
-					GetValue = () => tyreFL.LateralCamberStiffnessSensitivity,
-					SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberStiffnessSensitivity = v),
-					Minimum = 0f,
-					Maximum = 1.5f,
-					Step = 0.025f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "lat-e-camber-sensitivity",
-					Label = "Lateral E camber sensitivity",
-					Description = "Camber sensitivity for lateral pure-slip curvature evaluation. " +
-					              "More negative = stronger camber-driven reshaping of the lateral falloff. " +
-					              "(magic number — default -0.15)",
-					GetValue = () => tyreFL.LateralCamberCurvatureSensitivity,
-					SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberCurvatureSensitivity = v),
-					Minimum = -1.0f,
-					Maximum = 1.0f,
-					Step = 0.025f,
-					Unit = "",
-				},
-				new PhysCalField
-				{
-					Id = "high-slip-start",
+						Step = 0.05f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "lat-b-camber-sensitivity",
+						Label = "Lateral B camber sensitivity",
+						Description = "Camber sensitivity for lateral pure-slip stiffness evaluation. " +
+						              "Higher = cambered tyres build cornering force more aggressively. " +
+						              "(magic number — default 0.35)",
+						GetValue = () => tyreFL.LateralCamberStiffnessSensitivity,
+						SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberStiffnessSensitivity = v),
+						Minimum = 0f,
+						Maximum = 1.5f,
+						Step = 0.025f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "lat-e-camber-sensitivity",
+						Label = "Lateral E camber sensitivity",
+						Description = "Camber sensitivity for lateral pure-slip curvature evaluation. " +
+						              "More negative = stronger camber-driven reshaping of the lateral falloff. " +
+						              "(magic number — default -0.15)",
+						GetValue = () => tyreFL.LateralCamberCurvatureSensitivity,
+						SetValue = v => ApplyToAllTyres(car, t => t.LateralCamberCurvatureSensitivity = v),
+						Minimum = -1.0f,
+						Maximum = 1.0f,
+						Step = 0.025f,
+						Unit = "",
+					},
+					new PhysCalField
+					{
+						Id = "high-slip-start",
 						Label = "High-slip transition start",
 						Description = "Slip angle (rad) at which the rally high-slip blending begins. " +
 						              "Below this, pure Pacejka applies. ~15° by default. " +
@@ -1232,11 +1258,7 @@ namespace LibreRally.HUD
 
 		private Panel BuildHeader()
 		{
-			var panel = new Panel
-			{
-				Height = 96,
-				Background = Brush(PanelAltColor),
-			};
+			var panel = new Panel { Height = 96, Background = Brush(PanelAltColor), };
 
 			var header = new Grid
 			{
@@ -1251,11 +1273,7 @@ namespace LibreRally.HUD
 			header.RowsProportions.Add(new Proportion(ProportionType.Auto));
 			header.RowsProportions.Add(new Proportion(ProportionType.Auto));
 
-			header.Widgets.Add(new Label
-			{
-				Text = "Physics Calibration",
-				TextColor = TitleColor,
-			});
+			header.Widgets.Add(new Label { Text = "Physics Calibration", TextColor = TitleColor, });
 			var subtitle = new Label
 			{
 				Text = "Isolate tyre model contributions and tune anti-slip parameters live. " +
@@ -1290,7 +1308,13 @@ namespace LibreRally.HUD
 			content.HorizontalAlignment = HorizontalAlignment.Center;
 			content.VerticalAlignment = VerticalAlignment.Top;
 			content.Widgets.Add(CreateSectionTitle("Categories"));
-			content.Widgets.Add(CreateSectionBody("D-Pad Up/Down to move. Left/Right adjust field or change pane."));
+			content.Widgets.Add(CreateSectionBody("Select a calibration field."));
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"D-Pad Up/Down move  •  D-Pad Left/Right adjust",
+				GamePadPromptWidgets.Prompt("Move", GamePadPromptIcon.DPadUp, GamePadPromptIcon.DPadDown),
+				GamePadPromptWidgets.Prompt("Adjust", GamePadPromptIcon.DPadLeft, GamePadPromptIcon.DPadRight)));
 			content.Widgets.Add(CreateSpacer(6));
 
 			// Tyre model quick-select buttons
@@ -1298,12 +1322,7 @@ namespace LibreRally.HUD
 			foreach (var (label, mode) in new[] { ("Auto (Blended)", TyreModelMode.Auto), ("Brush Only", TyreModelMode.BrushOnly), ("Pacejka Only", TyreModelMode.PacejkaOnly) })
 			{
 				var localMode = mode;
-				var btn = new Button
-				{
-					Background = Brush(PanelAltColor),
-					HorizontalAlignment = HorizontalAlignment.Stretch,
-					Content = new Label { Text = label, TextColor = CopyColor, Wrap = true },
-				};
+				var btn = new Button { Background = Brush(PanelAltColor), HorizontalAlignment = HorizontalAlignment.Stretch, Content = new Label { Text = label, TextColor = CopyColor, Wrap = true }, };
 				btn.Click += (_, _) =>
 				{
 					SetTyreModelMode(localMode);
@@ -1377,12 +1396,20 @@ namespace LibreRally.HUD
 			_drivetrainTelemetryLabel.Wrap = true;
 			content.Widgets.Add(_drivetrainTelemetryLabel);
 			content.Widgets.Add(CreateSpacer(10));
-			content.Widgets.Add(new Label
-			{
-				Text = "D-Pad Up/Down moves list.\nLeft/Right adjusts or changes pane.\nEsc/B/Start goes back.",
-				TextColor = MutedColor,
-				Wrap = true,
-			});
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"D-Pad Up/Down move  •  D-Pad Left/Right adjust",
+				GamePadPromptWidgets.Prompt("Move", GamePadPromptIcon.DPadUp, GamePadPromptIcon.DPadDown),
+				GamePadPromptWidgets.Prompt("Adjust", GamePadPromptIcon.DPadLeft, GamePadPromptIcon.DPadRight)));
+			content.Widgets.Add(CreateSpacer(4));
+			content.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				MutedColor,
+				"LB/RB category  •  A activate  •  B/Menu back",
+				GamePadPromptWidgets.Prompt("Category", GamePadPromptIcon.LeftBumper, GamePadPromptIcon.RightBumper),
+				GamePadPromptWidgets.Prompt("Activate", GamePadPromptIcon.A),
+				GamePadPromptWidgets.Prompt("Back", GamePadPromptIcon.B, GamePadPromptIcon.Menu)));
 
 			panel.Widgets.Add(content);
 			return panel;
@@ -1390,11 +1417,7 @@ namespace LibreRally.HUD
 
 		private Widget BuildFooter()
 		{
-			var footer = new Grid
-			{
-				ColumnSpacing = 12,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-			};
+			var footer = new Grid { ColumnSpacing = 12, HorizontalAlignment = HorizontalAlignment.Stretch, };
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 			footer.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
@@ -1407,11 +1430,7 @@ namespace LibreRally.HUD
 				Wrap = true,
 			});
 
-			var autoBtn = new Button
-			{
-				Background = Brush(PanelAltColor),
-				Content = new Label { Text = "Auto Model", TextColor = CopyColor },
-			};
+			var autoBtn = new Button { Background = Brush(PanelAltColor), Content = new Label { Text = "Auto Model", TextColor = CopyColor }, };
 			autoBtn.Click += (_, _) =>
 			{
 				SetTyreModelMode(TyreModelMode.Auto);
@@ -1420,11 +1439,7 @@ namespace LibreRally.HUD
 			Grid.SetColumn(autoBtn, 1);
 			footer.Widgets.Add(autoBtn);
 
-			var closeBtn = new Button
-			{
-				Background = Brush(AccentSoftColor),
-				Content = new Label { Text = "Back to Pause", TextColor = ValueColor },
-			};
+			var closeBtn = new Button { Background = Brush(AccentSoftColor), Content = new Label { Text = "Back to Pause", TextColor = ValueColor }, };
 			closeBtn.Click += (_, _) => CloseRequested?.Invoke();
 			Grid.SetColumn(closeBtn, 2);
 			footer.Widgets.Add(closeBtn);
@@ -1434,18 +1449,8 @@ namespace LibreRally.HUD
 
 		private Button CreateCategoryButton(PhysCalCategory category)
 		{
-			var label = new Label
-			{
-				Text = $"{category.Title}\n{category.Tagline}",
-				TextColor = CopyColor,
-				Wrap = true,
-			};
-			var button = new Button
-			{
-				Background = Brush(PanelAltColor),
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-				Content = label,
-			};
+			var label = new Label { Text = $"{category.Title}\n{category.Tagline}", TextColor = CopyColor, Wrap = true, };
+			var button = new Button { Background = Brush(PanelAltColor), HorizontalAlignment = HorizontalAlignment.Stretch, Content = label, };
 			var buttonIndex = _categoryButtons.Count;
 			button.Click += (_, _) =>
 			{
@@ -1479,11 +1484,7 @@ namespace LibreRally.HUD
 			headerRow.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 			headerRow.Widgets.Add(new Label { Text = field.Label, TextColor = TitleColor });
 
-			var valueLabel = new Label
-			{
-				Text = FormatValue(currentValue, field.Unit, field.Step),
-				TextColor = isSelected ? TitleColor : ValueColor,
-			};
+			var valueLabel = new Label { Text = FormatValue(currentValue, field.Unit, field.Step), TextColor = isSelected ? TitleColor : ValueColor, };
 			Grid.SetColumn(valueLabel, 1);
 			headerRow.Widgets.Add(valueLabel);
 			content.Widgets.Add(headerRow);
@@ -1498,10 +1499,7 @@ namespace LibreRally.HUD
 			var clampedValue = Math.Clamp(currentValue, field.Minimum, field.Maximum);
 			var slider = new HorizontalSlider
 			{
-				Minimum = field.Minimum,
-				Maximum = field.Maximum,
-				Value = clampedValue,
-				VerticalAlignment = VerticalAlignment.Center,
+				Minimum = field.Minimum, Maximum = field.Maximum, Value = clampedValue, VerticalAlignment = VerticalAlignment.Center,
 			};
 			slider.ValueChangedByUser += (_, args) =>
 			{
@@ -1531,12 +1529,7 @@ namespace LibreRally.HUD
 			Grid.SetColumn(spinButton, 1);
 			editor.Widgets.Add(spinButton);
 
-			var unitLabel = new Label
-			{
-				Text = field.Unit,
-				TextColor = isSelected ? ValueColor : MutedColor,
-				VerticalAlignment = VerticalAlignment.Center,
-			};
+			var unitLabel = new Label { Text = field.Unit, TextColor = isSelected ? ValueColor : MutedColor, VerticalAlignment = VerticalAlignment.Center, };
 			Grid.SetColumn(unitLabel, 2);
 			editor.Widgets.Add(unitLabel);
 
@@ -1797,29 +1790,13 @@ namespace LibreRally.HUD
 			return brush;
 		}
 
-		private Panel CreateCardPanel(int width, Color background) => new()
-		{
-			Width = width,
-			Background = Brush(background),
-		};
+		private Panel CreateCardPanel(int width, Color background) => new() { Width = width, Background = Brush(background), };
 
-		private static VerticalStackPanel CreateCardContent() => new()
-		{
-			Spacing = 8,
-		};
+		private static VerticalStackPanel CreateCardContent() => new() { Spacing = 8, };
 
-		private static Label CreateSectionTitle(string text) => new()
-		{
-			Text = text,
-			TextColor = new Color(240, 243, 247, 255),
-		};
+		private static Label CreateSectionTitle(string text) => new() { Text = text, TextColor = new Color(240, 243, 247, 255), };
 
-		private static Label CreateSectionBody(string text) => new()
-		{
-			Text = text,
-			TextColor = new Color(183, 193, 205, 255),
-			Wrap = true,
-		};
+		private static Label CreateSectionBody(string text) => new() { Text = text, TextColor = new Color(183, 193, 205, 255), Wrap = true, };
 
 		private static Panel CreateSpacer(int height) => new() { Height = height };
 

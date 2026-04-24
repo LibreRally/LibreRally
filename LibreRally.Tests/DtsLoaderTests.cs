@@ -6,8 +6,14 @@ using LibreRally.Vehicle.Rendering;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the dts loader behavior.
+	/// </summary>
 	public class DtsLoaderTests
 	{
+		/// <summary>
+		/// Verifies that load reads basic v 24 static mesh.
+		/// </summary>
 		[Fact]
 		public void Load_ReadsBasicV24StaticMesh()
 		{
@@ -30,6 +36,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load reads basic v 26 static mesh.
+		/// </summary>
 		[Fact]
 		public void Load_ReadsBasicV26StaticMesh()
 		{
@@ -50,6 +59,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load reads strip primitive without duplicating vertices.
+		/// </summary>
 		[Fact]
 		public void Load_ReadsStripPrimitiveWithoutDuplicatingVertices()
 		{
@@ -69,6 +81,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load uses only highest detail mesh per object.
+		/// </summary>
 		[Fact]
 		public void Load_UsesOnlyHighestDetailMeshPerObject()
 		{
@@ -93,6 +108,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load applies node translation to object mesh.
+		/// </summary>
 		[Fact]
 		public void Load_AppliesNodeTranslationToObjectMesh()
 		{
@@ -119,6 +137,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load applies node rotation to object mesh.
+		/// </summary>
 		[Fact]
 		public void Load_AppliesNodeRotationToObjectMesh()
 		{
@@ -145,6 +166,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load fgx dts contains expected body meshes.
+		/// </summary>
 		[Fact]
 		public void Load_FgxDts_ContainsExpectedBodyMeshes()
 		{
@@ -222,6 +246,7 @@ namespace LibreRally.Tests
 
 			static void AddS32(List<uint> list, int value) => list.Add(unchecked((uint)value));
 			static void AddF32(List<uint> list, float value) => list.Add(unchecked((uint)BitConverter.SingleToInt32Bits(value)));
+
 			static void AddPoint3(List<uint> list, float x, float y, float z)
 			{
 				AddF32(list, x);
@@ -285,6 +310,7 @@ namespace LibreRally.Tests
 				{
 					AddPoint2(data32, 1f, 1f);
 				}
+
 				if (version >= 26)
 				{
 					AddS32(data32, 0); // numTVerts2
@@ -391,6 +417,7 @@ namespace LibreRally.Tests
 				AddS32(data32, -1); // first child
 				AddS32(data32, -1); // next sibling
 			}
+
 			AddGuard(); // nodes
 
 			AddS32(data32, bodyNameIndex); // object name index -> "body"
@@ -409,6 +436,7 @@ namespace LibreRally.Tests
 				AddS32(data32, 0); // first object
 				AddS32(data32, 0); // first decal (deprecated)
 			}
+
 			AddGuard(); // subshape first-node/object/decal
 			if (numSubShapes > 0)
 			{
@@ -416,6 +444,7 @@ namespace LibreRally.Tests
 				AddS32(data32, 1); // num objects
 				AddS32(data32, 0); // num decals (deprecated)
 			}
+
 			AddGuard(); // subshape counts
 			if (useNodeTransform)
 			{
@@ -423,6 +452,7 @@ namespace LibreRally.Tests
 				Vector3 translation = nodeTranslation ?? Vector3.Zero;
 				AddPoint3(data32, translation.X, translation.Y, translation.Z);
 			}
+
 			AddGuard(); // default rot/trans etc.
 			AddGuard(); // node scales
 			AddGuard(); // ground frames
@@ -449,6 +479,7 @@ namespace LibreRally.Tests
 					AddS32(data32, 0);
 				}
 			}
+
 			AddGuard();
 
 			foreach (Vector3 meshOffset in objectMeshOffsets)
@@ -465,11 +496,13 @@ namespace LibreRally.Tests
 				data8.AddRange(System.Text.Encoding.UTF8.GetBytes($"detail{detailIndex}"));
 				data8.Add(0);
 			}
+
 			if (useNodeTransform)
 			{
 				data8.AddRange(System.Text.Encoding.UTF8.GetBytes("root"));
 				data8.Add(0);
 			}
+
 			AddGuard();
 
 			while ((data16.Count * 2) % 4 != 0)

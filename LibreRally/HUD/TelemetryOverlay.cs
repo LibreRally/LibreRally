@@ -15,6 +15,9 @@ namespace LibreRally.HUD
 	/// </summary>
 	public sealed class TelemetryOverlay : GameSystemBase
 	{
+		private const int ButtonHeight = 78;
+		private const int ButtonSpacing = 8;
+		private const int ScrollViewportHeight = 382;
 		private static readonly Color BackdropColor = new(5, 8, 14, 180);
 		private static readonly Color ShellColor = new(16, 22, 30, 242);
 		private static readonly Color AccentSoftColor = new(214, 148, 78, 84);
@@ -38,6 +41,7 @@ namespace LibreRally.HUD
 		private bool _overlayVisible;
 		private Game? _game;
 		private Desktop? _desktop;
+		private ScrollViewer? _listScrollViewer;
 		private Label? _vehicleNameLabel;
 		private Label? _statusLabel;
 		private Label? _outGaugeSummaryLabel;
@@ -166,10 +170,7 @@ namespace LibreRally.HUD
 			}
 
 			MyraEnvironment.Game = _game;
-			_desktop = new Desktop
-			{
-				Root = BuildRoot(),
-			};
+			_desktop = new Desktop { Root = BuildRoot(), };
 			FocusSelectedButton();
 		}
 
@@ -204,11 +205,9 @@ namespace LibreRally.HUD
 		private Widget BuildRoot()
 		{
 			_buttons.Clear();
+			_listScrollViewer = null;
 
-			var root = new Panel
-			{
-				Background = BackdropBrush,
-			};
+			var root = new Panel { Background = BackdropBrush, };
 
 			var shellFrame = new Panel
 			{
@@ -228,45 +227,28 @@ namespace LibreRally.HUD
 				Spacing = 12,
 			};
 
-			shell.Widgets.Add(new Label
-			{
-				Text = "Telemetry",
-				TextColor = TitleColor,
-			});
+			shell.Widgets.Add(new Label { Text = "Telemetry", TextColor = TitleColor, });
 
-			_vehicleNameLabel = new Label
-			{
-				TextColor = ValueColor,
-			};
+			_vehicleNameLabel = new Label { TextColor = ValueColor, };
 			shell.Widgets.Add(_vehicleNameLabel);
 
-			shell.Widgets.Add(new Label
-			{
-				Text = "D-Pad Up/Down select  •  A activate  •  B/Esc/Start back out",
-				TextColor = CopyColor,
-				Wrap = true,
-			});
+			shell.Widgets.Add(GamePadPromptWidgets.CreatePromptStrip(
+				_game,
+				CopyColor,
+				"D-Pad Up/Down select  •  A activate  •  B/Menu back out",
+				GamePadPromptWidgets.Prompt("Select", GamePadPromptIcon.DPadUp, GamePadPromptIcon.DPadDown),
+				GamePadPromptWidgets.Prompt("Activate", GamePadPromptIcon.A),
+				GamePadPromptWidgets.Prompt("Back", GamePadPromptIcon.B, GamePadPromptIcon.Menu)));
 
-			_outGaugeSummaryLabel = new Label
-			{
-				TextColor = ValueColor,
-				Wrap = true,
-			};
+			_outGaugeSummaryLabel = new Label { TextColor = ValueColor, Wrap = true, };
 			shell.Widgets.Add(_outGaugeSummaryLabel);
 
-			_outSimSummaryLabel = new Label
-			{
-				TextColor = ValueColor,
-				Wrap = true,
-			};
+			_outSimSummaryLabel = new Label { TextColor = ValueColor, Wrap = true, };
 			shell.Widgets.Add(_outSimSummaryLabel);
 
 			var list = new VerticalStackPanel
 			{
-				Width = 780,
-				Spacing = 8,
-				HorizontalAlignment = HorizontalAlignment.Center,
-				VerticalAlignment = VerticalAlignment.Top,
+				Width = 780, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
 			};
 
 			for (var index = 0; index < _items.Count; index++)
@@ -274,26 +256,10 @@ namespace LibreRally.HUD
 				list.Widgets.Add(CreateMenuButton(_items[index], index));
 			}
 
-			shell.Widgets.Add(new Panel
-			{
-				Height = 410,
-				Background = PanelBrush,
-				Widgets =
-				{
-					new ScrollViewer
-					{
-						Content = list,
-						Height = 382,
-						VerticalAlignment = VerticalAlignment.Stretch,
-					},
-				},
-			});
+			_listScrollViewer = new ScrollViewer { Content = list, Height = 382, VerticalAlignment = VerticalAlignment.Stretch, };
+			shell.Widgets.Add(new Panel { Height = 410, Background = PanelBrush, Widgets = { _listScrollViewer, }, });
 
-			_statusLabel = new Label
-			{
-				TextColor = CopyColor,
-				Wrap = true,
-			};
+			_statusLabel = new Label { TextColor = CopyColor, Wrap = true, };
 			shell.Widgets.Add(_statusLabel);
 
 			shellFrame.Widgets.Add(shell);
@@ -306,31 +272,14 @@ namespace LibreRally.HUD
 
 		private Button CreateMenuButton(PauseMenuItem item, int index)
 		{
-			var titleLabel = new Label
-			{
-				Text = item.Title,
-				TextColor = TitleColor,
-			};
-			var descriptionLabel = new Label
-			{
-				Text = item.Description,
-				TextColor = CopyColor,
-				Wrap = true,
-			};
+			var titleLabel = new Label { Text = item.Title, TextColor = TitleColor, };
+			var descriptionLabel = new Label { Text = item.Description, TextColor = CopyColor, Wrap = true, };
 
-			var content = new VerticalStackPanel
-			{
-				Spacing = 4,
-			};
+			var content = new VerticalStackPanel { Spacing = 4, };
 			content.Widgets.Add(titleLabel);
 			content.Widgets.Add(descriptionLabel);
 
-			var button = new Button
-			{
-				Height = 78,
-				HorizontalAlignment = HorizontalAlignment.Stretch,
-				Content = content,
-			};
+			var button = new Button { Height = ButtonHeight, HorizontalAlignment = HorizontalAlignment.Stretch, Content = content, };
 			button.Click += (_, _) =>
 			{
 				SelectedIndex = index;
@@ -396,7 +345,30 @@ namespace LibreRally.HUD
 			}
 
 			var clampedIndex = Math.Clamp(_selectedIndex, 0, _buttons.Count - 1);
-			_desktop.FocusedKeyboardWidget = _buttons[clampedIndex].Button;
+			var button = _buttons[clampedIndex].Button;
+			_desktop.FocusedKeyboardWidget = button;
+			EnsureSelectedButtonVisible();
+		}
+
+		private void EnsureSelectedButtonVisible()
+		{
+			if (_listScrollViewer == null)
+			{
+				return;
+			}
+
+			var scrollPosition = _listScrollViewer.ScrollPosition;
+			var targetScroll = MenuScrollHelper.ComputeVisibleVerticalScrollForFixedList(
+				scrollPosition.Y,
+				ScrollViewportHeight,
+				_selectedIndex,
+				ButtonHeight,
+				ButtonSpacing,
+				_buttons.Count);
+			if (targetScroll != scrollPosition.Y)
+			{
+				_listScrollViewer.ScrollPosition = new Point(scrollPosition.X, targetScroll);
+			}
 		}
 	}
 }

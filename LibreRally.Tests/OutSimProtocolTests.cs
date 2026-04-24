@@ -4,8 +4,14 @@ using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the out sim protocol behavior.
+	/// </summary>
 	public class OutSimProtocolTests
 	{
+		/// <summary>
+		/// Verifies that encode uses lfs out sim packet layout without optional id.
+		/// </summary>
 		[Fact]
 		public void Encode_UsesLfsOutSimPacketLayout_WithoutOptionalId()
 		{
@@ -38,6 +44,9 @@ namespace LibreRally.Tests
 			Assert.Equal(300, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(60, 4)));
 		}
 
+		/// <summary>
+		/// Verifies that encode appends identifier when out sim id is configured.
+		/// </summary>
 		[Fact]
 		public void Encode_AppendsIdentifier_WhenOutSimIdIsConfigured()
 		{

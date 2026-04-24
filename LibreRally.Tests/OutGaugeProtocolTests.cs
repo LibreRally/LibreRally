@@ -5,8 +5,14 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the out gauge protocol behavior.
+	/// </summary>
 	public class OutGaugeProtocolTests
 	{
+		/// <summary>
+		/// Verifies that encode uses lfs out gauge packet layout without optional id.
+		/// </summary>
 		[Fact]
 		public void Encode_UsesLfsOutGaugePacketLayout_WithoutOptionalId()
 		{
@@ -47,6 +53,9 @@ namespace LibreRally.Tests
 			Assert.Equal("Setup", ReadFixedAscii(packet, 76, 16));
 		}
 
+		/// <summary>
+		/// Verifies that encode appends identifier when out gauge id is configured.
+		/// </summary>
 		[Fact]
 		public void Encode_AppendsIdentifier_WhenOutGaugeIdIsConfigured()
 		{
@@ -56,6 +65,9 @@ namespace LibreRally.Tests
 			Assert.Equal(77, BinaryPrimitives.ReadInt32LittleEndian(packet.AsSpan(92, 4)));
 		}
 
+		/// <summary>
+		/// Verifies that map gear converts gear indices to out gauge convention.
+		/// </summary>
 		[Theory]
 		[InlineData(0, 0)]
 		[InlineData(1, 2)]

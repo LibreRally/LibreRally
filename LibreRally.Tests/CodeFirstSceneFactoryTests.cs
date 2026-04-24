@@ -6,8 +6,14 @@ using Stride.Rendering.Lights;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the code first scene factory behavior.
+	/// </summary>
 	public class CodeFirstSceneFactoryTests
 	{
+		/// <summary>
+		/// Verifies that create main scene creates expected root entities.
+		/// </summary>
 		[Fact]
 		public void CreateMainScene_CreatesExpectedRootEntities()
 		{
@@ -37,6 +43,9 @@ namespace LibreRally.Tests
 			Assert.IsType<LightSkybox>(skyboxLightComponent!.Type);
 		}
 
+		/// <summary>
+		/// Verifies that create main scene setup binds main camera to graphics compositor slot.
+		/// </summary>
 		[Fact]
 		public void CreateMainSceneSetup_BindsMainCameraToGraphicsCompositorSlot()
 		{

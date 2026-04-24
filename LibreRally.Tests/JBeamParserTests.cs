@@ -5,8 +5,14 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the j beam parser behavior.
+	/// </summary>
 	public sealed class JBeamParserTests
 	{
+		/// <summary>
+		/// Verifies that parse variable defaults file allows trailing stray root punctuation.
+		/// </summary>
 		[Fact]
 		public void ParseVariableDefaultsFile_AllowsTrailingStrayRootPunctuation()
 		{
@@ -37,6 +43,9 @@ namespace LibreRally.Tests
 			Assert.Equal("test_part", part.Name);
 		}
 
+		/// <summary>
+		/// Verifies that parse variable defaults file allows leading zero number literals in unrelated sections.
+		/// </summary>
 		[Fact]
 		public void ParseVariableDefaultsFile_AllowsLeadingZeroNumberLiteralsInUnrelatedSections()
 		{
@@ -72,6 +81,9 @@ namespace LibreRally.Tests
 			Assert.Equal("test_part", part.Name);
 		}
 
+		/// <summary>
+		/// Verifies that parse file ignores unparseable string node booleans.
+		/// </summary>
 		[Fact]
 		public void ParseFile_IgnoresUnparseableStringNodeBooleans()
 		{
@@ -100,6 +112,9 @@ namespace LibreRally.Tests
 			Assert.True(node.Properties.SelfCollision);
 		}
 
+		/// <summary>
+		/// Verifies that assemble ignores broken supplemental files during variable default pass.
+		/// </summary>
 		[Fact]
 		public void Assemble_IgnoresBrokenSupplementalFilesDuringVariableDefaultPass()
 		{
@@ -131,6 +146,9 @@ namespace LibreRally.Tests
 			Assert.Equal("test_car", definition.VehicleName);
 		}
 
+		/// <summary>
+		/// Verifies that parse handles numbers starting with dot.
+		/// </summary>
 		[Fact]
 		public void Parse_HandlesNumbersStartingWithDot()
 		{
@@ -139,6 +157,9 @@ namespace LibreRally.Tests
 			Assert.Single(parts);
 		}
 
+		/// <summary>
+		/// Verifies that parse handles missing comma between strings.
+		/// </summary>
 		[Fact]
 		public void Parse_HandlesMissingCommaBetweenStrings()
 		{
@@ -147,6 +168,9 @@ namespace LibreRally.Tests
 			Assert.Single(parts);
 		}
 
+		/// <summary>
+		/// Verifies that parse handles missing comma after number.
+		/// </summary>
 		[Fact]
 		public void Parse_HandlesMissingCommaAfterNumber()
 		{

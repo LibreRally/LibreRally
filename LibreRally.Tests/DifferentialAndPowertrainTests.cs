@@ -6,8 +6,14 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the differential and powertrain behavior.
+	/// </summary>
 	public sealed class DifferentialAndPowertrainTests
 	{
+		/// <summary>
+		/// Verifies that resolve maps lsd preload and coast lock coefficients.
+		/// </summary>
 		[Fact]
 		public void Resolve_MapsLsdPreloadAndCoastLockCoefficients()
 		{
@@ -15,10 +21,7 @@ namespace LibreRally.Tests
 			{
 				PowertrainDevices = new List<JBeamPowertrainDevice>
 				{
-					new("engine", "mainEngine", "", 0, "", null, "", null, null, null),
-					new("differential", "rearDiff", "mainEngine", 0, "", null, "lsd", 140f, 0.25f, 0.45f),
-					new("wheelaxle", "wheelaxleRL", "rearDiff", 0, "RL", null, "", null, null, null),
-					new("wheelaxle", "wheelaxleRR", "rearDiff", 0, "RR", null, "", null, null, null),
+					new("engine", "mainEngine", "", 0, "", null, "", null, null, null), new("differential", "rearDiff", "mainEngine", 0, "", null, "lsd", 140f, 0.25f, 0.45f), new("wheelaxle", "wheelaxleRL", "rearDiff", 0, "RL", null, "", null, null, null), new("wheelaxle", "wheelaxleRR", "rearDiff", 0, "RR", null, "", null, null, null),
 				},
 			};
 
@@ -30,6 +33,9 @@ namespace LibreRally.Tests
 			Assert.Equal(140f, setup.RearDiff.PreloadTorque, 3);
 		}
 
+		/// <summary>
+		/// Verifies that split torque uses preload and higher coast lock.
+		/// </summary>
 		[Fact]
 		public void SplitTorque_UsesPreloadAndHigherCoastLock()
 		{
@@ -49,6 +55,9 @@ namespace LibreRally.Tests
 			Assert.True(coastTransfer > driveTransfer);
 		}
 
+		/// <summary>
+		/// Verifies that split torque with coast lock set to zero does not fallback to drive lock.
+		/// </summary>
 		[Fact]
 		public void SplitTorque_WithCoastLockSetToZero_DoesNotFallbackToDriveLock()
 		{
@@ -64,6 +73,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0f, coastTransfer, 4);
 		}
 
+		/// <summary>
+		/// Verifies that split torque with preload ramps continuously at small delta omega.
+		/// </summary>
 		[Fact]
 		public void SplitTorque_WithPreload_RampsContinuouslyAtSmallDeltaOmega()
 		{
@@ -84,6 +96,9 @@ namespace LibreRally.Tests
 			Assert.True(largerDeltaTransfer < 120f);
 		}
 
+		/// <summary>
+		/// Verifies that split torque open differential limits both outputs to least traction wheel.
+		/// </summary>
 		[Fact]
 		public void SplitTorque_OpenDifferential_LimitsBothOutputsToLeastTractionWheel()
 		{
@@ -103,6 +118,9 @@ namespace LibreRally.Tests
 			Assert.Equal(60f, torqueRight, 3);
 		}
 
+		/// <summary>
+		/// Verifies that split torque limited slip clamps bias and conserves delivered torque.
+		/// </summary>
 		[Fact]
 		public void SplitTorque_LimitedSlip_ClampsBiasAndConservesDeliveredTorque()
 		{
@@ -128,6 +146,9 @@ namespace LibreRally.Tests
 			Assert.True(torqueRight / torqueLeft <= 3.0001f);
 		}
 
+		/// <summary>
+		/// Verifies that resolve final drive uses selected final drive part ratio when intermediate devices stay at unit ratio.
+		/// </summary>
 		[Fact]
 		public void ResolveFinalDrive_UsesSelectedFinalDrivePartRatioWhenIntermediateDevicesStayAtUnitRatio()
 		{
@@ -135,15 +156,9 @@ namespace LibreRally.Tests
 			{
 				PowertrainDevices = new List<JBeamPowertrainDevice>
 				{
-					new("engine", "mainEngine", "", 0, "", null, "", null, null, null),
-					new("differential", "rearDiff", "mainEngine", 0, "", 1f, "open", null, null, null),
-					new("wheelaxle", "wheelaxleRL", "rearDiff", 0, "RL", null, "", null, null, null),
-					new("wheelaxle", "wheelaxleRR", "rearDiff", 0, "RR", null, "", null, null, null),
+					new("engine", "mainEngine", "", 0, "", null, "", null, null, null), new("differential", "rearDiff", "mainEngine", 0, "", 1f, "open", null, null, null), new("wheelaxle", "wheelaxleRL", "rearDiff", 0, "RL", null, "", null, null, null), new("wheelaxle", "wheelaxleRR", "rearDiff", 0, "RR", null, "", null, null, null),
 				},
-				PartGearRatios = new List<AssembledPartGearRatio>
-				{
-					new("fgx_finaldrive_R_391", "fgx_finaldrive_R", 3.91f),
-				},
+				PartGearRatios = new List<AssembledPartGearRatio> { new("fgx_finaldrive_R_391", "fgx_finaldrive_R", 3.91f), },
 			};
 
 			var setup = VehiclePowertrainResolver.Resolve(definition);

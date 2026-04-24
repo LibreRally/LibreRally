@@ -6,6 +6,9 @@ using Stride.Core.Mathematics;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the beam ng paint palette resolver behavior.
+	/// </summary>
 	public class BeamNgPaintPaletteResolverTests
 	{
 		private static string CombineRelativePath(string basePath, string relativePath)
@@ -35,6 +38,9 @@ namespace LibreRally.Tests
 			throw new DirectoryNotFoundException($"Could not locate the repository root for '{vehicleFolderName}' paint tests.");
 		}
 
+		/// <summary>
+		/// Verifies that rally pro gravel should resolve default paint palette.
+		/// </summary>
 		[Fact]
 		public void RallyProGravel_ShouldResolveDefaultPaintPalette()
 		{
@@ -52,6 +58,9 @@ namespace LibreRally.Tests
 			Assert.True(palette.Value.Paint3.BaseColor.R > palette.Value.Paint3.BaseColor.B);
 		}
 
+		/// <summary>
+		/// Verifies that compose instance diffuse color should tint masked channels.
+		/// </summary>
 		[Fact]
 		public void ComposeInstanceDiffuseColor_ShouldTintMaskedChannels()
 		{
@@ -72,6 +81,9 @@ namespace LibreRally.Tests
 				VehicleLoader.ComposeInstanceDiffuseColor(baseColor, new Color(0, 0, 0, 255), palette));
 		}
 
+		/// <summary>
+		/// Verifies that load default palette should handle lenient info json.
+		/// </summary>
 		[Fact]
 		public void LoadDefaultPalette_ShouldHandleLenientInfoJson()
 		{

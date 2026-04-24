@@ -6,6 +6,9 @@ using LibreRally.Vehicle.Rendering;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the beam ng material loader behavior.
+	/// </summary>
 	public class BeamNgMaterialLoaderTests
 	{
 		private static string CombineRelativePath(string basePath, string relativePath)
@@ -35,6 +38,9 @@ namespace LibreRally.Tests
 			throw new DirectoryNotFoundException($"Could not locate the repository root for '{vehicleFolderName}' material tests.");
 		}
 
+		/// <summary>
+		/// Verifies that rally pro gravel should expose selected material skin variants.
+		/// </summary>
 		[Fact]
 		public void RallyProGravel_ShouldExposeSelectedMaterialSkinVariants()
 		{
@@ -48,6 +54,9 @@ namespace LibreRally.Tests
 				selection => selection.SlotType == "skin_interior" && selection.VariantName == "rs");
 		}
 
+		/// <summary>
+		/// Verifies that rally pro gravel should resolve skin material textures over base maps.
+		/// </summary>
 		[Fact]
 		public void RallyProGravel_ShouldResolveSkinMaterialTexturesOverBaseMaps()
 		{
@@ -67,6 +76,9 @@ namespace LibreRally.Tests
 			Assert.EndsWith("sunburst2_skin_ngrc_b.color.dds", textures["sunburst2_main.skin.ngrc"], StringComparison.OrdinalIgnoreCase);
 		}
 
+		/// <summary>
+		/// Verifies that rally pro gravel should expose palette texture for instance diffuse materials.
+		/// </summary>
 		[Fact]
 		public void RallyProGravel_ShouldExposePaletteTextureForInstanceDiffuseMaterials()
 		{

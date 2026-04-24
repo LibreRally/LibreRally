@@ -5,8 +5,14 @@ using LibreRally.Vehicle.Rendering;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the collada loader behavior.
+	/// </summary>
 	public class ColladaLoaderTests
 	{
+		/// <summary>
+		/// Verifies that load uses visual scene instances and skips uninstanced geometry.
+		/// </summary>
 		[Fact]
 		public void Load_UsesVisualSceneInstancesAndSkipsUninstancedGeometry()
 		{
@@ -49,6 +55,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load composes parent and child node transforms.
+		/// </summary>
 		[Fact]
 		public void Load_ComposesParentAndChildNodeTransforms()
 		{
@@ -89,6 +98,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load falls back to raw geometry when visual scene is missing.
+		/// </summary>
 		[Fact]
 		public void Load_FallsBackToRawGeometry_WhenVisualSceneIsMissing()
 		{
@@ -116,6 +128,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load flips raw geometry triangle winding for stride front faces.
+		/// </summary>
 		[Fact]
 		public void Load_FlipsRawGeometryTriangleWindingForStrideFrontFaces()
 		{
@@ -141,6 +156,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that load negative determinant scene transform flips winding back.
+		/// </summary>
 		[Fact]
 		public void Load_NegativeDeterminantSceneTransform_FlipsWindingBack()
 		{

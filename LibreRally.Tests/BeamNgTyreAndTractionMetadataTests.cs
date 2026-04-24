@@ -6,8 +6,14 @@ using Xunit;
 
 namespace LibreRally.Tests
 {
+	/// <summary>
+	/// Verifies the beam ng tyre and traction metadata behavior.
+	/// </summary>
 	public class BeamNgTyreAndTractionMetadataTests
 	{
+		/// <summary>
+		/// Verifies that parse pressure wheels parses beam ng tyre option objects.
+		/// </summary>
 		[Fact]
 		public void ParsePressureWheels_ParsesBeamNgTyreOptionObjects()
 		{
@@ -61,6 +67,9 @@ namespace LibreRally.Tests
 			}
 		}
 
+		/// <summary>
+		/// Verifies that parse pressure wheels parses steer axis metadata.
+		/// </summary>
 		[Fact]
 		public void ParsePressureWheels_ParsesSteerAxisMetadata()
 		{
@@ -82,6 +91,9 @@ namespace LibreRally.Tests
 			Assert.Equal("downNode", pressureWheel.SteerAxisDown);
 		}
 
+		/// <summary>
+		/// Verifies that parse part parses top level gear ratio.
+		/// </summary>
 		[Fact]
 		public void ParsePart_ParsesTopLevelGearRatio()
 		{
@@ -98,6 +110,9 @@ namespace LibreRally.Tests
 			Assert.Equal(3.91f, part.GearRatio.GetValueOrDefault(), 3);
 		}
 
+		/// <summary>
+		/// Verifies that parse traction control definition parses slip threshold and window.
+		/// </summary>
 		[Fact]
 		public void ParseTractionControlDefinition_ParsesSlipThresholdAndWindow()
 		{
@@ -142,6 +157,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.20f, VehicleLoader.ResolveTractionControlSlipRatioWindow(tractionControl), 3);
 		}
 
+		/// <summary>
+		/// Verifies that resolve tyre spec uses axle specific beam ng tyre metadata.
+		/// </summary>
 		[Fact]
 		public void ResolveTyreSpec_UsesAxleSpecificBeamNgTyreMetadata()
 		{
@@ -149,17 +167,17 @@ namespace LibreRally.Tests
 			{
 				PressureWheelOptions = new List<AssembledPressureWheelOptions>
 				{
-						new(
-							"tire_F_225_35_19_sport",
-							"tire_F_19x8",
-							new JBeamPressureWheelOptions
-							{
+					new(
+						"tire_F_225_35_19_sport",
+						"tire_F_19x8",
+						new JBeamPressureWheelOptions
+						{
 							HasTire = true,
 							Radius = 0.32f,
 							TireWidth = 0.200f,
 							PressurePsi = 30f,
-								FrictionCoef = 1.0f,
-								SlidingFrictionCoef = 0.9f,
+							FrictionCoef = 1.0f,
+							SlidingFrictionCoef = 0.9f,
 							TreadCoef = 0.8f,
 							NoLoadCoef = 1.6f,
 							LoadSensitivitySlope = 0.000165f,
@@ -168,27 +186,27 @@ namespace LibreRally.Tests
 							HubRadius = 0.19f,
 							HubWidth = 0.17f,
 							WheelOffset = 0.022f,
-							}),
-						new(
-							"tire_R_225_45_17_sport",
-							"tire_R_17x8",
+						}),
+					new(
+						"tire_R_225_45_17_sport",
+						"tire_R_17x8",
 						new JBeamPressureWheelOptions
 						{
 							HasTire = true,
 							Radius = 0.315f,
 							TireWidth = 0.205f,
 							PressurePsi = 32f,
-								FrictionCoef = 1.0f,
-								SlidingFrictionCoef = 0.85f,
-								TreadCoef = 0.7f,
-								NoLoadCoef = 1.51f,
-								LoadSensitivitySlope = 0.000175f,
-								FullLoadCoef = 0.5f,
-								SoftnessCoef = 1.1f,
-								HubRadius = 0.18f,
-								HubWidth = 0.18f,
-								WheelOffset = 0.018f,
-							}),
+							FrictionCoef = 1.0f,
+							SlidingFrictionCoef = 0.85f,
+							TreadCoef = 0.7f,
+							NoLoadCoef = 1.51f,
+							LoadSensitivitySlope = 0.000175f,
+							FullLoadCoef = 0.5f,
+							SoftnessCoef = 1.1f,
+							HubRadius = 0.18f,
+							HubWidth = 0.18f,
+							WheelOffset = 0.018f,
+						}),
 				},
 			};
 
@@ -220,6 +238,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.018f, rearSpec.BeamNgWheelOffset.GetValueOrDefault(), 3);
 		}
 
+		/// <summary>
+		/// Verifies that create tyre model maps beam ng tyre coefficients to physics parameters.
+		/// </summary>
 		[Fact]
 		public void CreateTyreModel_MapsBeamNgTyreCoefficientsToPhysicsParameters()
 		{
@@ -253,6 +274,9 @@ namespace LibreRally.Tests
 			Assert.Equal(0.025f, tyre.WheelOffset.GetValueOrDefault(), 3);
 		}
 
+		/// <summary>
+		/// Verifies that resolve tyre spec leaves friction nullable when j beam friction is missing.
+		/// </summary>
 		[Fact]
 		public void ResolveTyreSpec_LeavesFrictionNullableWhenJBeamFrictionIsMissing()
 		{
