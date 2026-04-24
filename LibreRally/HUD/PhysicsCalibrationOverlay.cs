@@ -104,6 +104,7 @@ namespace LibreRally.HUD
 		private Label? _categoryDescriptionLabel;
 		private Label? _fieldWindowLabel;
 		private Label? _suspensionTelemetryLabel;
+		private Label? _drivetrainTelemetryLabel;
 		private readonly List<(Button Button, Label Label)> _categoryButtons = [];
 
 		private const int MaxVisibleFields = 3;
@@ -1371,6 +1372,11 @@ namespace LibreRally.HUD
 			_suspensionTelemetryLabel.Wrap = true;
 			content.Widgets.Add(_suspensionTelemetryLabel);
 			content.Widgets.Add(CreateSpacer(10));
+			content.Widgets.Add(CreateSectionTitle("Drivetrain torque telemetry"));
+			_drivetrainTelemetryLabel = CreateSectionBody(string.Empty);
+			_drivetrainTelemetryLabel.Wrap = true;
+			content.Widgets.Add(_drivetrainTelemetryLabel);
+			content.Widgets.Add(CreateSpacer(10));
 			content.Widgets.Add(new Label
 			{
 				Text = "D-Pad Up/Down moves list.\nLeft/Right adjusts or changes pane.\nEsc/B/Start goes back.",
@@ -1611,7 +1617,7 @@ namespace LibreRally.HUD
 
 		private void UpdateLiveTelemetryLabels()
 		{
-			if (_suspensionTelemetryLabel == null)
+			if (_suspensionTelemetryLabel == null || _drivetrainTelemetryLabel == null)
 			{
 				return;
 			}
@@ -1620,6 +1626,7 @@ namespace LibreRally.HUD
 			if (dynamics == null)
 			{
 				_suspensionTelemetryLabel.Text = "Suspension telemetry unavailable.";
+				_drivetrainTelemetryLabel.Text = "Drivetrain telemetry unavailable.";
 				return;
 			}
 
@@ -1628,6 +1635,11 @@ namespace LibreRally.HUD
 				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.FR, "FR")}\n" +
 				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.RL, "RL")}\n" +
 				$"{FormatSuspensionTelemetryLine(dynamics, VehicleDynamicsSystem.RR, "RR")}";
+			_drivetrainTelemetryLabel.Text =
+				$"{FormatDrivetrainTelemetryLine(dynamics, VehicleDynamicsSystem.FL, "FL")}\n" +
+				$"{FormatDrivetrainTelemetryLine(dynamics, VehicleDynamicsSystem.FR, "FR")}\n" +
+				$"{FormatDrivetrainTelemetryLine(dynamics, VehicleDynamicsSystem.RL, "RL")}\n" +
+				$"{FormatDrivetrainTelemetryLine(dynamics, VehicleDynamicsSystem.RR, "RR")}";
 		}
 
 		private string FormatSuspensionTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
@@ -1645,6 +1657,17 @@ namespace LibreRally.HUD
 			       $"sf:{dynamics.SpringForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +
 			       $"df:{dynamics.DamperForces[wheelIndex] / NewtonsToKilonewtons,5:F2} " +
 			       $"bf:{dynamics.BumpStopForces[wheelIndex] / NewtonsToKilonewtons,5:F2}";
+		}
+
+		private static string FormatDrivetrainTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
+		{
+			var wheelState = dynamics.WheelStates[wheelIndex];
+			return $"{wheelLabel} " +
+			       $"Td:{wheelState.DriveTorque,6:F1} " +
+			       $"Tb:{wheelState.BrakeTorque,6:F1} " +
+			       $"Tt:{wheelState.TyreReactionTorque,6:F1} " +
+			       $"ω:{wheelState.AngularVelocity,6:F2} " +
+			       $"κ:{wheelState.SlipRatio,5:F2}";
 		}
 
 		// ── Input handling ────────────────────────────────────────────────────────
