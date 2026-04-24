@@ -55,6 +55,7 @@ namespace LibreRally.HUD
 
 		static GamePadPromptWidgets()
 		{
+			// Intentionally kept for the lifetime of the process to ensure GPU textures are released on shutdown.
 			AppDomain.CurrentDomain.ProcessExit += (_, _) => DisposeCachedTextures();
 		}
 
