@@ -95,7 +95,7 @@ namespace LibreRally.HUD
 			get => _vehicleName;
 			set
 			{
-				_vehicleName = value ?? string.Empty;
+				_vehicleName = value;
 				UpdateLabels();
 			}
 		}
@@ -108,7 +108,7 @@ namespace LibreRally.HUD
 			get => _statusText;
 			set
 			{
-				_statusText = value ?? string.Empty;
+				_statusText = value;
 				UpdateLabels();
 			}
 		}
@@ -121,7 +121,7 @@ namespace LibreRally.HUD
 			get => _outGaugeSummary;
 			set
 			{
-				_outGaugeSummary = value ?? string.Empty;
+				_outGaugeSummary = value;
 				UpdateLabels();
 			}
 		}
@@ -134,7 +134,7 @@ namespace LibreRally.HUD
 			get => _outSimSummary;
 			set
 			{
-				_outSimSummary = value ?? string.Empty;
+				_outSimSummary = value;
 				UpdateLabels();
 			}
 		}

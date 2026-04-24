@@ -1,13 +1,10 @@
-using System;
-using System.IO;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
-using Xunit;
 
 namespace LibreRally.Tests
 {
 	/// <summary>
-	/// Verifies the beam ng brake control metadata behavior.
+	/// Verifies the beam ng brake control metadata behaviour.
 	/// </summary>
 	public class BeamNgBrakeControlMetadataTests
 	{
@@ -64,7 +61,7 @@ namespace LibreRally.Tests
 				part => part.Name == "sunburst2_DSE_ABS");
 
 			JBeamBrakeControlDefinition brakeControl = Assert.IsType<JBeamBrakeControlDefinition>(absPart.BrakeControl);
-			Assert.True(brakeControl.EnableAbs == true);
+			Assert.True(brakeControl.EnableAbs is true);
 			Assert.True(VehicleLoader.IsAbsEnabled(brakeControl));
 		}
 
@@ -78,9 +75,9 @@ namespace LibreRally.Tests
 			var parts = JBeamParser.ParseFile(CombineRelativePath(vehicleFolder, "sunburst2_brakes.jbeam"));
 
 			JBeamBrakeControlDefinition targetPart = Assert.IsType<JBeamBrakeControlDefinition>(
-				Assert.Single(parts, part => part.BrakeControl?.AbsSlipRatioTarget == 0.15f).BrakeControl);
+				Assert.Single(parts, part => part.BrakeControl is { AbsSlipRatioTarget: 0.15f }).BrakeControl);
 			JBeamBrakeControlDefinition legacyPart = Assert.IsType<JBeamBrakeControlDefinition>(
-				Assert.Single(parts, part => part.BrakeControl?.HasLegacyAbsController == true).BrakeControl);
+				Assert.Single(parts, part => part.BrakeControl is { HasLegacyAbsController: true }).BrakeControl);
 
 			Assert.Equal(0.15f, VehicleLoader.ResolveAbsSlipRatioTarget(targetPart), 3);
 			Assert.True(legacyPart.HasLegacyAbsController);

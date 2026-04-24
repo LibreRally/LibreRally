@@ -1,11 +1,7 @@
-using System;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
 using LibreRally.Vehicle.JBeam;
-using Xunit;
 
 namespace LibreRally.Tests
 {
@@ -151,8 +147,8 @@ namespace LibreRally.Tests
 
 			Assert.True(Directory.Exists(resolved.VehicleFolderPath));
 			Assert.True(File.Exists(Path.Combine(resolved.VehicleFolderPath, "base.pc")));
-			string commonSearchFolder = Assert.Single(resolved.JBeamSearchFolders.Where(path =>
-				path.EndsWith(Path.Combine("vehicles", "common"), StringComparison.OrdinalIgnoreCase)));
+			string commonSearchFolder = Assert.Single(resolved.JBeamSearchFolders, path =>
+				path.EndsWith(Path.Combine("vehicles", "common"), StringComparison.OrdinalIgnoreCase));
 			Assert.True(File.Exists(Path.Combine(commonSearchFolder, "shared", "common_part.jbeam")));
 		}
 

@@ -495,7 +495,7 @@ namespace LibreRally.Vehicle.Content
 				.Select(Path.GetFileName)
 				.Where(fileName => !string.IsNullOrWhiteSpace(fileName))
 				.OrderBy(fileName => fileName, StringComparer.OrdinalIgnoreCase)
-				.ToArray()!;
+				.ToArray();
 			if (configFiles.Length == 0)
 			{
 				return
@@ -1015,7 +1015,7 @@ namespace LibreRally.Vehicle.Content
 
 			if (!string.IsNullOrWhiteSpace(name))
 			{
-				return name!;
+				return name;
 			}
 
 			return vehicleId;
@@ -1076,6 +1076,11 @@ namespace LibreRally.Vehicle.Content
 
 			using (document)
 			{
+				if (document is null)
+				{
+					return default;
+				}
+
 				var root = document.RootElement;
 				return new VehicleInfo(
 					GetOptionalStringProperty(root, "Brand"),
@@ -1094,6 +1099,11 @@ namespace LibreRally.Vehicle.Content
 
 			using (document)
 			{
+				if (document is null)
+                {
+					return default;
+                }
+								
 				var root = document.RootElement;
 				return new VariantInfo(
 					GetOptionalStringProperty(root, "Configuration"),

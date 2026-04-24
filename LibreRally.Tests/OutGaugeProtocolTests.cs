@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
 using LibreRally.Telemetry;
-using Xunit;
 
 namespace LibreRally.Tests
 {

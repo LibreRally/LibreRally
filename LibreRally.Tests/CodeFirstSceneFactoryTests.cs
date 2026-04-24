@@ -1,7 +1,4 @@
-using System.Linq;
-using LibreRally;
 using Stride.Engine;
-using Stride.Rendering;
 using Stride.Rendering.Lights;
 
 namespace LibreRally.Tests
@@ -21,26 +18,26 @@ namespace LibreRally.Tests
 			var scene = sceneSetup.Scene;
 			var entities = scene.Entities.ToList();
 
-			var ground = Assert.Single(entities.Where(entity => entity.Name == "Ground"));
+			var ground = Assert.Single(entities, entity => entity.Name == "Ground");
 			Assert.NotNull(ground.Get<ModelComponent>());
 			Assert.NotNull(ground.Get<VehicleSpawner>());
 
-			var camera = Assert.Single(entities.Where(entity => entity.Name == "Camera"));
+			var camera = Assert.Single(entities, entity => entity.Name == "Camera");
 			var cameraComponent = Assert.IsType<CameraComponent>(camera.Get<CameraComponent>());
 			Assert.Same(sceneSetup.MainCamera, cameraComponent);
 			Assert.NotNull(camera.Get<BasicCameraController>());
 			Assert.False(cameraComponent.Slot.IsEmpty);
 
-			var directionalLight = Assert.Single(entities.Where(entity => entity.Name == "Directional light"));
+			var directionalLight = Assert.Single(entities, entity => entity.Name == "Directional light");
 			var lightComponent = directionalLight.Get<LightComponent>();
 			Assert.NotNull(lightComponent);
-			Assert.IsType<LightDirectional>(lightComponent!.Type);
+			Assert.IsType<LightDirectional>(lightComponent.Type);
 
-			var skyboxEntity = Assert.Single(entities.Where(entity => entity.Name == "Skybox"));
+			var skyboxEntity = Assert.Single(entities, entity => entity.Name == "Skybox");
 			Assert.NotNull(skyboxEntity.Get<BackgroundComponent>());
 			var skyboxLightComponent = skyboxEntity.Get<LightComponent>();
 			Assert.NotNull(skyboxLightComponent);
-			Assert.IsType<LightSkybox>(skyboxLightComponent!.Type);
+			Assert.IsType<LightSkybox>(skyboxLightComponent.Type);
 		}
 
 		/// <summary>

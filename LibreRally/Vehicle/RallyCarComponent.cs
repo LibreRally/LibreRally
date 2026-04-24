@@ -1692,7 +1692,7 @@ namespace LibreRally.Vehicle
 			var rayLength = wheelRadius * 2f + GroundProbeMargin * 2f;
 
 			wheelSettings.GroundProbeHits.Clear();
-			simulation.RayCastPenetrating(in rayOrigin, in rayDirection, rayLength, wheelSettings.GroundProbeHits, CollisionMask.Everything);
+			simulation.RayCastPenetrating(in rayOrigin, in rayDirection, rayLength, wheelSettings.GroundProbeHits);
 
 			var primaryDistance = float.PositiveInfinity;
 			var secondaryDistance = float.PositiveInfinity;

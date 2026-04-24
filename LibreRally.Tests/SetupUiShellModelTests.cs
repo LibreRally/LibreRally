@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using LibreRally.HUD;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;

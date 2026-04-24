@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Rendering;
 using Stride.Core.Mathematics;
@@ -65,9 +63,9 @@ namespace LibreRally.Tests
 		public void ComposeInstanceDiffuseColor_ShouldTintMaskedChannels()
 		{
 			var palette = new BeamNgPaintPalette(
-				new BeamNgPaintColor("Paint1", new Color4(1f, 0f, 0f, 1f)),
-				new BeamNgPaintColor("Paint2", new Color4(0f, 1f, 0f, 1f)),
-				new BeamNgPaintColor("Paint3", new Color4(0f, 0f, 1f, 1f)));
+				new BeamNgPaintColor("Paint1", new Color4(1f, 0f, 0f)),
+				new BeamNgPaintColor("Paint2", new Color4(0f, 1f, 0f)),
+				new BeamNgPaintColor("Paint3", new Color4(0f, 0f, 1f)));
 			var baseColor = new Color(128, 128, 128, 255);
 
 			Assert.Equal(

@@ -98,7 +98,7 @@ namespace LibreRally.HUD
 			get => _statusText;
 			set
 			{
-				_statusText = value ?? string.Empty;
+				_statusText = value;
 				UpdateLabels();
 			}
 		}

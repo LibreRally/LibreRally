@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
@@ -8,7 +5,6 @@ using LibreRally.Vehicle.Physics;
 using LibreRally.Vehicle.Rendering;
 using StrideMatrix = Stride.Core.Mathematics.Matrix;
 using StrideVector3 = Stride.Core.Mathematics.Vector3;
-using Xunit;
 
 namespace LibreRally.Tests
 {

@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Rendering;

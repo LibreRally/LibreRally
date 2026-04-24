@@ -145,7 +145,9 @@ namespace LibreRally.Vehicle.Rendering
 			foreach (var visualScene in visualScenes)
 			{
 				foreach (var node in visualScene.Elements(Ns + "node"))
+				{
 					AddSceneMeshes(node, Matrix4x4.Identity, geometryLibrary, result);
+				}
 			}
 
 			return result;
@@ -174,11 +176,15 @@ namespace LibreRally.Vehicle.Rendering
 				}
 
 				foreach (var mesh in geometry.Meshes)
+				{
 					result.Add(BakeSceneTransform(mesh, worldTransform, nodeName));
+				}
 			}
 
 			foreach (var childNode in node.Elements(Ns + "node"))
+			{
 				AddSceneMeshes(childNode, worldTransform, geometryLibrary, result);
+			}
 		}
 
 		private static Matrix4x4 ParseNodeTransform(XElement node)

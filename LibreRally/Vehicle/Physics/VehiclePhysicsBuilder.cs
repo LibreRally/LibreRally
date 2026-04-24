@@ -431,10 +431,12 @@ namespace LibreRally.Vehicle.Physics
 			if (allFoundWheels.Count < 4)
 			{
 				foreach (var (k, v) in EstimateWheelPositions(def))
+				{
 					if (!allFoundWheels.Contains(k))
 					{
 						wheelGroupNodes[k] = v;
 					}
+				}
 			}
 
 			// ── Step 3: Spring parameters from .pc vars, with beam-derived fallback ──
@@ -992,7 +994,11 @@ namespace LibreRally.Vehicle.Physics
 			}
 
 			var sum = System.Numerics.Vector3.Zero;
-			foreach (var p in list) sum += p;
+			foreach (var p in list)
+			{
+				sum += p;
+			}
+
 			sum /= list.Count;
 			return BeamNGToStride(sum);
 		}

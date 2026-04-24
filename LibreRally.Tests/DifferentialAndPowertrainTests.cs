@@ -1,8 +1,6 @@
-using System.Collections.Generic;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
-using Xunit;
 
 namespace LibreRally.Tests
 {

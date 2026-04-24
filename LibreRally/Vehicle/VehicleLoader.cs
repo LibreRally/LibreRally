@@ -1230,7 +1230,7 @@ namespace LibreRally.Vehicle
 				Model = BuildWheelCylinderModel(
 					spec.Radius,
 					spec.Width,
-					new Color4(0.09f, 0.09f, 0.09f, 1f))
+					new Color4(0.09f, 0.09f, 0.09f))
 			});
 
 			var rimRadius = Math.Max(spec.Radius * 0.62f, 0.12f);
@@ -1241,7 +1241,7 @@ namespace LibreRally.Vehicle
 				Model = BuildWheelCylinderModel(
 					rimRadius,
 					rimWidth,
-					new Color4(0.68f, 0.70f, 0.74f, 1f))
+					new Color4(0.68f, 0.70f, 0.74f))
 			});
 			entity.AddChild(rimEntity);
 
@@ -1253,7 +1253,7 @@ namespace LibreRally.Vehicle
 				Model = BuildWheelCylinderModel(
 					hubRadius,
 					hubWidth,
-					new Color4(0.26f, 0.28f, 0.31f, 1f))
+					new Color4(0.26f, 0.28f, 0.31f))
 			});
 			entity.AddChild(hubEntity);
 
@@ -1376,7 +1376,7 @@ namespace LibreRally.Vehicle
 					VertexBuffers =
 					[
 						new VertexBufferBinding(
-							Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, vertices.ToArray(), GraphicsResourceUsage.Immutable),
+							Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, vertices.ToArray()),
 							VertexPositionNormalTexture.Layout,
 							vertices.Count)
 					],
@@ -1440,7 +1440,9 @@ namespace LibreRally.Vehicle
 					var baseIndex = allVerts.Count;
 					allVerts.AddRange(ConvertToVertexArray(cm.Vertices));
 					foreach (var idx in cm.Indices)
+					{
 						allIndices.Add(idx + baseIndex);
+					}
 				}
 				if (allVerts.Count == 0)
 				{
@@ -1460,7 +1462,7 @@ namespace LibreRally.Vehicle
 						VertexBuffers =
 						[
 							new VertexBufferBinding(
-								Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, allVerts.ToArray(), GraphicsResourceUsage.Immutable),
+								Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, allVerts.ToArray()),
 								VertexPositionNormalTexture.Layout, allVerts.Count)
 						],
 						IndexBuffer = new IndexBufferBinding(
@@ -1530,7 +1532,7 @@ namespace LibreRally.Vehicle
 		{
 			IComputeColor diffuse = texture != null
 				? new ComputeTextureColor(texture)
-				: new ComputeColor(fallbackColor ?? new Color4(0.55f, 0.55f, 0.55f, 1f));
+				: new ComputeColor(fallbackColor ?? new Color4(0.55f, 0.55f, 0.55f));
 
 			return BuildMaterial(diffuse);
 		}
@@ -1797,7 +1799,7 @@ namespace LibreRally.Vehicle
 						VertexBuffers =
 						[
 							new VertexBufferBinding(
-								Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, verts, GraphicsResourceUsage.Immutable),
+								Stride.Graphics.Buffer.Vertex.New(_graphicsDevice, verts),
 								VertexPositionNormalTexture.Layout, verts.Length)
 						],
 						IndexBuffer = new IndexBufferBinding(
@@ -1810,7 +1812,7 @@ namespace LibreRally.Vehicle
 				{
 					Attributes = new MaterialAttributes
 					{
-						Diffuse = new MaterialDiffuseMapFeature(new ComputeColor(new Color4(1f, 0.4f, 0f, 1f))),
+						Diffuse = new MaterialDiffuseMapFeature(new ComputeColor(new Color4(1f, 0.4f, 0f))),
 						DiffuseModel = new MaterialDiffuseLambertModelFeature(),
 					}
 				});
@@ -1889,7 +1891,10 @@ namespace LibreRally.Vehicle
 		{
 			var totalMass = 0f;
 			foreach (var node in definition.Nodes.Values)
+			{
 				totalMass += node.Weight;
+			}
+
 			return totalMass > 100f ? totalMass : 1200f; // fallback
 		}
 

@@ -1,5 +1,3 @@
-using LibreRally;
-
 namespace LibreRally.Tests
 {
 	/// <summary>

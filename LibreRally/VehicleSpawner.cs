@@ -7,7 +7,6 @@ using LibreRally.HUD;
 using LibreRally.Telemetry;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
-using LibreRally.Vehicle.Physics;
 using Stride.Core.Mathematics;
 using Stride.Engine;
 using Stride.Input;
@@ -876,7 +875,9 @@ namespace LibreRally
 			}
 
 			foreach (var s in cameraEntity.GetAll<SyncScript>().ToList())
+			{
 				cameraEntity.Remove(s);
+			}
 
 			cameraEntity.Add(new RallyCameraScript { Target = chassis, CarComponent = car, });
 		}

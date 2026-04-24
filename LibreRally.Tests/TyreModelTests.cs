@@ -1446,7 +1446,7 @@ namespace LibreRally.Tests
 			// At full noise, the factor must stay within ±8% of 1.0
 			for (int i = 0; i < 100; i++)
 			{
-				float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, (float)i * 0.5f, 0.01f);
+				float factor = TyreModel.ComputeRoadNoiseGripFactor(1.0f, i * 0.5f, 0.01f);
 				Assert.InRange(factor, 0.92f - 0.001f, 1.08f + 0.001f);
 			}
 		}

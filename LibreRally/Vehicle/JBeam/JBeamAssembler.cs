@@ -120,10 +120,10 @@ namespace LibreRally.Vehicle.JBeam
 			// Merge into VehicleDefinition
 			var def = Merge(mainPart.Name, vehicleFolder, activeParts);
 			// Attach vars so physics builder can use them
-			if (vars != null)
+			
+			foreach (var kv in vars)
 			{
-				foreach (var kv in vars)
-					def.Vars[kv.Key] = kv.Value;
+				def.Vars[kv.Key] = kv.Value;
 			}
 
 			return def;
@@ -218,10 +218,12 @@ namespace LibreRally.Vehicle.JBeam
 			// Build a map: slotType → part name, for identifying detachable vs chassis
 			var slotTypeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			foreach (var p in resolvedParts)
+			{
 				if (!string.IsNullOrEmpty(p.SlotType))
 				{
 					slotTypeToPartName[p.SlotType] = p.Name;
 				}
+			}
 
 			// Merge nodes and beams from all resolved parts
 			var nodeToPartName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -246,6 +248,7 @@ namespace LibreRally.Vehicle.JBeam
 				}
 
 				foreach (var beam in part.Beams)
+				{
 					allBeams.Add(new AssembledBeam(
 						beam.Id1, beam.Id2,
 						beam.Properties.Spring,
@@ -254,8 +257,10 @@ namespace LibreRally.Vehicle.JBeam
 						beam.Properties.Strength,
 						beam.Properties.BeamType,
 						beam.Properties.DeformGroup));
+				}
 
 				foreach (var fb in part.FlexBodies)
+				{
 					allFlexBodies.Add(new AssembledFlexBody(
 						fb.Mesh,
 						fb.Groups,
@@ -264,6 +269,7 @@ namespace LibreRally.Vehicle.JBeam
 						fb.Scale,
 						part.Name,
 						part.SlotType));
+				}
 
 				allPowertrainDevices.AddRange(part.PowertrainDevices);
 				allPressureWheels.AddRange(part.PressureWheels);
@@ -530,7 +536,9 @@ namespace LibreRally.Vehicle.JBeam
 					.ToList();
 
 				foreach (var id in exclusiveNodes)
+				{
 					usedNodeIds.Add(id);
+				}
 
 				// Break strength = min beamStrength of beams in any deformGroup that crosses
 				// from this part's nodes to chassis nodes

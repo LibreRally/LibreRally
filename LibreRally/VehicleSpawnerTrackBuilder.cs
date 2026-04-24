@@ -62,11 +62,11 @@ namespace LibreRally
 					Path.Combine(AppContext.BaseDirectory, "Resources", "Track Materials"));
 				var segments = new[]
 				{
-					new TrackSegmentDefinition("test_track_tarmac", new Vector3(0f, 0.5f, 0f), Quaternion.Identity, new Vector3(60f, 0.2f, 16f), SurfaceType.Tarmac, new Color4(0.21f, 0.21f, 0.22f, 1f), 7.5f, 1.35f),
-					new TrackSegmentDefinition("test_track_gravel", new Vector3(-22f, 0.5f, 26f), Quaternion.Identity, new Vector3(28f, 0.25f, 14f), SurfaceType.Gravel, new Color4(0.47f, 0.40f, 0.29f, 1f), 5f, 1.05f),
-					new TrackSegmentDefinition("test_track_snow", new Vector3(22f, 0.5f, 26f), Quaternion.Identity, new Vector3(28f, 0.25f, 14f), SurfaceType.Snow, new Color4(0.88f, 0.9f, 0.92f, 1f), 5f, 0.85f),
-					new TrackSegmentDefinition("test_track_banked", new Vector3(38f, 1.8f, -6f), Quaternion.RotationZ(BankedSectionRollAngleRadians), new Vector3(20f, 0.25f, 28f), SurfaceType.Tarmac, new Color4(0.24f, 0.24f, 0.25f, 1f), 4f, 1.2f),
-					new TrackSegmentDefinition("test_track_incline", new Vector3(0f, 1.7f, 40f), Quaternion.RotationX(InclineSectionPitchAngleRadians), new Vector3(12f, 0.25f, 42f), SurfaceType.Tarmac, new Color4(0.23f, 0.23f, 0.24f, 1f), 5.25f, 1.25f),
+					new TrackSegmentDefinition("test_track_tarmac", new Vector3(0f, 0.5f, 0f), Quaternion.Identity, new Vector3(60f, 0.2f, 16f), SurfaceType.Tarmac, new Color4(0.21f, 0.21f, 0.22f), 7.5f, 1.35f),
+					new TrackSegmentDefinition("test_track_gravel", new Vector3(-22f, 0.5f, 26f), Quaternion.Identity, new Vector3(28f, 0.25f, 14f), SurfaceType.Gravel, new Color4(0.47f, 0.40f, 0.29f), 5f, 1.05f),
+					new TrackSegmentDefinition("test_track_snow", new Vector3(22f, 0.5f, 26f), Quaternion.Identity, new Vector3(28f, 0.25f, 14f), SurfaceType.Snow, new Color4(0.88f, 0.9f, 0.92f), 5f, 0.85f),
+					new TrackSegmentDefinition("test_track_banked", new Vector3(38f, 1.8f, -6f), Quaternion.RotationZ(BankedSectionRollAngleRadians), new Vector3(20f, 0.25f, 28f), SurfaceType.Tarmac, new Color4(0.24f, 0.24f, 0.25f), 4f, 1.2f),
+					new TrackSegmentDefinition("test_track_incline", new Vector3(0f, 1.7f, 40f), Quaternion.RotationX(InclineSectionPitchAngleRadians), new Vector3(12f, 0.25f, 42f), SurfaceType.Tarmac, new Color4(0.23f, 0.23f, 0.24f), 5.25f, 1.25f),
 				};
 
 				foreach (var segment in segments)
@@ -110,7 +110,7 @@ namespace LibreRally
 					VertexBuffers =
 					[
 						new VertexBufferBinding(
-							Stride.Graphics.Buffer.Vertex.New(graphicsDevice, vertices, GraphicsResourceUsage.Immutable),
+							Stride.Graphics.Buffer.Vertex.New(graphicsDevice, vertices),
 							VertexPositionNormalTexture.Layout,
 							vertices.Length),
 					],

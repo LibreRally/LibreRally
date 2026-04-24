@@ -128,20 +128,20 @@ namespace LibreRally.Vehicle.Rendering
 	{
 		private static readonly LinkTemplate[] Templates =
 		[
-			new("front_upperarm", "wheel_FL", "uppermounts_F", "upperarm_F", 0.038f, new Color4(0.28f, 0.30f, 0.32f, 1f)),
-			new("front_upperarm", "wheel_FR", "uppermounts_F", "upperarm_F", 0.038f, new Color4(0.28f, 0.30f, 0.32f, 1f)),
-			new("front_lowerarm", "wheel_FL", "lowermounts_F", "lowerarm_F", 0.045f, new Color4(0.24f, 0.25f, 0.27f, 1f)),
-			new("front_lowerarm", "wheel_FR", "lowermounts_F", "lowerarm_F", 0.045f, new Color4(0.24f, 0.25f, 0.27f, 1f)),
-			new("front_coilover", "wheel_FL", "shocktop_F", "lowerarm_F", 0.030f, new Color4(0.86f, 0.73f, 0.20f, 1f)),
-			new("front_coilover", "wheel_FR", "shocktop_F", "lowerarm_F", 0.030f, new Color4(0.86f, 0.73f, 0.20f, 1f)),
-			new("front_tierod", "wheel_FL", "tierod_M", "tierod_F", 0.022f, new Color4(0.64f, 0.66f, 0.70f, 1f)),
-			new("front_tierod", "wheel_FR", "tierod_M", "tierod_F", 0.022f, new Color4(0.64f, 0.66f, 0.70f, 1f)),
-			new("rear_trailingarm", "wheel_RL", "lowermounts_R", "lowerarm_R", 0.046f, new Color4(0.24f, 0.25f, 0.27f, 1f)),
-			new("rear_trailingarm", "wheel_RR", "lowermounts_R", "lowerarm_R", 0.046f, new Color4(0.24f, 0.25f, 0.27f, 1f)),
-			new("rear_coilover", "wheel_RL", "shocktop_R", "shockbottom_R", 0.030f, new Color4(0.86f, 0.73f, 0.20f, 1f)),
-			new("rear_coilover", "wheel_RR", "shocktop_R", "shockbottom_R", 0.030f, new Color4(0.86f, 0.73f, 0.20f, 1f)),
-			new("rear_halfshaft", "wheel_RL", "transaxle", "hub_R", 0.024f, new Color4(0.36f, 0.38f, 0.42f, 1f)),
-			new("rear_halfshaft", "wheel_RR", "transaxle", "hub_R", 0.024f, new Color4(0.36f, 0.38f, 0.42f, 1f)),
+			new("front_upperarm", "wheel_FL", "uppermounts_F", "upperarm_F", 0.038f, new Color4(0.28f, 0.30f, 0.32f)),
+			new("front_upperarm", "wheel_FR", "uppermounts_F", "upperarm_F", 0.038f, new Color4(0.28f, 0.30f, 0.32f)),
+			new("front_lowerarm", "wheel_FL", "lowermounts_F", "lowerarm_F", 0.045f, new Color4(0.24f, 0.25f, 0.27f)),
+			new("front_lowerarm", "wheel_FR", "lowermounts_F", "lowerarm_F", 0.045f, new Color4(0.24f, 0.25f, 0.27f)),
+			new("front_coilover", "wheel_FL", "shocktop_F", "lowerarm_F", 0.030f, new Color4(0.86f, 0.73f, 0.20f)),
+			new("front_coilover", "wheel_FR", "shocktop_F", "lowerarm_F", 0.030f, new Color4(0.86f, 0.73f, 0.20f)),
+			new("front_tierod", "wheel_FL", "tierod_M", "tierod_F", 0.022f, new Color4(0.64f, 0.66f, 0.70f)),
+			new("front_tierod", "wheel_FR", "tierod_M", "tierod_F", 0.022f, new Color4(0.64f, 0.66f, 0.70f)),
+			new("rear_trailingarm", "wheel_RL", "lowermounts_R", "lowerarm_R", 0.046f, new Color4(0.24f, 0.25f, 0.27f)),
+			new("rear_trailingarm", "wheel_RR", "lowermounts_R", "lowerarm_R", 0.046f, new Color4(0.24f, 0.25f, 0.27f)),
+			new("rear_coilover", "wheel_RL", "shocktop_R", "shockbottom_R", 0.030f, new Color4(0.86f, 0.73f, 0.20f)),
+			new("rear_coilover", "wheel_RR", "shocktop_R", "shockbottom_R", 0.030f, new Color4(0.86f, 0.73f, 0.20f)),
+			new("rear_halfshaft", "wheel_RL", "transaxle", "hub_R", 0.024f, new Color4(0.36f, 0.38f, 0.42f)),
+			new("rear_halfshaft", "wheel_RR", "transaxle", "hub_R", 0.024f, new Color4(0.36f, 0.38f, 0.42f)),
 		];
 
 		public static IReadOnlyList<SuspensionVisualLinkSpec> BuildLinkSpecs(VehicleDefinition definition, Physics.VehicleBuilderResult result)

@@ -103,7 +103,7 @@ namespace LibreRally.Vehicle.Physics
 		public DifferentialConfig RearDiff { get; set; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
 
 		/// <summary>Center differential configuration (AWD torque split front/rear).</summary>
-		public DifferentialConfig CenterDiff { get; set; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+		public DifferentialConfig CenterDiff { get; set; } = DifferentialConfig.CreateLimitedSlip(1.8f);
 
 		/// <summary>Whether the front axle receives drive torque.</summary>
 		public bool DriveFrontAxle { get; set; } = true;

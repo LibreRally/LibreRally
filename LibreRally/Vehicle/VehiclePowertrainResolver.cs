@@ -46,7 +46,7 @@ namespace LibreRally.Vehicle
 		/// <summary>Gets the resolved rear differential configuration.</summary>
 		public DifferentialConfig RearDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(3.0f, 0.35f);
 		/// <summary>Gets the resolved centre differential configuration.</summary>
-		public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+		public DifferentialConfig CenterDiff { get; init; } = DifferentialConfig.CreateLimitedSlip(1.8f);
 
 		/// <summary>Gets the engine oil volume in litres.</summary>
 		public float OilVolumeLiters { get; init; }
@@ -410,11 +410,11 @@ namespace LibreRally.Vehicle
 				var hasRear = wheels.Overlaps(RearWheelCodes);
 				if (hasFront && hasRear)
 				{
-					return MapDifferential(device, DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f));
+					return MapDifferential(device, DifferentialConfig.CreateLimitedSlip(1.8f));
 				}
 			}
 
-			return DifferentialConfig.CreateLimitedSlip(1.8f, 0.3f);
+			return DifferentialConfig.CreateLimitedSlip(1.8f);
 		}
 
 		private static HashSet<string> CollectConnectedWheels(

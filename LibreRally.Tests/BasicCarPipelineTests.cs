@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using LibreRally.Vehicle.Physics;
@@ -8,8 +5,6 @@ using LibreRally.Vehicle.Rendering;
 using Stride.BepuPhysics.Constraints;
 using Stride.BepuPhysics.Definitions;
 using Stride.Core.Mathematics;
-using Stride.Engine;
-using Xunit;
 
 namespace LibreRally.Tests
 {
@@ -175,11 +170,11 @@ namespace LibreRally.Tests
 			Assert.Equal("wheel_FR", result.WheelFR.Name);
 			Assert.Equal("wheel_RL", result.WheelRL.Name);
 			Assert.Equal("wheel_RR", result.WheelRR.Name);
-			Assert.Equal(0.05f, wheelFlBody!.FrictionCoefficient, 3);
+			Assert.Equal(0.05f, wheelFlBody.FrictionCoefficient, 3);
 			Assert.Equal(InterpolationMode.Interpolated, wheelFlBody.InterpolationMode);
-			Assert.Equal(InterpolationMode.Interpolated, chassisBody!.InterpolationMode);
+			Assert.Equal(InterpolationMode.Interpolated, chassisBody.InterpolationMode);
 
-			foreach (WheelSettings wheelSettings in new[] { wheelFlSettings!, wheelFrSettings!, wheelRlSettings!, wheelRrSettings! })
+			foreach (WheelSettings wheelSettings in new[] { wheelFlSettings, wheelFrSettings, wheelRlSettings, wheelRrSettings })
 			{
 				Assert.Equal(Vector3.Zero, wheelSettings.SuspensionLocalOffsetB);
 				Assert.InRange(wheelSettings.SuspensionLocalAxis.Length(), 0.99f, 1.01f);
@@ -190,7 +185,7 @@ namespace LibreRally.Tests
 
 			LinearAxisLimitConstraintComponent? flLimit = result.WheelFL.Get<LinearAxisLimitConstraintComponent>();
 			Assert.NotNull(flLimit);
-			Assert.Equal(wheelFlSettings!.SuspensionLocalOffsetA, flLimit!.LocalOffsetA);
+			Assert.Equal(wheelFlSettings.SuspensionLocalOffsetA, flLimit.LocalOffsetA);
 			Assert.Equal(wheelFlSettings.SuspensionLocalOffsetB, flLimit.LocalOffsetB);
 			Assert.Equal(wheelFlSettings.SuspensionLocalAxis, flLimit.LocalAxis);
 			Assert.Equal(wheelFlSettings.SuspensionMinimumOffset, flLimit.MinimumOffset);

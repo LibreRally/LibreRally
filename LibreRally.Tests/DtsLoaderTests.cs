@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
 using System.Numerics;
 using LibreRally.Vehicle.Rendering;
@@ -169,6 +167,7 @@ namespace LibreRally.Tests
 		/// <summary>
 		/// Verifies that load fgx dts contains expected body meshes.
 		/// </summary>
+		/// <exception cref="System.IO.FileNotFoundException">Thrown when the FGX is not found.</exception>
 		[Fact]
 		public void Load_FgxDts_ContainsExpectedBodyMeshes()
 		{
@@ -526,8 +525,16 @@ namespace LibreRally.Tests
 			writer.Write(sizeAll);
 			writer.Write(start16);
 			writer.Write(start8);
-			foreach (uint value in data32) writer.Write(value);
-			foreach (ushort value in data16) writer.Write(value);
+			foreach (uint value in data32)
+			{
+				writer.Write(value);
+			}
+
+			foreach (ushort value in data16)
+			{
+				writer.Write(value);
+			}
+
 			writer.Write(data8.ToArray());
 
 			writer.Write(0); // numSequences

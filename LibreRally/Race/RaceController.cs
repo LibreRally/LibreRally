@@ -67,7 +67,9 @@ namespace LibreRally.Race
 		{
 			_countdown = CountdownDuration;
 			foreach (var cp in Checkpoints)
+			{
 				cp.Triggered += OnCheckpointTriggered;
+			}
 		}
 
 		/// <summary>

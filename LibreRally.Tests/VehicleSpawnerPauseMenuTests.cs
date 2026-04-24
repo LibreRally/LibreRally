@@ -1,5 +1,3 @@
-using LibreRally;
-
 namespace LibreRally.Tests
 {
 	/// <summary>
@@ -17,25 +15,23 @@ namespace LibreRally.Tests
 
 			Assert.Collection(
 				entries,
-				entry =>
+				entry => AssertEntry(entry, PauseMenuAction.ResumeDriving, "Resume Driving"),
+				entry => AssertEntry(entry, PauseMenuAction.ResetVehicle, "Reset Vehicle", "spawn point"),
+				entry => AssertEntry(entry, PauseMenuAction.GarageSetup, "Garage Setup"),
+				entry => AssertEntry(entry, PauseMenuAction.VehicleSelect, "Vehicle Select"),
+				entry => AssertEntry(entry, PauseMenuAction.PhysicsCalibration, "Physics Calibration"),
+				entry => AssertEntry(entry, PauseMenuAction.Telemetry, "Telemetry"));
+
+			static void AssertEntry(PauseMenuEntry entry, PauseMenuAction action, string title, string? descriptionPart = null)
+			{
+				Assert.Equal(action, entry.Action);
+				Assert.Equal(title, entry.Item.Title);
+
+				if (descriptionPart != null)
 				{
-					Assert.Equal(PauseMenuAction.ResumeDriving, entry.Action);
-					Assert.Equal("Resume Driving", entry.Item.Title);
-				},
-				entry =>
-				{
-					Assert.Equal(PauseMenuAction.ResetVehicle, entry.Action);
-					Assert.Equal("Reset Vehicle", entry.Item.Title);
-					Assert.Contains("spawn point", entry.Item.Description, StringComparison.OrdinalIgnoreCase);
-				},
-				entry => Assert.Equal(PauseMenuAction.GarageSetup, entry.Action),
-				entry => Assert.Equal(PauseMenuAction.VehicleSelect, entry.Action),
-				entry => Assert.Equal(PauseMenuAction.PhysicsCalibration, entry.Action),
-				entry =>
-				{
-					Assert.Equal(PauseMenuAction.Telemetry, entry.Action);
-					Assert.Equal("Telemetry", entry.Item.Title);
-				});
+					Assert.Contains(descriptionPart, entry.Item.Description, StringComparison.OrdinalIgnoreCase);
+				}
+			}
 		}
 
 		/// <summary>

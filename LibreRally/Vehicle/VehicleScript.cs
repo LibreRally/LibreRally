@@ -148,22 +148,6 @@ namespace LibreRally.Vehicle
 				var brakeImpulse = -vel * (BrakeTorque * multiplier * dt);
 				_chassis.ApplyImpulse(brakeImpulse, Vector3.Zero);
 			}
-
-			// ── Anti-roll (keep upright) ───────────────────────────────────────
-			ApplyAntiRoll(dt);
-		}
-
-		private void ApplyAntiRoll(float dt)
-		{
-			if (_chassis == null)
-			{
-				return;
-			}
-
-			var up = Vector3.Transform(Vector3.UnitY, _chassis.Entity.Transform.Rotation);
-			var worldUp = Vector3.UnitY;
-			var rollCorrection = Vector3.Cross(up, worldUp);
-			_chassis.AngularVelocity += rollCorrection * 8f * dt;
 		}
 	}
 }

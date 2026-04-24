@@ -847,9 +847,9 @@ namespace LibreRally.Vehicle.JBeam
 						Title = items.Count > 7 ? SafeGetString(items[7]) : "",
 						Description = items.Count > 8 ? SafeGetString(items[8]) : "",
 						SubCategory = TryGetString(options, "subCategory") ?? string.Empty,
-						MinDisplayValue = TryGetOptionalFloat(options, "minDis", null),
-						MaxDisplayValue = TryGetOptionalFloat(options, "maxDis", null),
-						StepDisplayValue = TryGetOptionalFloat(options, "stepDis", null),
+						MinDisplayValue = TryGetOptionalFloat(options, "minDis"),
+						MaxDisplayValue = TryGetOptionalFloat(options, "maxDis"),
+						StepDisplayValue = TryGetOptionalFloat(options, "stepDis"),
 					});
 				}
 			}
@@ -1240,7 +1240,7 @@ namespace LibreRally.Vehicle.JBeam
 
 		private static string ToWheelKey(string name)
 		{
-			var normalized = (name ?? "").Trim().ToUpperInvariant();
+			var normalized = name.Trim().ToUpperInvariant();
 			return normalized switch
 			{
 				"FL" => "wheel_FL",
@@ -2121,7 +2121,11 @@ namespace LibreRally.Vehicle.JBeam
 		public static List<JsonElement> ToList(this JsonElement.ArrayEnumerator enumerator)
 		{
 			var list = new List<JsonElement>();
-			foreach (var item in enumerator) list.Add(item);
+			foreach (var item in enumerator)
+			{
+				list.Add(item);
+			}
+
 			return list;
 		}
 	}

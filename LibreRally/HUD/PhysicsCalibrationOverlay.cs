@@ -148,7 +148,7 @@ namespace LibreRally.HUD
 			get => _vehicleName;
 			set
 			{
-				var newValue = value ?? "LibreRally";
+				var newValue = value;
 				if (string.Equals(_vehicleName, newValue, StringComparison.Ordinal))
 				{
 					return;
@@ -165,7 +165,7 @@ namespace LibreRally.HUD
 			get => _statusText;
 			set
 			{
-				var newValue = value ?? string.Empty;
+				var newValue = value;
 				if (string.Equals(_statusText, newValue, StringComparison.Ordinal))
 				{
 					return;
