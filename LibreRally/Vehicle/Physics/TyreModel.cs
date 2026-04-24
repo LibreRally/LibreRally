@@ -196,7 +196,7 @@ namespace LibreRally.Vehicle.Physics
 
 		/// <summary>
 		/// Wheel rotational inertia (kg·m²). Governs spin-up/spin-down response.
-		/// Typical values: 0.5–1.5 kg·m² for passenger/rally tyres.
+		/// Typical values: 1.2–1.8 kg·m² for rally wheels.
 		/// When set to 0 (default), inertia is estimated from normal load and radius.
 		/// <para>angularAccel = appliedTorque / WheelInertia</para>
 		/// Reference: Milliken, RCVD §2.3, wheel inertia.
@@ -540,6 +540,7 @@ namespace LibreRally.Vehicle.Physics
 		private const float ReferenceTyreWidth = 0.205f;
 		private const float ReferenceContactPatchStiffness = 40000f;
 		private const float KilopascalsToPascals = 1000f;
+		private const float MinimumRealisticWheelInertia = 1.2f;
 		private const float RollingRadiusDeflectionDivisor = 3f;
 		private const float SurfaceDeformationBrushSoftening = 0.15f;
 		/// <summary>
@@ -735,6 +736,7 @@ namespace LibreRally.Vehicle.Physics
 			var wheelInertia = WheelInertia > 0f
 				? WheelInertia
 				: ComputeEstimatedWheelInertia(MathF.Max(normalLoad, ReferenceLoad));
+			wheelInertia = MathF.Max(wheelInertia, MinimumRealisticWheelInertia);
 			var brakeReactionTorque = ComputeBrakeReactionTorque(
 				brakeTorque,
 				state.AngularVelocity,
@@ -785,8 +787,7 @@ namespace LibreRally.Vehicle.Physics
 			// Reference: Pacejka, §2.2, Eq. 2.5.
 			var wheelLinearSpeed = predictedAngularVelocity * effectiveRollingRadius;
 			var absVx = MathF.Abs(longitudinalVelocity);
-			var slipReferenceSpeed = MathF.Max(absVx, MathF.Abs(wheelLinearSpeed));
-			var denominator = MathF.Max(slipReferenceSpeed, MinSpeed);
+			var denominator = MathF.Max(absVx, MinSpeed);
 			var slipRatio = (wheelLinearSpeed - longitudinalVelocity) / denominator;
 			slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
 			state.SlipRatio = slipRatio;
@@ -1052,10 +1053,10 @@ namespace LibreRally.Vehicle.Physics
 
 			// ── Wheel angular velocity integration ───────────────────────────────
 			// Iω̇ = T_drive − T_brake − T_tyre
-			// Use the same net longitudinal force that is applied to the chassis so
-			// rolling resistance produces a matching resistive wheel torque.
-			// Reference: basic rotational dynamics, F = ma analogy for rotation.
-			var tyreReactionTorque = longitudinalForce * effectiveRollingRadius;
+			// Tyre reaction torque is generated from the longitudinal contact-patch force
+			// and must oppose wheel rotation. Keep this term separate from rolling/carcass
+			// resistances to preserve explicit torque flow through the tyre model.
+			var tyreReactionTorque = tyreLongitudinalForce * effectiveRollingRadius;
 			state.TyreReactionTorque = tyreReactionTorque;
 			IntegrateWheelAngularVelocity(
 				ref state,
@@ -1734,7 +1735,7 @@ namespace LibreRally.Vehicle.Physics
 				? Math.Clamp(hubWidth / MathF.Max(Width, 0.05f), 0.6f, 1.5f)
 				: 1f;
 			var polarRadiusSquared = 0.5f * (outerRadius * outerRadius + innerRadius * innerRadius);
-			return MathF.Max(0.5f, effectiveMass * polarRadiusSquared * widthRatio * InertiaScalar);
+			return MathF.Max(MinimumRealisticWheelInertia, effectiveMass * polarRadiusSquared * widthRatio * InertiaScalar);
 		}
 
 		internal float ComputeEffectiveRollingRadius(float normalLoad)
