@@ -1028,17 +1028,7 @@ namespace LibreRally
 		}
 
 		private static string? NormalizeConfigSelection(string? configFileName)
-		{
-			if (string.IsNullOrWhiteSpace(configFileName))
-			{
-				return null;
-			}
-
-			var trimmed = Path.GetFileName(configFileName.Trim());
-			return Path.GetExtension(trimmed).Equals(".pc", StringComparison.OrdinalIgnoreCase)
-				? trimmed
-				: trimmed + ".pc";
-		}
+			=> BeamNgVehicleCatalog.NormalizeConfigFileName(configFileName);
 
 		private void AttachCamera(Entity chassis, RallyCarComponent car)
 		{

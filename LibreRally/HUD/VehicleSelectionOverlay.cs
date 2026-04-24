@@ -386,7 +386,7 @@ namespace LibreRally.HUD
 
 		private Widget CreateThumbnailWidget(BeamNgVehicleVariantDescriptor vehicle)
 		{
-			var frame = new Panel { Width = 160, Height = 90, Background = UnselectedItemBrush, };
+			var frame = new Panel { Width = 160, Height = 90, };
 
 			var renderable = TryGetThumbnailRegion(vehicle.ThumbnailPath);
 			if (renderable != null)

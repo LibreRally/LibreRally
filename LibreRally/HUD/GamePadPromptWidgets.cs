@@ -49,8 +49,31 @@ namespace LibreRally.HUD
 			"Black",
 			"128w");
 
+		private static readonly object CacheSync = new();
 		private static readonly Dictionary<string, Texture> TexturesByPath = new(StringComparer.OrdinalIgnoreCase);
 		private static readonly Dictionary<string, TextureRegion?> RegionsByPath = new(StringComparer.OrdinalIgnoreCase);
+
+		static GamePadPromptWidgets()
+		{
+			AppDomain.CurrentDomain.ProcessExit += (_, _) => DisposeCachedTextures();
+		}
+
+		/// <summary>
+		/// Disposes all cached GPU textures and clears the prompt icon caches.
+		/// </summary>
+		internal static void DisposeCachedTextures()
+		{
+			lock (CacheSync)
+			{
+				foreach (var texture in TexturesByPath.Values)
+				{
+					texture.Dispose();
+				}
+
+				TexturesByPath.Clear();
+				RegionsByPath.Clear();
+			}
+		}
 
 		/// <summary>
 		/// Creates a controller prompt widget row for the supplied prompt list.
@@ -112,14 +135,22 @@ namespace LibreRally.HUD
 		private static TextureRegion? TryGetRegion(Game game, GamePadPromptIcon icon)
 		{
 			var iconPath = ResolveIconPath(icon);
-			if (RegionsByPath.TryGetValue(iconPath, out var cached))
+
+			lock (CacheSync)
 			{
-				return cached;
+				if (RegionsByPath.TryGetValue(iconPath, out var cached))
+				{
+					return cached;
+				}
 			}
 
 			if (!File.Exists(iconPath))
 			{
-				RegionsByPath[iconPath] = null;
+				lock (CacheSync)
+				{
+					RegionsByPath[iconPath] = null;
+				}
+
 				return null;
 			}
 
@@ -129,13 +160,22 @@ namespace LibreRally.HUD
 				using var image = StrideTextureImage.Load(stream);
 				var texture = Texture.New(game.GraphicsDevice, image);
 				var region = new TextureRegion(texture);
-				TexturesByPath[iconPath] = texture;
-				RegionsByPath[iconPath] = region;
+
+				lock (CacheSync)
+				{
+					TexturesByPath[iconPath] = texture;
+					RegionsByPath[iconPath] = region;
+				}
+
 				return region;
 			}
 			catch
 			{
-				RegionsByPath[iconPath] = null;
+				lock (CacheSync)
+				{
+					RegionsByPath[iconPath] = null;
+				}
+
 				return null;
 			}
 		}

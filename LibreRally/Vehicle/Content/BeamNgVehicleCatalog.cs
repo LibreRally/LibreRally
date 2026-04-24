@@ -6,6 +6,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Stride.Core.Diagnostics;
 
 namespace LibreRally.Vehicle.Content
 {
@@ -131,6 +132,7 @@ namespace LibreRally.Vehicle.Content
 	/// <summary>Discovers bundled BeamNG vehicle content and resolves files from folders or archives.</summary>
 	public sealed class BeamNgVehicleCatalog
 	{
+		private static readonly Logger Log = GlobalLogger.GetLogger("BeamNgVehicleCatalog");
 		private static readonly string[] PngFallbackExtensions = [".png", ".jpg", ".jpeg", ".tga"];
 		private static readonly string[] ThumbnailExtensions = [".jpg", ".jpeg", ".png"];
 		private static readonly string[] CommonMetadataExtensions = [".jbeam", ".json", ".pc"];
@@ -1029,7 +1031,7 @@ namespace LibreRally.Vehicle.Content
 			return variantId.Replace('_', ' ');
 		}
 
-		private static string? NormalizeConfigFileName(string? configFileName)
+		internal static string? NormalizeConfigFileName(string? configFileName)
 		{
 			if (string.IsNullOrWhiteSpace(configFileName))
 			{
@@ -1113,8 +1115,19 @@ namespace LibreRally.Vehicle.Content
 				document = JsonDocument.Parse(File.ReadAllText(filePath), JsonOptions);
 				return true;
 			}
-			catch
+			catch (IOException ex)
 			{
+				Log.Debug($"Could not read '{filePath}': {ex.Message}");
+				return false;
+			}
+			catch (UnauthorizedAccessException ex)
+			{
+				Log.Debug($"Access denied reading '{filePath}': {ex.Message}");
+				return false;
+			}
+			catch (JsonException ex)
+			{
+				Log.Debug($"Malformed JSON in '{filePath}': {ex.Message}");
 				return false;
 			}
 		}
