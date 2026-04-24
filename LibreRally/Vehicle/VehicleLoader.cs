@@ -20,13 +20,13 @@ namespace LibreRally.Vehicle
 	/// <summary>
 	/// High-level vehicle loader.
 	/// </summary>
-	public class VehicleLoader
+	public class VehicleLoader : IVehicleLoader
 	{
 		private static readonly Logger Log = GlobalLogger.GetLogger("VehicleLoader");
-		private sealed record ModelSource(string SourcePath, List<ColladaMesh> Meshes, Dictionary<string, string> TextureMap);
-		private sealed record SupplementalModelSource(ModelSource Source, IReadOnlyList<string> RequestedMeshNames);
+		private sealed record SupplementalModelSource(VehicleModelSource Source, IReadOnlyList<string> RequestedMeshNames);
 		private readonly record struct TireSpec(float Radius, float Width);
 		private readonly GraphicsDevice _graphicsDevice;
+		private readonly VehicleModelSourceResolver _modelSourceResolver;
 		private readonly Dictionary<Color4, Model> _suspensionLinkModels = new();
 
 		/// <summary>Creates a vehicle loader that uses the given Stride game services and graphics device.</summary>
@@ -34,6 +34,7 @@ namespace LibreRally.Vehicle
 		public VehicleLoader(Game game)
 		{
 			_graphicsDevice = game.GraphicsDevice;
+			_modelSourceResolver = new VehicleModelSourceResolver();
 		}
 
 		/// <summary>
@@ -502,8 +503,8 @@ namespace LibreRally.Vehicle
 		{
 			try
 			{
-				var baseModelSources = LoadModelSources(folder);
-				var modelSources = new List<ModelSource>(baseModelSources);
+				var baseModelSources = _modelSourceResolver.LoadFromFolder(folder);
+				var modelSources = new List<VehicleModelSource>(baseModelSources);
 				var supplementalModelSources = AddSupplementalColladaSources(modelSources, definition, resolvedVehicle);
 				if (modelSources.Count == 0)
 				{
@@ -616,7 +617,7 @@ namespace LibreRally.Vehicle
 			AttachFallbackTires(result, pcConfig, null);
 		}
 
-		private static ModelSource? SelectMainSourceForChassis(IEnumerable<ModelSource> modelSources, HashSet<string> wheelMeshNames)
+		private static VehicleModelSource? SelectMainSourceForChassis(IEnumerable<VehicleModelSource> modelSources, HashSet<string> wheelMeshNames)
 		{
 			return modelSources
 				.Select(source => new
@@ -684,54 +685,8 @@ namespace LibreRally.Vehicle
 				.ToList();
 		}
 
-		private List<ModelSource> LoadModelSources(string folder)
-		{
-			var modelFiles = Directory.EnumerateFiles(folder, "*.dae", SearchOption.AllDirectories)
-				.Concat(Directory.EnumerateFiles(folder, "*.dts", SearchOption.AllDirectories))
-				.OrderBy(path => Path.GetDirectoryName(path)?.Equals(folder, StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
-				.ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
-				.ToList();
-
-			return LoadModelSourcesFromFiles(modelFiles);
-		}
-
-		private List<ModelSource> LoadModelSourcesFromFiles(IEnumerable<string> modelFiles)
-		{
-			var result = new List<ModelSource>();
-			foreach (var modelFile in modelFiles
-				         .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
-				         .Distinct(StringComparer.OrdinalIgnoreCase))
-			{
-				try
-				{
-					Dictionary<string, string> textureMap;
-					List<ColladaMesh> meshes;
-					if (modelFile.EndsWith(".dae", StringComparison.OrdinalIgnoreCase))
-					{
-						textureMap = ColladaLoader.LoadTextureMap(modelFile);
-						meshes = ColladaLoader.Load(modelFile);
-						Log.Info($"DAE: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
-					}
-					else
-					{
-						textureMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-						meshes = DtsLoader.Load(modelFile);
-						Log.Info($"DTS: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes");
-					}
-
-					result.Add(new ModelSource(modelFile, meshes, textureMap));
-				}
-				catch (Exception ex)
-				{
-					Log.Warning($"Could not load model '{Path.GetFileName(modelFile)}': {ex.Message}");
-				}
-			}
-
-			return result;
-		}
-
 		private IReadOnlyList<SupplementalModelSource> AddSupplementalColladaSources(
-			List<ModelSource> modelSources,
+			List<VehicleModelSource> modelSources,
 			VehicleDefinition definition,
 			BeamNgResolvedVehicle? resolvedVehicle)
 		{
@@ -758,7 +713,7 @@ namespace LibreRally.Vehicle
 			}
 
 			var supplementalSources = new List<SupplementalModelSource>();
-			foreach (var source in LoadModelSourcesFromFiles(supplementalFiles))
+			foreach (var source in _modelSourceResolver.LoadFromFiles(supplementalFiles))
 			{
 				modelSources.Add(source);
 				var requestedMeshNames = GetMatchedMeshNames(source.Meshes, missingMeshNames);
@@ -813,7 +768,7 @@ namespace LibreRally.Vehicle
 			string vehicleName,
 			string vehicleFolder,
 			Dictionary<string, BeamNgMaterialTextureSet> jsonMaterials,
-			ModelSource source,
+			VehicleModelSource source,
 			List<ColladaMesh> chassisMeshes,
 			BeamNgPaintPalette? defaultPaintPalette)
 		{
@@ -841,7 +796,7 @@ namespace LibreRally.Vehicle
 
 		private int AttachWheelFlexBodyMeshes(
 			VehicleDefinition definition,
-			List<ModelSource> modelSources,
+			List<VehicleModelSource> modelSources,
 			Dictionary<string, Entity> wheelEntities,
 			HashSet<string> wheelMeshNames,
 			Dictionary<string, int> tireLikeAttachments,
@@ -986,9 +941,9 @@ namespace LibreRally.Vehicle
 		}
 
 		private static bool TryFindGeometry(
-			IEnumerable<ModelSource> modelSources,
+			IEnumerable<VehicleModelSource> modelSources,
 			string geometryName,
-			out ModelSource source,
+			out VehicleModelSource source,
 			out List<ColladaMesh> meshes)
 		{
 			foreach (var candidate in modelSources)

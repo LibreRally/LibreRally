@@ -172,7 +172,9 @@ namespace LibreRally.Vehicle.Physics
 			out float torqueLeft,
 			out float torqueRight)
 		{
-			if (MathF.Abs(inputTorque) <= MinimumTorqueMagnitude)
+			var canApplyPreloadAtZeroInput = config.Type == DifferentialType.LimitedSlip &&
+			                                config.PreloadTorque > MinimumTorqueMagnitude;
+			if (MathF.Abs(inputTorque) <= MinimumTorqueMagnitude && !canApplyPreloadAtZeroInput)
 			{
 				torqueLeft = 0f;
 				torqueRight = 0f;
@@ -278,15 +280,6 @@ namespace LibreRally.Vehicle.Physics
 			var deliveredMagnitude = MathF.Min(
 				MathF.Abs(inputTorque),
 				ComputeLimitedSlipDeliveredCapacity(biasRatio, preferredLeft, tractionLimitLeft, tractionLimitRight));
-
-			if (deliveredMagnitude <= MinimumTorqueMagnitude)
-			{
-				torqueLeft = 0f;
-				torqueRight = 0f;
-				return;
-			}
-
-			var half = deliveredMagnitude * 0.5f;
 			var deltaOmega = omegaLeft - omegaRight;
 			var preloadTorque = MathF.Max(0f, config.PreloadTorque);
 			var lockCoeff = inputTorque < 0f
@@ -296,30 +289,33 @@ namespace LibreRally.Vehicle.Physics
 			var lockScale = MathF.Tanh(MathF.Abs(deltaOmega) / LockingReferenceOmega);
 			var dynamicLockingTorque = MathF.Max(0f, lockCoeff) * deliveredMagnitude;
 			var lockingTorque = (preloadTorque + dynamicLockingTorque) * lockScale;
+			if (deliveredMagnitude <= MinimumTorqueMagnitude)
+			{
+				if (lockingTorque <= MinimumTorqueMagnitude)
+				{
+					torqueLeft = 0f;
+					torqueRight = 0f;
+					return;
+				}
 
-			var minimumTransfer = MathF.Max(0f, half - otherLimit);
-			var maxTransferByPreferredCapacity = MathF.Max(0f, preferredLimit - half);
-			var maxTransferByBiasRatio = half * (biasRatio - 1f) / (biasRatio + 1f);
+				var preloadTransfer = MathF.Min(lockingTorque, MathF.Min(preferredLimit, otherLimit));
+				AssignSignedTransfer(preferredLeft, 0f, preloadTransfer, out torqueLeft, out torqueRight);
+				return;
+			}
+
+			var signedHalf = MathF.CopySign(deliveredMagnitude * 0.5f, inputTorque);
+			var halfMagnitude = deliveredMagnitude * 0.5f;
+
+			var minimumTransfer = MathF.Max(0f, halfMagnitude - otherLimit);
+			var maxTransferByPreferredCapacity = MathF.Max(0f, preferredLimit - halfMagnitude);
+			var maxTransferByBiasRatio = halfMagnitude * (biasRatio - 1f) / (biasRatio + 1f);
 			var maximumTransfer = MathF.Min(
-				half,
+				halfMagnitude,
 				MathF.Min(maxTransferByPreferredCapacity, maxTransferByBiasRatio));
 			var transfer = maximumTransfer >= minimumTransfer
 				? Math.Clamp(lockingTorque, minimumTransfer, maximumTransfer)
 				: minimumTransfer;
-
-			var preferredTorque = half + transfer;
-			var otherTorque = half - transfer;
-
-			if (preferredLeft)
-			{
-				torqueLeft = MathF.CopySign(preferredTorque, inputTorque);
-				torqueRight = MathF.CopySign(otherTorque, inputTorque);
-			}
-			else
-			{
-				torqueLeft = MathF.CopySign(otherTorque, inputTorque);
-				torqueRight = MathF.CopySign(preferredTorque, inputTorque);
-			}
+			AssignSignedTransfer(preferredLeft, signedHalf, transfer, out torqueLeft, out torqueRight);
 		}
 
 		/// <summary>
@@ -366,6 +362,24 @@ namespace LibreRally.Vehicle.Physics
 			var preferredLimit = preferredLeft ? tractionLimitLeft : tractionLimitRight;
 			var otherLimit = preferredLeft ? tractionLimitRight : tractionLimitLeft;
 			return otherLimit + MathF.Min(preferredLimit, otherLimit * biasRatio);
+		}
+
+		private static void AssignSignedTransfer(
+			bool preferredLeft,
+			float signedHalfTorque,
+			float transfer,
+			out float torqueLeft,
+			out float torqueRight)
+		{
+			if (preferredLeft)
+			{
+				torqueLeft = signedHalfTorque + transfer;
+				torqueRight = signedHalfTorque - transfer;
+				return;
+			}
+
+			torqueLeft = signedHalfTorque - transfer;
+			torqueRight = signedHalfTorque + transfer;
 		}
 
 		private static float SanitizeTractionLimit(float tractionLimit)

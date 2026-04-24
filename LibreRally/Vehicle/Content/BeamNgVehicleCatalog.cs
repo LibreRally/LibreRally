@@ -130,7 +130,7 @@ namespace LibreRally.Vehicle.Content
 	}
 
 	/// <summary>Discovers bundled BeamNG vehicle content and resolves files from folders or archives.</summary>
-	public sealed class BeamNgVehicleCatalog
+	public sealed class BeamNgVehicleCatalog : IVehicleCatalog
 	{
 		private static readonly Logger Log = GlobalLogger.GetLogger("BeamNgVehicleCatalog");
 		private static readonly string[] PngFallbackExtensions = [".png", ".jpg", ".jpeg", ".tga"];

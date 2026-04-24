@@ -2,22 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Sockets;
 using LibreRally.Camera;
 using LibreRally.HUD;
 using LibreRally.Telemetry;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
 using LibreRally.Vehicle.Physics;
-using Stride.BepuPhysics;
-using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
 using Stride.Engine;
-using Stride.Graphics;
 using Stride.Input;
-using Stride.Rendering;
-using Stride.Rendering.Materials;
-using Stride.Rendering.Materials.ComputeColors;
 
 namespace LibreRally
 {
@@ -93,52 +86,92 @@ namespace LibreRally
 		/// <summary>
 		/// Gets or sets a value indicating whether OutGauge telemetry is enabled.
 		/// </summary>
-		public bool OutGaugeEnabled { get; set; } = true;
+		public bool OutGaugeEnabled
+		{
+			get => _telemetrySession.OutGaugeEnabled;
+			set => _telemetrySession.OutGaugeEnabled = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the delay between OutGauge packets in centiseconds.
 		/// </summary>
-		public int OutGaugeDelayCentiseconds { get; set; } = 1;
+		public int OutGaugeDelayCentiseconds
+		{
+			get => _telemetrySession.OutGaugeDelayCentiseconds;
+			set => _telemetrySession.OutGaugeDelayCentiseconds = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the target IP address for OutGauge telemetry.
 		/// </summary>
-		public string OutGaugeIp { get; set; } = "127.0.0.1";
+		public string OutGaugeIp
+		{
+			get => _telemetrySession.OutGaugeIp;
+			set => _telemetrySession.OutGaugeIp = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the target port for OutGauge telemetry.
 		/// </summary>
-		public int OutGaugePort { get; set; } = 4444;
+		public int OutGaugePort
+		{
+			get => _telemetrySession.OutGaugePort;
+			set => _telemetrySession.OutGaugePort = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the unique ID for OutGauge telemetry.
 		/// </summary>
-		public int OutGaugeId { get; set; }
+		public int OutGaugeId
+		{
+			get => _telemetrySession.OutGaugeId;
+			set => _telemetrySession.OutGaugeId = value;
+		}
 
 		/// <summary>
 		/// Gets or sets a value indicating whether OutSim telemetry is enabled.
 		/// </summary>
-		public bool OutSimEnabled { get; set; }
+		public bool OutSimEnabled
+		{
+			get => _telemetrySession.OutSimEnabled;
+			set => _telemetrySession.OutSimEnabled = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the delay between OutSim packets in centiseconds.
 		/// </summary>
-		public int OutSimDelayCentiseconds { get; set; } = 1;
+		public int OutSimDelayCentiseconds
+		{
+			get => _telemetrySession.OutSimDelayCentiseconds;
+			set => _telemetrySession.OutSimDelayCentiseconds = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the target IP address for OutSim telemetry.
 		/// </summary>
-		public string OutSimIp { get; set; } = "127.0.0.1";
+		public string OutSimIp
+		{
+			get => _telemetrySession.OutSimIp;
+			set => _telemetrySession.OutSimIp = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the target port for OutSim telemetry.
 		/// </summary>
-		public int OutSimPort { get; set; } = 4123;
+		public int OutSimPort
+		{
+			get => _telemetrySession.OutSimPort;
+			set => _telemetrySession.OutSimPort = value;
+		}
 
 		/// <summary>
 		/// Gets or sets the unique ID for OutSim telemetry.
 		/// </summary>
-		public int OutSimId { get; set; }
+		public int OutSimId
+		{
+			get => _telemetrySession.OutSimId;
+			set => _telemetrySession.OutSimId = value;
+		}
 
 		private string _status = "Loading...";
 		private bool _showDebug = true;
@@ -148,41 +181,15 @@ namespace LibreRally
 		private VehicleSelectionOverlay? _vehicleSelectionOverlay;
 		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
 		private TelemetryOverlay? _telemetryOverlay;
-		private BeamNgVehicleCatalog? _vehicleCatalog;
-		private List<BeamNgVehicleVariantDescriptor> _availableVehicles = [];
 		private readonly VehicleSetupOverrides _setupOverrides = new();
+		private readonly VehicleTelemetrySession _telemetrySession = new();
+		private readonly VehicleSpawnerTrackBuilder _trackBuilder = new();
+		private VehicleSpawnerVehicleSession? _vehicleSession;
 		private int _selectedVehicleIndex;
 		private int _pauseMenuSelectedIndex;
 		private int _telemetryMenuSelectedIndex;
 		private bool _vehicleSelectionOpenedFromPauseMenu;
 		private MenuScreen _activeMenuScreen;
-		private LoadedVehicle? _loadedVehicle;
-		private UdpClient? _outGaugeClient;
-		private bool _outGaugeConnectionRequested = true;
-		private string? _outGaugeTargetHost;
-		private int _outGaugeTargetPort;
-		private const double FailureLogIntervalSeconds = 5d;
-		private bool _outGaugeSendFailed;
-		private double _outGaugeNextFailureLogTimeSeconds;
-		private float _outGaugeElapsed;
-		private UdpClient? _outSimClient;
-		private bool _outSimConnectionRequested = true;
-		private string? _outSimTargetHost;
-		private int _outSimTargetPort;
-		private bool _outSimSendFailed;
-		private double _outSimNextFailureLogTimeSeconds;
-		private float _outSimElapsed;
-		private bool _outSimHasPreviousLinearVelocity;
-		private Vector3 _outSimPreviousLinearVelocity;
-		private TrackSurfaceMaterialLibrary? _trackSurfaceMaterialLibrary;
-		private const float MinTrackUvScale = 0.25f;
-		private const float TrackMeshBoundsHalfHeight = 0.02f;
-		private const float TrackSurfaceLift = 0.01f;
-		private const float BankedSectionRollAngleRadians = -0.35f;
-		private const float InclineSectionPitchAngleRadians = 0.22f;
-		private const float TrackSurfaceGlossiness = 0.2f;
-		private const float TrackSurfaceMetalness = 0f;
-		private const float PsiToKpa = 6.894757f;
 		private const int PauseMenuResumeIndex = 0;
 		private const int PauseMenuResetVehicleIndex = 1;
 		private const int PauseMenuGarageSetupIndex = 2;
@@ -213,33 +220,11 @@ namespace LibreRally
 		}
 
 		/// <summary>
-		/// Lightweight configuration for one procedural test-track section.
-		/// </summary>
-		private readonly struct TrackSegmentDefinition(
-			string name,
-			Vector3 localPosition,
-			Quaternion localRotation,
-			Vector3 colliderSize,
-			SurfaceType surfaceType,
-			Color4 albedo,
-			float uvScale,
-			float frictionCoefficient)
-		{
-			public string Name { get; } = name;
-			public Vector3 LocalPosition { get; } = localPosition;
-			public Quaternion LocalRotation { get; } = localRotation;
-			public Vector3 ColliderSize { get; } = colliderSize;
-			public SurfaceType SurfaceType { get; } = surfaceType;
-			public Color4 Albedo { get; } = albedo;
-			public float UvScale { get; } = uvScale;
-			public float FrictionCoefficient { get; } = frictionCoefficient;
-		}
-
-		/// <summary>
 		/// Initializes the track, overlays, and vehicle catalog at scene startup.
 		/// </summary>
 		public override void Start()
 		{
+			_vehicleSession = new VehicleSpawnerVehicleSession((Game)Game, SceneSystem, _setupOverrides);
 			AddGroundPhysics();
 			EnsureDrivingHudOverlay();
 			InitializeVehicleCatalog();
@@ -266,70 +251,24 @@ namespace LibreRally
 
 		private void LoadVehicle(BeamNgVehicleVariantDescriptor? selectedVehicle = null)
 		{
-			var selectedConfig = selectedVehicle?.ConfigFileName;
-			var requestedConfig = selectedVehicle != null
-				? selectedConfig ?? "<jbeam defaults>"
-				: string.IsNullOrWhiteSpace(ConfigFileName)
-					? "<auto>"
-					: ConfigFileName;
-			var requestedSource = selectedVehicle?.SourcePath ?? VehicleFolderPath;
-			if (selectedVehicle != null &&
-			    (!selectedVehicle.SourcePath.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
-			     !string.Equals(selectedVehicle.ConfigFileName, ConfigFileName, StringComparison.OrdinalIgnoreCase)))
+			if (_vehicleSession == null)
 			{
-				_setupOverrides.Clear();
+				throw new InvalidOperationException("Vehicle session was not initialized.");
 			}
 
-			BeamNgResolvedVehicle? resolvedVehicle = null;
-			if (_vehicleCatalog != null)
-			{
-				resolvedVehicle = _vehicleCatalog.ResolveVehicle(requestedSource);
-			}
+			var loadResult = _vehicleSession.LoadVehicle(
+				VehicleFolderPath,
+				ConfigFileName,
+				SpawnPosition,
+				_selectedVehicleIndex,
+				selectedVehicle);
+			VehicleFolderPath = loadResult.VehicleFolderPath;
+			ConfigFileName = loadResult.ConfigFileName;
+			_selectedVehicleIndex = loadResult.SelectedVehicleIndex;
+			_status = loadResult.StatusText;
 
-			var basePath = resolvedVehicle?.VehicleFolderPath ?? (Path.IsPathRooted(requestedSource)
-				? requestedSource
-				: Path.Combine(AppContext.BaseDirectory, requestedSource));
-			Log.Info($"[VehicleSpawner] Load request: source='{requestedSource}' resolved='{basePath}' config='{requestedConfig}'");
-
-			var loader = new VehicleLoader((Game)Game);
-			var configToLoad = selectedVehicle != null
-				? selectedVehicle.ConfigFileName
-				: string.IsNullOrWhiteSpace(ConfigFileName)
-					? null
-					: ConfigFileName;
-			var vehicle = resolvedVehicle != null
-				? loader.Load(resolvedVehicle, configToLoad, _setupOverrides)
-				: loader.Load(basePath, configToLoad, _setupOverrides);
-
-			if (selectedVehicle != null)
-			{
-				VehicleFolderPath = selectedVehicle.SourcePath;
-				ConfigFileName = selectedVehicle.ConfigFileName ?? string.Empty;
-				_selectedVehicleIndex = _availableVehicles.FindIndex(vehicleDescriptor =>
-					vehicleDescriptor.SourcePath.Equals(selectedVehicle.SourcePath, StringComparison.OrdinalIgnoreCase) &&
-					string.Equals(vehicleDescriptor.ConfigFileName, selectedVehicle.ConfigFileName, StringComparison.OrdinalIgnoreCase));
-			}
-
-			UnloadVehicle();
-			_loadedVehicle = vehicle;
-
-			// CRITICAL: apply SpawnPosition to each physics entity directly.
-			// They must be at scene root level (no offset parent) so BEPU writes correct world positions back.
-			foreach (var child in vehicle.RootEntity.GetChildren().ToList())
-				child.Transform.Position += SpawnPosition;
-
-			// Keep root at origin (it holds the RallyCarComponent SyncScript)
-			vehicle.RootEntity.Transform.Position = Vector3.Zero;
-			SceneSystem.SceneInstance.RootScene.Entities.Add(vehicle.RootEntity);
-
-			var activeConfig = vehicle.Diagnostics.ConfigPath != null
-				? Path.GetFileName(vehicle.Diagnostics.ConfigPath)
-				: "<jbeam defaults>";
-			_status = $"Loaded: {vehicle.Definition.VehicleName} src={(resolvedVehicle?.SourceDescription ?? "folder")} cfg={activeConfig} mass={vehicle.Diagnostics.EstimatedMassKg:F0}kg";
-			Log.Info($"[VehicleSpawner] {_status} folder='{vehicle.Diagnostics.VehicleFolderPath}'");
-
-			AttachCamera(vehicle.ChassisEntity, vehicle.CarComponent);
-			AttachDrivingHud(vehicle.CarComponent);
+			AttachCamera(loadResult.LoadedVehicle.ChassisEntity, loadResult.LoadedVehicle.CarComponent);
+			AttachDrivingHud(loadResult.LoadedVehicle.CarComponent);
 			BindGarageSetupOverlay();
 			BindPhysicsCalibrationOverlay();
 			RefreshTelemetryOverlay();
@@ -337,19 +276,8 @@ namespace LibreRally
 
 		private void UnloadVehicle()
 		{
-			if (_loadedVehicle?.RootEntity != null)
-			{
-				SceneSystem.SceneInstance.RootScene.Entities.Remove(_loadedVehicle.RootEntity);
-			}
-
-			_loadedVehicle = null;
-			_car = null;
-			_outGaugeElapsed = 0f;
-			_outSimElapsed = 0f;
-			_outSimHasPreviousLinearVelocity = false;
+			_vehicleSession?.UnloadVehicle();
 		}
-
-		private RallyCarComponent? _car;
 
 		private void AttachDrivingHud(RallyCarComponent car)
 		{
@@ -362,7 +290,6 @@ namespace LibreRally
 			_drivingHudOverlay.Car = car;
 			_drivingHudOverlay.StatusText = _status;
 			_drivingHudOverlay.DebugOverlayVisible = _showDebug;
-			_car = car;
 		}
 
 		private void EnsureDrivingHudOverlay()
@@ -372,7 +299,7 @@ namespace LibreRally
 				return;
 			}
 
-			_drivingHudOverlay = new DrivingHudOverlay(Services) { Car = _car, StatusText = _status, DebugOverlayVisible = _showDebug, };
+			_drivingHudOverlay = new DrivingHudOverlay(Services) { Car = _vehicleSession?.Car, StatusText = _status, DebugOverlayVisible = _showDebug, };
 
 			((Game)Game).GameSystems.Add(_drivingHudOverlay);
 		}
@@ -386,11 +313,12 @@ namespace LibreRally
 
 			_vehicleSelectionOverlay = new VehicleSelectionOverlay(Services)
 			{
-				Vehicles = _availableVehicles, SelectedIndex = _selectedVehicleIndex, OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection, StatusText = _status,
+				Vehicles = GetAvailableVehicles(), SelectedIndex = _selectedVehicleIndex, OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection, StatusText = _status,
 			};
 			_vehicleSelectionOverlay.ItemActivated = selectedIndex =>
 			{
-				if (selectedIndex < 0 || selectedIndex >= _availableVehicles.Count)
+				var vehicles = GetAvailableVehicles();
+				if (selectedIndex < 0 || selectedIndex >= vehicles.Count)
 				{
 					return;
 				}
@@ -398,7 +326,7 @@ namespace LibreRally
 				_selectedVehicleIndex = selectedIndex;
 				_activeMenuScreen = MenuScreen.None;
 				_vehicleSelectionOpenedFromPauseMenu = false;
-				LoadVehicle(_availableVehicles[selectedIndex]);
+				LoadVehicle(vehicles[selectedIndex]);
 			};
 
 			((Game)Game).GameSystems.Add(_vehicleSelectionOverlay);
@@ -488,7 +416,7 @@ namespace LibreRally
 				return;
 			}
 
-			_physicsCalibrationOverlay.BindVehicle(_loadedVehicle?.CarComponent);
+			_physicsCalibrationOverlay.BindVehicle(_vehicleSession?.LoadedVehicle?.CarComponent);
 		}
 
 		private void BindGarageSetupOverlay()
@@ -498,56 +426,17 @@ namespace LibreRally
 				return;
 			}
 
-			_setupUiShellOverlay.BindVehicle(_loadedVehicle, _setupOverrides, _status);
+			_setupUiShellOverlay.BindVehicle(_vehicleSession?.LoadedVehicle, _setupOverrides, _status);
 		}
 
 		private void InitializeVehicleCatalog()
 		{
-			var bundledVehiclesRoot = Path.Combine(AppContext.BaseDirectory, "Resources", "BeamNG Vehicles");
-			var beamNgContentVehiclesRoot = BeamNgVehicleCatalog.DetectBeamNgContentVehiclesRoot();
-			_vehicleCatalog = new BeamNgVehicleCatalog(bundledVehiclesRoot, beamNgContentVehiclesRoot);
-			_availableVehicles = _vehicleCatalog.DiscoverBundledVehicleVariants().ToList();
-			_selectedVehicleIndex = ResolveVehicleSelectionIndex();
-		}
-
-		private int ResolveVehicleSelectionIndex()
-		{
-			if (_availableVehicles.Count == 0)
+			if (_vehicleSession == null)
 			{
-				return -1;
+				throw new InvalidOperationException("Vehicle session was not initialized.");
 			}
 
-			var absoluteVehiclePath = Path.IsPathRooted(VehicleFolderPath)
-				? VehicleFolderPath
-				: Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, VehicleFolderPath));
-
-			var exactPathIndex = _availableVehicles.FindIndex(vehicle =>
-				vehicle.SourcePath.Equals(absoluteVehiclePath, StringComparison.OrdinalIgnoreCase) &&
-				string.Equals(vehicle.ConfigFileName, NormalizeConfigSelection(ConfigFileName), StringComparison.OrdinalIgnoreCase));
-			if (exactPathIndex >= 0)
-			{
-				return exactPathIndex;
-			}
-
-			var idIndex = _availableVehicles.FindIndex(vehicle =>
-				vehicle.VehicleId.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
-				absoluteVehiclePath.EndsWith(Path.DirectorySeparatorChar + vehicle.VehicleId, StringComparison.OrdinalIgnoreCase));
-			if (idIndex < 0)
-			{
-				return 0;
-			}
-
-			var preferredConfig = NormalizeConfigSelection(ConfigFileName);
-			if (string.IsNullOrWhiteSpace(preferredConfig))
-			{
-				return idIndex;
-			}
-
-			var matchingVariantIndex = _availableVehicles.FindIndex(vehicle =>
-				(vehicle.VehicleId.Equals(VehicleFolderPath, StringComparison.OrdinalIgnoreCase) ||
-				 absoluteVehiclePath.EndsWith(Path.DirectorySeparatorChar + vehicle.VehicleId, StringComparison.OrdinalIgnoreCase)) &&
-				string.Equals(vehicle.ConfigFileName, preferredConfig, StringComparison.OrdinalIgnoreCase));
-			return matchingVariantIndex >= 0 ? matchingVariantIndex : idIndex;
+			_selectedVehicleIndex = _vehicleSession.InitializeCatalog(VehicleFolderPath, ConfigFileName);
 		}
 
 		internal static bool IsPauseMenuToggleRequested(bool keyboardPausePressed, bool controllerStartPressed) =>
@@ -592,9 +481,9 @@ namespace LibreRally
 
 			if (_activeMenuScreen == MenuScreen.GarageSetup)
 			{
-				if (_car != null)
+				if (_vehicleSession?.Car != null)
 				{
-					_car.PlayerInputEnabled = false;
+					_vehicleSession.Car.PlayerInputEnabled = false;
 				}
 
 				return;
@@ -602,9 +491,9 @@ namespace LibreRally
 
 			if (_activeMenuScreen == MenuScreen.PhysicsCalibration)
 			{
-				if (_car != null)
+				if (_vehicleSession?.Car != null)
 				{
-					_car.PlayerInputEnabled = false;
+					_vehicleSession.Car.PlayerInputEnabled = false;
 				}
 
 				return;
@@ -623,9 +512,9 @@ namespace LibreRally
 					HandleTelemetryMenuInput(pad);
 				}
 
-				if (_car != null)
+				if (_vehicleSession?.Car != null)
 				{
-					_car.PlayerInputEnabled = false;
+					_vehicleSession.Car.PlayerInputEnabled = false;
 				}
 
 				return;
@@ -669,15 +558,16 @@ namespace LibreRally
 				}
 			}
 
-			if (_car != null)
+			if (_vehicleSession?.Car != null)
 			{
-				_car.PlayerInputEnabled = _activeMenuScreen == MenuScreen.None;
+				_vehicleSession.Car.PlayerInputEnabled = _activeMenuScreen == MenuScreen.None;
 			}
 		}
 
 		private void HandleVehicleSelectionInput(IGamePadDevice? pad)
 		{
-			if (_availableVehicles.Count == 0)
+			var vehicles = GetAvailableVehicles();
+			if (vehicles.Count == 0)
 			{
 				var closeEmptyMenuRequested = IsVehicleMenuCancelRequested(
 					Input.IsKeyPressed(Keys.Escape),
@@ -699,21 +589,21 @@ namespace LibreRally
 				    Input.IsKeyPressed(Keys.Up),
 				    pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
 			{
-				_selectedVehicleIndex = (_selectedVehicleIndex - 1 + _availableVehicles.Count) % _availableVehicles.Count;
+				_selectedVehicleIndex = (_selectedVehicleIndex - 1 + vehicles.Count) % vehicles.Count;
 			}
 
 			if (IsVehicleMenuMoveDownRequested(
 				    Input.IsKeyPressed(Keys.Down),
 				    pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
 			{
-				_selectedVehicleIndex = (_selectedVehicleIndex + 1) % _availableVehicles.Count;
+				_selectedVehicleIndex = (_selectedVehicleIndex + 1) % vehicles.Count;
 			}
 
 			if (IsVehicleMenuConfirmRequested(
 				    Input.IsKeyPressed(Keys.Enter),
 				    pad?.IsButtonPressed(GamePadButton.A) ?? false))
 			{
-				var selectedVehicle = _availableVehicles[_selectedVehicleIndex];
+				var selectedVehicle = vehicles[_selectedVehicleIndex];
 				_activeMenuScreen = MenuScreen.None;
 				_vehicleSelectionOpenedFromPauseMenu = false;
 				LoadVehicle(selectedVehicle);
@@ -949,7 +839,7 @@ namespace LibreRally
 				pressureOverride.PressurePsi = kv.Value;
 			}
 
-			ApplyLivePressureOverrides(payload.PressureOverrides);
+			_vehicleSession?.ApplyLivePressureOverrides(payload.PressureOverrides);
 			_status = $"Applied garage setup for {GetCurrentVehicleName()}: {payload.SummaryText}";
 
 			if (!payload.RequiresReload)
@@ -962,73 +852,19 @@ namespace LibreRally
 			LoadVehicle(selectedVehicle);
 		}
 
-		private void ApplyLivePressureOverrides(IReadOnlyDictionary<VehicleSetupAxle, float> pressureOverrides)
-		{
-			if (_loadedVehicle == null || pressureOverrides.Count == 0)
-			{
-				return;
-			}
-
-			foreach (var (axle, pressurePsi) in pressureOverrides)
-			{
-				if (!float.IsFinite(pressurePsi))
-				{
-					continue;
-				}
-
-				foreach (var wheel in EnumerateAxleWheels(axle))
-				{
-					var wheelSettings = wheel.Get<WheelSettings>();
-					if (wheelSettings?.TyreModel == null)
-					{
-						continue;
-					}
-
-					wheelSettings.TyreModel.TyrePressure = pressurePsi * PsiToKpa;
-				}
-			}
-		}
-
-		private IEnumerable<Entity> EnumerateAxleWheels(VehicleSetupAxle axle)
-		{
-			if (_loadedVehicle == null)
-			{
-				yield break;
-			}
-
-			if (axle == VehicleSetupAxle.Front)
-			{
-				yield return _loadedVehicle.WheelFL;
-				yield return _loadedVehicle.WheelFR;
-				yield break;
-			}
-
-			if (axle == VehicleSetupAxle.Rear)
-			{
-				yield return _loadedVehicle.WheelRL;
-				yield return _loadedVehicle.WheelRR;
-			}
-		}
-
 		private BeamNgVehicleVariantDescriptor? ResolveSelectedVehicleDescriptor()
 		{
-			return _selectedVehicleIndex >= 0 && _selectedVehicleIndex < _availableVehicles.Count
-				? _availableVehicles[_selectedVehicleIndex]
-				: null;
+			return _vehicleSession?.ResolveSelectedVehicleDescriptor(_selectedVehicleIndex);
 		}
 
 		private string GetCurrentVehicleName()
 		{
-			if (!string.IsNullOrWhiteSpace(_loadedVehicle?.Definition.VehicleName))
-			{
-				return _loadedVehicle.Definition.VehicleName;
-			}
-
-			return Path.GetFileName(VehicleFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+			return _vehicleSession?.GetCurrentVehicleName(VehicleFolderPath)
+			       ?? Path.GetFileName(VehicleFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 		}
 
-		private static string? NormalizeConfigSelection(string? configFileName)
-			=> BeamNgVehicleCatalog.NormalizeConfigFileName(configFileName);
+		private IReadOnlyList<BeamNgVehicleVariantDescriptor> GetAvailableVehicles() =>
+			_vehicleSession?.AvailableVehicles ?? Array.Empty<BeamNgVehicleVariantDescriptor>();
 
 		private void AttachCamera(Entity chassis, RallyCarComponent car)
 		{
@@ -1047,136 +883,7 @@ namespace LibreRally
 
 		private void AddGroundPhysics()
 		{
-			Entity.Transform.Position = new Vector3(Entity.Transform.Position.X, -0.5f, Entity.Transform.Position.Z);
-			Entity.Add(new StaticComponent { FrictionCoefficient = 1.5f, Collider = new CompoundCollider { Colliders = { new BoxCollider { Size = new Vector3(500f, 1f, 500f) } } } });
-
-			AddRoadTestSections();
-		}
-
-		private void AddRoadTestSections()
-		{
-			try
-			{
-				var gd = ((Game)Game).GraphicsDevice;
-				_trackSurfaceMaterialLibrary ??= new TrackSurfaceMaterialLibrary(
-					gd,
-					Path.Combine(AppContext.BaseDirectory, "Resources", "Track Materials"));
-				var segments = new[]
-				{
-					new TrackSegmentDefinition(
-						"test_track_tarmac",
-						new Vector3(0f, 0.5f, 0f),
-						Quaternion.Identity,
-						new Vector3(60f, 0.2f, 16f),
-						SurfaceType.Tarmac,
-						new Color4(0.21f, 0.21f, 0.22f, 1f),
-						7.5f,
-						1.35f),
-					new TrackSegmentDefinition(
-						"test_track_gravel",
-						new Vector3(-22f, 0.5f, 26f),
-						Quaternion.Identity,
-						new Vector3(28f, 0.25f, 14f),
-						SurfaceType.Gravel,
-						new Color4(0.47f, 0.40f, 0.29f, 1f),
-						5f,
-						1.05f),
-					new TrackSegmentDefinition(
-						"test_track_snow",
-						new Vector3(22f, 0.5f, 26f),
-						Quaternion.Identity,
-						new Vector3(28f, 0.25f, 14f),
-						SurfaceType.Snow,
-						new Color4(0.88f, 0.9f, 0.92f, 1f),
-						5f,
-						0.85f),
-					new TrackSegmentDefinition(
-						"test_track_banked",
-						new Vector3(38f, 1.8f, -6f),
-						Quaternion.RotationZ(BankedSectionRollAngleRadians),
-						new Vector3(20f, 0.25f, 28f),
-						SurfaceType.Tarmac,
-						new Color4(0.24f, 0.24f, 0.25f, 1f),
-						4f,
-						1.2f),
-					new TrackSegmentDefinition(
-						"test_track_incline",
-						new Vector3(0f, 1.7f, 40f),
-						Quaternion.RotationX(InclineSectionPitchAngleRadians),
-						new Vector3(12f, 0.25f, 42f),
-						SurfaceType.Tarmac,
-						new Color4(0.23f, 0.23f, 0.24f, 1f),
-						5.25f,
-						1.25f),
-				};
-
-				foreach (var segment in segments)
-				{
-					Entity.AddChild(CreateTrackSegment(gd, segment));
-				}
-			}
-			catch (Exception ex)
-			{
-				Log.Warning($"Could not build test track sections: {ex}");
-			}
-		}
-
-		private Entity CreateTrackSegment(GraphicsDevice graphicsDevice, in TrackSegmentDefinition segment)
-		{
-			var halfWidth = segment.ColliderSize.X * 0.5f;
-			var halfLength = segment.ColliderSize.Z * 0.5f;
-
-			// Clamp UV tiling to a sane minimum to avoid near-zero texture repetition artifacts.
-			var uvScale = MathF.Max(MinTrackUvScale, segment.UvScale);
-
-			var vertices = new VertexPositionNormalTexture[] { new(new Vector3(-halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(0f, 0f)), new(new Vector3(halfWidth, 0f, -halfLength), Vector3.UnitY, new Vector2(1f, 0f)), new(new Vector3(halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(1f, 1f)), new(new Vector3(-halfWidth, 0f, halfLength), Vector3.UnitY, new Vector2(0f, 1f)), new(new Vector3(-halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(0f, 0f)), new(new Vector3(halfWidth, 0f, -halfLength), -Vector3.UnitY, new Vector2(1f, 0f)), new(new Vector3(halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(1f, 1f)), new(new Vector3(-halfWidth, 0f, halfLength), -Vector3.UnitY, new Vector2(0f, 1f)), };
-			var indices = new[] { 0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6 };
-
-			var mesh = new Mesh
-			{
-				BoundingBox = new BoundingBox(
-					new Vector3(-halfWidth, -TrackMeshBoundsHalfHeight, -halfLength),
-					new Vector3(halfWidth, TrackMeshBoundsHalfHeight, halfLength)),
-				Draw = new MeshDraw
-				{
-					PrimitiveType = PrimitiveType.TriangleList,
-					VertexBuffers =
-					[
-						new VertexBufferBinding(
-							Stride.Graphics.Buffer.Vertex.New(graphicsDevice, vertices, GraphicsResourceUsage.Immutable),
-							VertexPositionNormalTexture.Layout,
-							vertices.Length),
-					],
-					IndexBuffer = new IndexBufferBinding(
-						Stride.Graphics.Buffer.Index.New(graphicsDevice, indices),
-						true,
-						indices.Length),
-					DrawCount = indices.Length,
-				},
-			};
-
-			var material = _trackSurfaceMaterialLibrary?.CreateMaterial(
-				               segment.SurfaceType,
-				               uvScale,
-				               segment.Albedo,
-				               TrackSurfaceGlossiness,
-				               TrackSurfaceMetalness)
-			               ?? Material.New(graphicsDevice, new MaterialDescriptor
-			               {
-				               Attributes = new MaterialAttributes
-				               {
-					               Diffuse = new MaterialDiffuseMapFeature(new ComputeColor { Value = segment.Albedo }), DiffuseModel = new MaterialDiffuseLambertModelFeature(), MicroSurface = new MaterialGlossinessMapFeature(new ComputeFloat { Value = TrackSurfaceGlossiness }), Specular = new MaterialMetalnessMapFeature(new ComputeFloat { Value = TrackSurfaceMetalness }),
-				               },
-			               });
-
-			var trackEntity = new Entity(segment.Name);
-			trackEntity.Transform.Position = segment.LocalPosition + new Vector3(0f, TrackSurfaceLift, 0f);
-			trackEntity.Transform.Rotation = segment.LocalRotation;
-			trackEntity.Add(new StaticComponent { FrictionCoefficient = segment.FrictionCoefficient, Collider = new CompoundCollider { Colliders = { new BoxCollider { Size = segment.ColliderSize, PositionLocal = new Vector3(0f, -segment.ColliderSize.Y * 0.5f, 0f), }, }, }, });
-			trackEntity.Add(new TrackSurfaceComponent { SurfaceType = segment.SurfaceType });
-			trackEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
-
-			return trackEntity;
+			_trackBuilder.ConfigureGround(Entity, (Game)Game);
 		}
 
 		/// <summary>
@@ -1186,9 +893,7 @@ namespace LibreRally
 		{
 			HandlePauseAndVehicleSelectionInput();
 			var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-
-			SendOutGaugeTelemetry(dt);
-			SendOutSimTelemetry(dt);
+			_telemetrySession.Update((Game)Game, dt, _vehicleSession?.Car);
 
 			// Toggle debug info with F3
 			if (Input.IsKeyPressed(Keys.F3))
@@ -1198,14 +903,14 @@ namespace LibreRally
 
 			if (_drivingHudOverlay != null)
 			{
-				_drivingHudOverlay.Car = _car;
+				_drivingHudOverlay.Car = _vehicleSession?.Car;
 				_drivingHudOverlay.StatusText = _status;
 				_drivingHudOverlay.DebugOverlayVisible = _showDebug;
 			}
 
 			if (_vehicleSelectionOverlay != null)
 			{
-				_vehicleSelectionOverlay.Vehicles = _availableVehicles;
+				_vehicleSelectionOverlay.Vehicles = GetAvailableVehicles();
 				_vehicleSelectionOverlay.SelectedIndex = _selectedVehicleIndex;
 				_vehicleSelectionOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection;
 				_vehicleSelectionOverlay.StatusText = _status;
@@ -1243,230 +948,10 @@ namespace LibreRally
 				_physicsCalibrationOverlay.StatusText = _status;
 			}
 
-			if (_car == null)
+			if (_vehicleSession?.Car == null)
 			{
 				DebugText.Print(_status, new Int2(10, 10));
 			}
-		}
-
-		private void SendOutGaugeTelemetry(float deltaTime)
-		{
-			if (!OutGaugeEnabled || !_outGaugeConnectionRequested || _car == null)
-			{
-				_outGaugeElapsed = 0f;
-				if (!OutGaugeEnabled || !_outGaugeConnectionRequested)
-				{
-					DisposeOutGaugeClient();
-				}
-
-				return;
-			}
-
-			var sendIntervalSeconds = Math.Max(0, OutGaugeDelayCentiseconds) * 0.01f;
-			_outGaugeElapsed += Math.Max(0f, deltaTime);
-			if (sendIntervalSeconds > 0f && _outGaugeElapsed < sendIntervalSeconds)
-			{
-				return;
-			}
-
-			_outGaugeElapsed = 0f;
-			EnsureOutGaugeClient();
-			if (_outGaugeClient == null || string.IsNullOrWhiteSpace(_outGaugeTargetHost))
-			{
-				return;
-			}
-
-			try
-			{
-				var sessionMilliseconds = Math.Max(0d, Game.UpdateTime.Total.TotalMilliseconds);
-				var snapshot = OutGaugeProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds));
-				var payload = OutGaugeProtocol.Encode(snapshot, OutGaugeId);
-				_outGaugeClient.Send(payload, payload.Length, _outGaugeTargetHost, _outGaugeTargetPort);
-				_outGaugeSendFailed = false;
-			}
-			catch (SocketException ex)
-			{
-				HandleOutGaugeSendFailure(ex);
-			}
-			catch (ObjectDisposedException ex)
-			{
-				HandleOutGaugeSendFailure(ex);
-			}
-			catch (InvalidOperationException ex)
-			{
-				HandleOutGaugeSendFailure(ex);
-			}
-		}
-
-		private void EnsureOutGaugeClient()
-		{
-			var targetHost = OutGaugeIp?.Trim();
-			var targetPort = OutGaugePort;
-			if (string.IsNullOrWhiteSpace(targetHost) || targetPort is < 1 or > 65535)
-			{
-				DisposeOutGaugeClient();
-				return;
-			}
-
-			if (_outGaugeClient != null &&
-			    string.Equals(_outGaugeTargetHost, targetHost, StringComparison.OrdinalIgnoreCase) &&
-			    _outGaugeTargetPort == targetPort)
-			{
-				return;
-			}
-
-			DisposeOutGaugeClient();
-			_outGaugeClient = new UdpClient();
-			_outGaugeTargetHost = targetHost;
-			_outGaugeTargetPort = targetPort;
-			_outGaugeSendFailed = false;
-			_outGaugeNextFailureLogTimeSeconds = 0d;
-		}
-
-		private void DisposeOutGaugeClient()
-		{
-			_outGaugeClient?.Dispose();
-			_outGaugeClient = null;
-			_outGaugeTargetHost = null;
-			_outGaugeTargetPort = 0;
-			_outGaugeSendFailed = false;
-			_outGaugeNextFailureLogTimeSeconds = 0d;
-		}
-
-		private void HandleOutGaugeSendFailure(Exception ex)
-		{
-			var sessionSeconds = Math.Max(0d, Game.UpdateTime.Total.TotalSeconds);
-			if (!_outGaugeSendFailed || sessionSeconds >= _outGaugeNextFailureLogTimeSeconds)
-			{
-				Log.Warning($"OutGauge send failed ({_outGaugeTargetHost}:{_outGaugeTargetPort}): {ex.Message}");
-				_outGaugeNextFailureLogTimeSeconds = sessionSeconds + FailureLogIntervalSeconds;
-			}
-
-			_outGaugeSendFailed = true;
-		}
-
-		private void SendOutSimTelemetry(float deltaTime)
-		{
-			if (!OutSimEnabled || !_outSimConnectionRequested || _car == null)
-			{
-				_outSimElapsed = 0f;
-				_outSimHasPreviousLinearVelocity = false;
-				if (!OutSimEnabled || !_outSimConnectionRequested)
-				{
-					DisposeOutSimClient();
-				}
-
-				return;
-			}
-
-			var sendIntervalSeconds = Math.Max(0, OutSimDelayCentiseconds) * 0.01f;
-			_outSimElapsed += Math.Max(0f, deltaTime);
-			if (sendIntervalSeconds > 0f && _outSimElapsed < sendIntervalSeconds)
-			{
-				return;
-			}
-
-			var sampleDelta = Math.Max(_outSimElapsed, 1e-4f);
-			_outSimElapsed = 0f;
-			EnsureOutSimClient();
-			if (_outSimClient == null || string.IsNullOrWhiteSpace(_outSimTargetHost))
-			{
-				return;
-			}
-
-			var chassisBody = _car.CarBody.Get<BodyComponent>();
-			if (chassisBody == null)
-			{
-				_outSimHasPreviousLinearVelocity = false;
-				return;
-			}
-
-			var linearVelocity = chassisBody.LinearVelocity;
-			var acceleration = _outSimHasPreviousLinearVelocity
-				? (linearVelocity - _outSimPreviousLinearVelocity) / sampleDelta
-				: Vector3.Zero;
-			_outSimPreviousLinearVelocity = linearVelocity;
-			_outSimHasPreviousLinearVelocity = true;
-
-			try
-			{
-				var sessionMilliseconds = Math.Max(0d, Game.UpdateTime.Total.TotalMilliseconds);
-				var snapshot = OutSimProtocol.FromCar(_car, unchecked((uint)sessionMilliseconds), acceleration);
-				var payload = OutSimProtocol.Encode(snapshot, OutSimId);
-				_outSimClient.Send(payload, payload.Length);
-				_outSimSendFailed = false;
-			}
-			catch (SocketException ex)
-			{
-				HandleOutSimTelemetryFailure(ex);
-			}
-			catch (ObjectDisposedException ex)
-			{
-				HandleOutSimTelemetryFailure(ex);
-			}
-			catch (InvalidOperationException ex)
-			{
-				HandleOutSimTelemetryFailure(ex);
-			}
-		}
-
-		private void EnsureOutSimClient()
-		{
-			var targetHost = OutSimIp?.Trim();
-			var targetPort = OutSimPort;
-			if (string.IsNullOrWhiteSpace(targetHost) || targetPort is < 1 or > 65535)
-			{
-				DisposeOutSimClient();
-				return;
-			}
-
-			if (_outSimClient != null &&
-			    string.Equals(_outSimTargetHost, targetHost, StringComparison.OrdinalIgnoreCase) &&
-			    _outSimTargetPort == targetPort)
-			{
-				return;
-			}
-
-			DisposeOutSimClient();
-			_outSimClient = new UdpClient();
-			_outSimTargetHost = targetHost;
-			_outSimTargetPort = targetPort;
-			try
-			{
-				_outSimClient.Connect(targetHost, targetPort);
-			}
-			catch (SocketException ex)
-			{
-				HandleOutSimTelemetryFailure(ex);
-				DisposeOutSimClient();
-				return;
-			}
-
-			_outSimSendFailed = false;
-			_outSimNextFailureLogTimeSeconds = 0d;
-		}
-
-		private void DisposeOutSimClient()
-		{
-			_outSimClient?.Dispose();
-			_outSimClient = null;
-			_outSimTargetHost = null;
-			_outSimTargetPort = 0;
-			_outSimSendFailed = false;
-			_outSimNextFailureLogTimeSeconds = 0d;
-			_outSimHasPreviousLinearVelocity = false;
-		}
-
-		private void HandleOutSimTelemetryFailure(Exception ex)
-		{
-			var sessionSeconds = Math.Max(0d, Game.UpdateTime.Total.TotalSeconds);
-			if (!_outSimSendFailed || sessionSeconds >= _outSimNextFailureLogTimeSeconds)
-			{
-				Log.Warning($"OutSim telemetry failed ({_outSimTargetHost}:{_outSimTargetPort}): {ex.Message}");
-				_outSimNextFailureLogTimeSeconds = sessionSeconds + FailureLogIntervalSeconds;
-			}
-
-			_outSimSendFailed = true;
 		}
 
 		private IReadOnlyList<PauseMenuItem> BuildTelemetryMenuItems() =>
@@ -1497,119 +982,55 @@ namespace LibreRally
 		}
 
 		private string BuildOutGaugeSummary()
-		{
-			var endpoint = DescribeTelemetryEndpoint(OutGaugeIp, OutGaugePort);
-			var enabledState = OutGaugeEnabled ? "enabled" : "disabled";
-			var connectionState = DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed);
-			return $"OutGauge // {enabledState} // {endpoint} // {connectionState} // {(OutGaugeId == 0 ? "id=none" : $"id={OutGaugeId}")}";
-		}
+			=> _telemetrySession.BuildOutGaugeSummary();
 
 		private string BuildOutSimSummary()
-		{
-			var endpoint = DescribeTelemetryEndpoint(OutSimIp, OutSimPort);
-			var enabledState = OutSimEnabled ? "enabled" : "disabled";
-			var connectionState = DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed);
-			return $"OutSim // {enabledState} // {endpoint} // {connectionState} // {(OutSimId == 0 ? "id=none" : $"id={OutSimId}")}";
-		}
-
-		private static string DescribeTelemetryEndpoint(string? host, int port)
-		{
-			var trimmedHost = host?.Trim();
-			return string.IsNullOrWhiteSpace(trimmedHost) || port is < 1 or > 65535
-				? "endpoint not configured"
-				: $"{trimmedHost}:{port}";
-		}
-
-		private static string DescribeSocketState(bool connectionRequested, bool socketOpen, bool sendFailed)
-		{
-			if (!connectionRequested)
-			{
-				return "socket disconnected";
-			}
-
-			if (!socketOpen)
-			{
-				return "socket closed";
-			}
-
-			return sendFailed ? "socket open, last send failed" : "socket open";
-		}
+			=> _telemetrySession.BuildOutSimSummary();
 
 		private void SetOutGaugeEnabled(bool enabled)
 		{
-			OutGaugeEnabled = enabled;
-			_outGaugeElapsed = 0f;
-			if (!enabled)
-			{
-				DisposeOutGaugeClient();
-				return;
-			}
-
-			if (_outGaugeConnectionRequested)
-			{
-				EnsureOutGaugeClient();
-			}
+			_telemetrySession.SetOutGaugeEnabled(enabled);
 		}
 
 		private void SetOutSimEnabled(bool enabled)
 		{
-			OutSimEnabled = enabled;
-			_outSimElapsed = 0f;
-			_outSimHasPreviousLinearVelocity = false;
-			if (!enabled)
-			{
-				DisposeOutSimClient();
-				return;
-			}
-
-			if (_outSimConnectionRequested)
-			{
-				EnsureOutSimClient();
-			}
+			_telemetrySession.SetOutSimEnabled(enabled);
 		}
 
 		private void ConnectOutGauge()
 		{
-			_outGaugeConnectionRequested = true;
-			EnsureOutGaugeClient();
-			SetTelemetryStatus($"OutGauge socket connect requested ({DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed)}).");
+			_telemetrySession.ConnectOutGauge();
+			SetTelemetryStatus($"OutGauge socket connect requested ({_telemetrySession.DescribeOutGaugeSocketState()}).");
 		}
 
 		private void DisconnectOutGauge()
 		{
-			_outGaugeConnectionRequested = false;
-			DisposeOutGaugeClient();
+			_telemetrySession.DisconnectOutGauge();
 			SetTelemetryStatus("OutGauge socket disconnected.");
 		}
 
 		private void ReconnectOutGauge()
 		{
-			_outGaugeConnectionRequested = true;
-			DisposeOutGaugeClient();
-			EnsureOutGaugeClient();
-			SetTelemetryStatus($"OutGauge socket reconnected ({DescribeSocketState(_outGaugeConnectionRequested, _outGaugeClient != null, _outGaugeSendFailed)}).");
+			_telemetrySession.ReconnectOutGauge();
+			SetTelemetryStatus($"OutGauge socket reconnected ({_telemetrySession.DescribeOutGaugeSocketState()}).");
 		}
 
 		private void ConnectOutSim()
 		{
-			_outSimConnectionRequested = true;
-			EnsureOutSimClient();
-			SetTelemetryStatus($"OutSim socket connect requested ({DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed)}).");
+			_telemetrySession.ConnectOutSim();
+			SetTelemetryStatus($"OutSim socket connect requested ({_telemetrySession.DescribeOutSimSocketState()}).");
 		}
 
 		private void DisconnectOutSim()
 		{
-			_outSimConnectionRequested = false;
-			DisposeOutSimClient();
+			_telemetrySession.DisconnectOutSim();
 			SetTelemetryStatus("OutSim socket disconnected.");
 		}
 
 		private void ReconnectOutSim()
 		{
-			_outSimConnectionRequested = true;
-			DisposeOutSimClient();
-			EnsureOutSimClient();
-			SetTelemetryStatus($"OutSim socket reconnected ({DescribeSocketState(_outSimConnectionRequested, _outSimClient != null, _outSimSendFailed)}).");
+			_telemetrySession.ReconnectOutSim();
+			SetTelemetryStatus($"OutSim socket reconnected ({_telemetrySession.DescribeOutSimSocketState()}).");
 		}
 
 		private void SetTelemetryStatus(string message)

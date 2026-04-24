@@ -1060,7 +1060,7 @@ namespace LibreRally.Vehicle.Physics
 			// carcassShearForce chassis-side resistances that are not contact-patch torque
 			// feedback into wheel spin.
 			var tyreReactionTorque = tyreLongitudinalForce * effectiveRollingRadius;
-			state.TyreReactionTorque = tyreReactionTorque;
+			state.TyreReactionTorque = MathF.Abs(tyreReactionTorque);
 			IntegrateWheelAngularVelocity(
 				ref state,
 				driveTorque,
@@ -1070,6 +1070,7 @@ namespace LibreRally.Vehicle.Physics
 				longitudinalVelocity,
 				effectiveRollingRadius,
 				dt);
+			ClampToFrictionEllipse(ref longitudinalForce, ref lateralForce, peakForce);
 
 			// ── Thermal model ────────────────────────────────────────────────────
 			// Two-node thermal model:
@@ -1634,15 +1635,24 @@ namespace LibreRally.Vehicle.Physics
 		private void ClampToFrictionEllipse(ref float longitudinalForce, ref float lateralForce, float peakForce)
 		{
 			const float forceEpsilon = 1e-6f;
-			var fxMax = MathF.Max(peakForce, forceEpsilon);
-			var fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
-			var ellipseValue = (longitudinalForce * longitudinalForce) / (fxMax * fxMax)
-			                   + (lateralForce * lateralForce) / (fyMax * fyMax);
-			if (ellipseValue > 1f)
+			double fxMax = MathF.Max(peakForce, forceEpsilon);
+			double fyMax = MathF.Max(peakForce * MathF.Max(FrictionEllipseRatio, 0.1f), forceEpsilon);
+			double ellipseValue = (longitudinalForce * longitudinalForce) / (fxMax * fxMax)
+			                      + (lateralForce * lateralForce) / (fyMax * fyMax);
+			if (ellipseValue > 1d)
 			{
-				var scale = 1f / MathF.Sqrt(ellipseValue);
+				var scale = (float)(1d / Math.Sqrt(ellipseValue));
 				longitudinalForce *= scale;
 				lateralForce *= scale;
+
+				double clampedEllipseValue = (longitudinalForce * longitudinalForce) / (fxMax * fxMax)
+				                             + (lateralForce * lateralForce) / (fyMax * fyMax);
+				if (clampedEllipseValue > 1d)
+				{
+					var correction = (float)(1d / Math.Sqrt(clampedEllipseValue));
+					longitudinalForce *= correction;
+					lateralForce *= correction;
+				}
 			}
 		}
 
