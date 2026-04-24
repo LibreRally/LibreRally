@@ -787,6 +787,8 @@ namespace LibreRally.Vehicle.Physics
 			// Reference: Pacejka, §2.2, Eq. 2.5.
 			var wheelLinearSpeed = predictedAngularVelocity * effectiveRollingRadius;
 			var absVx = MathF.Abs(longitudinalVelocity);
+			// Use ground speed (|Vx|) as the slip denominator with an epsilon floor.
+			// This avoids large low-speed oscillations while preserving high wheelspin κ at launch.
 			var denominator = MathF.Max(absVx, MinSpeed);
 			var slipRatio = (wheelLinearSpeed - longitudinalVelocity) / denominator;
 			slipRatio = Math.Clamp(slipRatio, -MaxSlipRatio, MaxSlipRatio);
@@ -1053,9 +1055,10 @@ namespace LibreRally.Vehicle.Physics
 
 			// ── Wheel angular velocity integration ───────────────────────────────
 			// Iω̇ = T_drive − T_brake − T_tyre
-			// Tyre reaction torque is generated from the longitudinal contact-patch force
-			// and must oppose wheel rotation. Keep this term separate from rolling/carcass
-			// resistances to preserve explicit torque flow through the tyre model.
+			// T_tyre uses tyreLongitudinalForce (post friction-ellipse contact force only),
+			// not longitudinalForce, because longitudinalForce also includes rrForce and
+			// carcassShearForce chassis-side resistances that are not contact-patch torque
+			// feedback into wheel spin.
 			var tyreReactionTorque = tyreLongitudinalForce * effectiveRollingRadius;
 			state.TyreReactionTorque = tyreReactionTorque;
 			IntegrateWheelAngularVelocity(

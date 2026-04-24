@@ -1659,6 +1659,11 @@ namespace LibreRally.HUD
 			       $"bf:{dynamics.BumpStopForces[wheelIndex] / NewtonsToKilonewtons,5:F2}";
 		}
 
+		/// <summary>
+		/// Formats one per-wheel drivetrain telemetry line.
+		/// Td = drive torque (N·m), Tb = brake torque (N·m), Tt = tyre reaction torque (N·m),
+		/// ω = wheel angular velocity (rad/s), κ = longitudinal slip ratio.
+		/// </summary>
 		private static string FormatDrivetrainTelemetryLine(VehicleDynamicsSystem dynamics, int wheelIndex, string wheelLabel)
 		{
 			var wheelState = dynamics.WheelStates[wheelIndex];
