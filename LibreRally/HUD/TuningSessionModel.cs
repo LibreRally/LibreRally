@@ -40,7 +40,7 @@ namespace LibreRally.HUD
 		string TelemetryFocus);
 
 	/// <summary>
-	/// One recorded verdict in a tuning session.
+	/// One recorded <paramref name="Verdict" /> in a tuning session.
 	/// </summary>
 	/// <param name="PromptId">Prompt identifier that this response answers.</param>
 	/// <param name="Verdict">Driver verdict for the prompt.</param>

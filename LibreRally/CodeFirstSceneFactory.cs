@@ -166,9 +166,12 @@ namespace LibreRally
 
 			var sceneSystem = Services.GetService<SceneSystem>()
 			                  ?? throw new InvalidOperationException("Stride SceneSystem service is unavailable during startup.");
+			
+			// If SceneInstance is not yet initialized, create it now.
+			// This can occur in Release mode or in certain initialization orders.
 			if (sceneSystem.SceneInstance == null)
 			{
-				throw new InvalidOperationException("Stride SceneInstance is unavailable during startup.");
+				sceneSystem.SceneInstance = new SceneInstance(Services);
 			}
 
 			var sceneSetup = CodeFirstSceneFactory.CreateMainSceneSetup(this);
