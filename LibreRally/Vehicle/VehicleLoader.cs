@@ -776,6 +776,7 @@ namespace LibreRally.Vehicle
 			BeamNgPaintPalette? defaultPaintPalette)
 		{
 			var sourceName = Path.GetFileNameWithoutExtension(source.SourcePath);
+			var buildSw = System.Diagnostics.Stopwatch.StartNew();
 			var meshEntity = BuildMeshEntity(
 				chassisMeshes,
 				string.IsNullOrWhiteSpace(sourceName) ? vehicleName : $"{vehicleName}_{sourceName}",
@@ -783,6 +784,8 @@ namespace LibreRally.Vehicle
 				jsonMaterials,
 				source.TextureMap,
 				defaultPaintPalette);
+			buildSw.Stop();
+			Log.Info($"[VehicleLoader] BuildMeshEntity ({sourceName}): {buildSw.ElapsedMilliseconds}ms");
 
 			if (meshEntity == null)
 			{
@@ -1430,9 +1433,14 @@ namespace LibreRally.Vehicle
 
 			var rootEntity = new Entity($"{vehicleName}_mesh");
 			var built = 0;
+			var gpuBufferMs = 0L;
+			var materialLoadMs = 0L;
+			var groupIndex = 0;
+			var overallSw = System.Diagnostics.Stopwatch.StartNew();
 
 			foreach (var group in groups)
 			{
+				groupIndex++;
 				var symbol = group.Key;
 
 				// Merge all sub-meshes that share this material symbol
@@ -1456,6 +1464,8 @@ namespace LibreRally.Vehicle
 				var max = new Vector3(float.MinValue);
 				foreach (var v in allVerts) { min = Vector3.Min(min, v.Position); max = Vector3.Max(max, v.Position); }
 
+				// Time GPU buffer creation
+				var gpuSw = System.Diagnostics.Stopwatch.StartNew();
 				var mesh = new Mesh
 				{
 					BoundingBox = new BoundingBox(min, max),
@@ -1473,6 +1483,8 @@ namespace LibreRally.Vehicle
 						DrawCount = allIndices.Count,
 					}
 				};
+				gpuSw.Stop();
+				gpuBufferMs += gpuSw.ElapsedMilliseconds;
 
 				// ── Three-level texture lookup ────────────────────────────────────
 				// 1. BeamNG JSON: strip "-material" suffix → exact material name
@@ -1480,6 +1492,7 @@ namespace LibreRally.Vehicle
 				Material? material = null;
 				Texture? texture = null;
 
+				var matSw = System.Diagnostics.Stopwatch.StartNew();
 				if (jsonMaterials.TryGetValue(matName, out var materialTextureSet))
 				{
 					material = TryBuildMaterialFromMaterialTextureSet(materialTextureSet, defaultPaintPalette);
@@ -1493,14 +1506,22 @@ namespace LibreRally.Vehicle
 
 				// 3. Grey placeholder — covers sunburst base-car materials and anything else missing
 				material ??= BuildMaterial(texture);
+				matSw.Stop();
+				materialLoadMs += matSw.ElapsedMilliseconds;
 
 				var subEntity = new Entity(symbol);
 				subEntity.Add(new ModelComponent { Model = new Model { mesh, material } });
 				rootEntity.AddChild(subEntity);
 				built++;
+
+				if (groupIndex % 10 == 0 || groupIndex == groups.Count)
+				{
+					Log.Info($"[BuildMeshEntity] {vehicleName}: {groupIndex}/{groups.Count} groups completed, elapsed {overallSw.ElapsedMilliseconds}ms");
+				}
 			}
 
-			Log.Info($"Mesh: {built} material groups ({colladaMeshes.Count} sub-meshes)");
+			overallSw.Stop();
+			Log.Info($"Mesh: {built} material groups ({colladaMeshes.Count} sub-meshes) [total {overallSw.ElapsedMilliseconds}ms, GPU buffers {gpuBufferMs}ms, materials {materialLoadMs}ms]");
 			return built > 0 ? rootEntity : null;
 		}
 
