@@ -21,13 +21,24 @@ namespace LibreRally.Vehicle
 		/// <returns>The loaded model sources.</returns>
 		public List<VehicleModelSource> LoadFromFolder(string folder)
 		{
+			var sw = System.Diagnostics.Stopwatch.StartNew();
+			var enumerateSw = System.Diagnostics.Stopwatch.StartNew();
 			var modelFiles = Directory.EnumerateFiles(folder, "*.dae", SearchOption.AllDirectories)
 				.Concat(Directory.EnumerateFiles(folder, "*.dts", SearchOption.AllDirectories))
 				.OrderBy(path => Path.GetDirectoryName(path)?.Equals(folder, StringComparison.OrdinalIgnoreCase) == true ? 0 : 1)
 				.ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
 				.ToList();
+			enumerateSw.Stop();
+			Log.Info($"[VehicleModelSourceResolver] File enumeration: {enumerateSw.ElapsedMilliseconds}ms ({modelFiles.Count} files found)");
 
-			return LoadFromFiles(modelFiles);
+			var resultSw = System.Diagnostics.Stopwatch.StartNew();
+			var result = LoadFromFiles(modelFiles);
+			resultSw.Stop();
+			Log.Info($"[VehicleModelSourceResolver] File loading: {resultSw.ElapsedMilliseconds}ms ({result.Count} sources loaded)");
+			
+			sw.Stop();
+			Log.Info($"[VehicleModelSourceResolver] Total LoadFromFolder: {sw.ElapsedMilliseconds}ms");
+			return result;
 		}
 
 		/// <summary>
@@ -38,35 +49,42 @@ namespace LibreRally.Vehicle
 		public List<VehicleModelSource> LoadFromFiles(IEnumerable<string> modelFiles)
 		{
 			var result = new List<VehicleModelSource>();
+			int successCount = 0, failureCount = 0;
 			foreach (var modelFile in modelFiles
 				         .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
 				         .Distinct(StringComparer.OrdinalIgnoreCase))
 			{
 				try
 				{
+					var fileSw = System.Diagnostics.Stopwatch.StartNew();
 					Dictionary<string, string> textureMap;
 					List<ColladaMesh> meshes;
 					if (modelFile.EndsWith(".dae", StringComparison.OrdinalIgnoreCase))
 					{
 						textureMap = ColladaLoader.LoadTextureMap(modelFile);
 						meshes = ColladaLoader.Load(modelFile);
-						Log.Info($"DAE: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
+						fileSw.Stop();
+						Log.Info($"DAE ({fileSw.ElapsedMilliseconds}ms): {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes | Collada textures: {textureMap.Count}");
 					}
 					else
 					{
 						textureMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 						meshes = DtsLoader.Load(modelFile);
-						Log.Info($"DTS: {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes");
+						fileSw.Stop();
+						Log.Info($"DTS ({fileSw.ElapsedMilliseconds}ms): {Path.GetFileName(modelFile)} | {meshes.Count} sub-meshes");
 					}
 
 					result.Add(new VehicleModelSource(modelFile, meshes, textureMap));
+					successCount++;
 				}
 				catch (Exception ex)
 				{
 					Log.Warning($"Could not load model '{Path.GetFileName(modelFile)}': {ex.Message}");
+					failureCount++;
 				}
 			}
 
+			Log.Info($"[VehicleModelSourceResolver] LoadFromFiles: {successCount} succeeded, {failureCount} failed");
 			return result;
 		}
 	}

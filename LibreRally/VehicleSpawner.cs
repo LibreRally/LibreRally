@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using LibreRally.Camera;
 using LibreRally.HUD;
 using LibreRally.Telemetry;
@@ -172,6 +173,16 @@ namespace LibreRally
 			set => _telemetrySession.OutSimId = value;
 		}
 
+		/// <summary>
+		/// Gets or sets a value indicating whether the localhost live tuning bridge is enabled.
+		/// </summary>
+		public bool LiveTuningBridgeEnabled { get; set; } = true;
+
+		/// <summary>
+		/// Gets or sets the localhost TCP port used by the live tuning bridge.
+		/// </summary>
+		public int LiveTuningBridgePort { get; set; } = 18765;
+
 		private string _status = "Loading...";
 		private bool _showDebug = true;
 		private DrivingHudOverlay? _drivingHudOverlay;
@@ -184,6 +195,7 @@ namespace LibreRally
 		private readonly VehicleTelemetrySession _telemetrySession = new();
 		private readonly VehicleSpawnerTrackBuilder _trackBuilder = new();
 		private VehicleSpawnerVehicleSession? _vehicleSession;
+		private VehicleLiveTuningBridgeServer? _liveTuningBridgeServer;
 		private int _selectedVehicleIndex;
 		private int _pauseMenuSelectedIndex;
 		private int _telemetryMenuSelectedIndex;
@@ -232,6 +244,7 @@ namespace LibreRally
 			EnsureVehicleSelectionOverlay();
 			EnsurePhysicsCalibrationOverlay();
 			EnsureTelemetryOverlay();
+			InitializeLiveTuningBridge();
 
 			try
 			{
@@ -887,6 +900,101 @@ namespace LibreRally
 			_trackBuilder.ConfigureGround(Entity, (Game)Game);
 		}
 
+		private void InitializeLiveTuningBridge()
+		{
+			if (!LiveTuningBridgeEnabled || _liveTuningBridgeServer != null)
+			{
+				return;
+			}
+
+			try
+			{
+				_liveTuningBridgeServer = new VehicleLiveTuningBridgeServer(LiveTuningBridgePort);
+				_liveTuningBridgeServer.Start();
+				Log.Info($"[VehicleSpawner] Live tuning bridge listening on 127.0.0.1:{_liveTuningBridgeServer.Port}");
+			}
+			catch (SocketException ex)
+			{
+				Log.Error($"Failed to start live tuning bridge on port {LiveTuningBridgePort}: {ex.Message}");
+				_status = $"Live bridge error: {ex.Message}";
+			}
+			catch (ArgumentOutOfRangeException ex)
+			{
+				Log.Error($"Invalid live tuning bridge port '{LiveTuningBridgePort}': {ex.Message}");
+				_status = $"Live bridge error: {ex.Message}";
+			}
+		}
+
+		private LiveTuningSnapshot CreateLiveTuningSnapshot()
+		{
+			return VehicleLiveTuningController.CreateSnapshot(
+				_vehicleSession?.LoadedVehicle,
+				GetCurrentVehicleName(),
+				_status,
+				VehicleFolderPath,
+				ConfigFileName);
+		}
+
+		private LiveTuningBridgeResponse ApplyLiveTuningPatch(LiveTuningPatch patch)
+		{
+			var response = VehicleLiveTuningController.ApplyPatch(
+				_vehicleSession?.LoadedVehicle,
+				GetCurrentVehicleName(),
+				_status,
+				VehicleFolderPath,
+				ConfigFileName,
+				patch);
+			if (response.Succeeded)
+			{
+				_status = response.Summary;
+			}
+
+			return response;
+		}
+
+		private LiveTuningBridgeResponse ReloadLiveTuningVehicle()
+		{
+			try
+			{
+				var selectedVehicle = ResolveSelectedVehicleDescriptor();
+				LoadVehicle(selectedVehicle);
+				return new LiveTuningBridgeResponse
+				{
+					Succeeded = true,
+					Command = "reload_vehicle",
+					Summary = $"Reloaded {GetCurrentVehicleName()} with the current config.",
+					Snapshot = CreateLiveTuningSnapshot(),
+				};
+			}
+			catch (InvalidOperationException ex)
+			{
+				return new LiveTuningBridgeResponse
+				{
+					Succeeded = false,
+					Command = "reload_vehicle",
+					Summary = ex.Message,
+				};
+			}
+			catch (IOException ex)
+			{
+				return new LiveTuningBridgeResponse
+				{
+					Succeeded = false,
+					Command = "reload_vehicle",
+					Summary = ex.Message,
+				};
+			}
+			catch (UnauthorizedAccessException ex)
+			{
+				return new LiveTuningBridgeResponse
+				{
+					Succeeded = false,
+					Command = "reload_vehicle",
+					Summary = ex.Message,
+				};
+			}
+		}
+
 		/// <summary>
 		/// Handles per-frame input, telemetry, and debug updates for spawned vehicles.
 		/// </summary>
@@ -895,6 +1003,7 @@ namespace LibreRally
 			HandlePauseAndVehicleSelectionInput();
 			var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
 			_telemetrySession.Update((Game)Game, dt, _vehicleSession?.Car);
+			_liveTuningBridgeServer?.Pump(CreateLiveTuningSnapshot, ApplyLiveTuningPatch, ReloadLiveTuningVehicle);
 
 			// Toggle debug info with F3
 			if (Input.IsKeyPressed(Keys.F3))

@@ -127,9 +127,10 @@ namespace LibreRally.Vehicle
 			var definition = JBeamAssembler.Assemble(jbeamSearchFolders, vehicleFolderPath, pcConfig);
 			ApplySetupOverridesToDefinition(definition, setupOverrides);
 			var defaultPaintPalette = BeamNgPaintPaletteResolver.LoadDefaultPalette(vehicleFolderPath, pcPath);
+			IReadOnlyDictionary<string, float>? preferredSetupVars = pcConfig?.Vars;
 
 			// 2. Build physics entity hierarchy
-			var result = VehiclePhysicsBuilder.Build(definition);
+			var result = VehiclePhysicsBuilder.Build(definition, preferredSetupVars);
 			var rootEntity = result.RootEntity;
 
 			// 3. Attach visual meshes (best-effort — falls back to a visible box)
@@ -148,44 +149,14 @@ namespace LibreRally.Vehicle
 			float V(string name, float fallback) =>
 				definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
 			float GetVarWithFallbacks(float fallback, params string[] names)
-			{
-				foreach (var name in names)
-				{
-					if (definition.Vars.TryGetValue(name, out var v) && v > 0)
-					{
-						return v;
-					}
-				}
-
-				return fallback;
-			}
+				=> VehicleSetupValueResolver.GetPositiveValue(preferredSetupVars, definition.Vars, fallback, names);
 			float GetNumericVarOrFallback(float fallback, params string[] names)
-			{
-				foreach (var name in names)
-				{
-					if (definition.Vars.TryGetValue(name, out var v) && float.IsFinite(v))
-					{
-						return v;
-					}
-				}
-
-				return fallback;
-			}
+				=> VehicleSetupValueResolver.GetFiniteValue(preferredSetupVars, definition.Vars, fallback, names);
 			float? TryGetNumericVar(params string[] names)
-			{
-				foreach (var name in names)
-				{
-					if (definition.Vars.TryGetValue(name, out var v) && float.IsFinite(v))
-					{
-						return v;
-					}
-				}
-
-				return null;
-			}
+				=> VehicleSetupValueResolver.TryGetFiniteValue(preferredSetupVars, definition.Vars, names);
 			float ResolveCamberRadians(string axleSuffix)
 			{
-				var camberPrecompression = GetNumericVarOrFallback(1f, $"camber_{axleSuffix}_asphalt", $"camber_{axleSuffix}");
+				var camberPrecompression = GetNumericVarOrFallback(1f, $"camber_{axleSuffix}");
 				return RallyCarComponent.ConvertCamberPrecompressionToRadians(camberPrecompression);
 			}
 
@@ -377,6 +348,20 @@ namespace LibreRally.Vehicle
 				: powertrain.DriveFrontAxle
 					? "FWD"
 					: "RWD";
+			string DescribeResolvedPositiveVar(params string[] names)
+			{
+				return VehicleSetupValueResolver.TryResolvePositiveValue(preferredSetupVars, definition.Vars, out _, out var resolvedName, names)
+					? resolvedName
+					: "fallback";
+			}
+
+			string DescribeResolvedFiniteVar(params string[] names)
+			{
+				return VehicleSetupValueResolver.TryResolveFiniteValue(preferredSetupVars, definition.Vars, out _, out var resolvedName, names)
+					? resolvedName
+					: "fallback";
+			}
+
 			Log.Info($"[VehicleLoader] Gears: R={reverseGear:F2} " +
 			         string.Join(" ", powertrain.GearRatios.Skip(1).Select((g, i) => $"{i + 1}={g:F2}")) +
 			         $" | FD={powertrain.FinalDrive:F2} | MaxRPM={powertrain.MaxRpm:F0} | Layout={drivenLayout} | Driven={string.Join(",", powertrain.DrivenWheelKeys)}" +
@@ -386,6 +371,14 @@ namespace LibreRally.Vehicle
 			         $"| R r={rearTyreSpec.Radius:F3}m w={rearTyreSpec.Width:F3}m p={rearTyreSpec.PressureKpa:F0}kPa");
 			Log.Info($"[VehicleLoader] Dynamics: mass={vehicleMass:F0}kg wb={wheelbase:F2}m tw={trackWidth:F2}m cg={cgHeight:F2}m");
 			Log.Info($"[VehicleLoader] Attitude: rollF={frontRollStiffness:F0} rollR={rearRollStiffness:F0} rollDamp={rollDamping:F0} pitch={pitchStiffness:F0} pitchDamp={pitchDamping:F0}");
+			Log.Info($"[VehicleLoader] Setup vars: springF={springRateFront:F0}({DescribeResolvedPositiveVar("spring_F")}) " +
+			         $"springR={springRateRear:F0}({DescribeResolvedPositiveVar("spring_R")}) " +
+			         $"dampBumpF={dampBumpFront:F0}({DescribeResolvedPositiveVar("damp_bump_F")}) " +
+			         $"dampReboundF={dampReboundFront:F0}({DescribeResolvedPositiveVar("damp_rebound_F")}) " +
+			         $"dampBumpR={dampBumpRear:F0}({DescribeResolvedPositiveVar("damp_bump_R")}) " +
+			         $"dampReboundR={dampReboundRear:F0}({DescribeResolvedPositiveVar("damp_rebound_R")}) " +
+			         $"camberF={car.FrontStaticCamberRadians:F3}rad({DescribeResolvedFiniteVar("camber_F")}) " +
+			         $"camberR={car.RearStaticCamberRadians:F3}rad({DescribeResolvedFiniteVar("camber_R")})");
 			Log.Info($"[VehicleLoader] Engine: fuel={powertrain.FuelCapacityLiters:F1}L start={powertrain.StartingFuelLiters:F1}L " +
 			         $"oil={powertrain.OilVolumeLiters:F1}L thermostat={powertrain.AirRegulatorTemperature:F0}°C " +
 			         $"turbo={powertrain.HasTurbo} maxBoost={powertrain.TurboMaxBoostPsi:F1}psi");
@@ -501,9 +494,14 @@ namespace LibreRally.Vehicle
 			BeamNgResolvedVehicle? resolvedVehicle,
 			BeamNgPaintPalette? defaultPaintPalette)
 		{
+			var sw = System.Diagnostics.Stopwatch.StartNew();
 			try
 			{
+				var baseSw = System.Diagnostics.Stopwatch.StartNew();
 				var baseModelSources = _modelSourceResolver.LoadFromFolder(folder);
+				baseSw.Stop();
+				Log.Info($"[VehicleLoader] LoadFromFolder: {baseSw.ElapsedMilliseconds}ms ({baseModelSources.Count} sources)");
+
 				var modelSources = new List<VehicleModelSource>(baseModelSources);
 				var supplementalModelSources = AddSupplementalColladaSources(modelSources, definition, resolvedVehicle);
 				if (modelSources.Count == 0)
@@ -611,6 +609,11 @@ namespace LibreRally.Vehicle
 			catch (Exception ex)
 			{
 				Log.Error($"Could not load mesh: {ex.Message}");
+			}
+			finally
+			{
+				sw.Stop();
+				Log.Info($"[VehicleLoader] TryAttachMeshes total: {sw.ElapsedMilliseconds}ms");
 			}
 
 			AttachFallbackChassis(result.ChassisEntity, definition);

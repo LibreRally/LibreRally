@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using LibreRally.Vehicle;
 using LibreRally.Vehicle.JBeam;
 using NumericsVector3 = System.Numerics.Vector3;
 using Stride.BepuPhysics;
@@ -54,11 +55,12 @@ namespace LibreRally.Vehicle.Physics
 		///   - Four wheel entities with suspension constraints.
 		/// </summary>
 		/// <param name="def">Assembled vehicle definition containing nodes, parts, and beam metadata.</param>
+		/// <param name="preferredSetupVars">Optional active .pc setup values that should override merged JBeam defaults.</param>
 		/// <returns>A <see cref="VehicleBuilderResult"/> containing the created entities and chassis body.</returns>
 		/// <exception cref="InvalidOperationException">
 		/// Thrown when the vehicle definition does not contain a non-detachable chassis part.
 		/// </exception>
-		public static VehicleBuilderResult Build(VehicleDefinition def)
+		public static VehicleBuilderResult Build(VehicleDefinition def, IReadOnlyDictionary<string, float>? preferredSetupVars = null)
 		{
 			var root = new Entity(def.VehicleName);
 
@@ -72,7 +74,7 @@ namespace LibreRally.Vehicle.Physics
 			// destabilises the solver when there are 10-20 of them. Re-enable once physics is stable.
 			// foreach (var part in def.Parts.Where(p => p.Detachable)) { ... }
 
-			var (fl, fr, rl, rr) = BuildWheels(def, chassisBody, chassisEntity.Transform.Position);
+			var (fl, fr, rl, rr) = BuildWheels(def, chassisBody, chassisEntity.Transform.Position, preferredSetupVars);
 			root.AddChild(fl);
 			root.AddChild(fr);
 			root.AddChild(rl);
@@ -300,7 +302,8 @@ namespace LibreRally.Vehicle.Physics
 		private static (Entity fl, Entity fr, Entity rl, Entity rr) BuildWheels(
 			VehicleDefinition def,
 			BodyComponent chassisBody,
-			Vector3 chassisWorldPos)
+			Vector3 chassisWorldPos,
+			IReadOnlyDictionary<string, float>? preferredSetupVars)
 		{
 			var pressureWheelsByKey = def.PressureWheels
 				.GroupBy(w => w.WheelKey, StringComparer.OrdinalIgnoreCase)
@@ -456,18 +459,18 @@ namespace LibreRally.Vehicle.Physics
 			quarterMass = Math.Max(quarterMass, 50f);
 
 			float GetVar(string name, float fallback) =>
-				def.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
+				VehicleSetupValueResolver.GetPositiveValue(preferredSetupVars, def.Vars, fallback, name);
 
 			// springheight vars are signed adjustments (negative lowers the car), so accept any finite value.
 			float GetSignedVar(string name, float fallback) =>
-				def.Vars.TryGetValue(name, out var v) && float.IsFinite(v) ? v : fallback;
+				VehicleSetupValueResolver.GetFiniteValue(preferredSetupVars, def.Vars, fallback, name);
 
-			var springF = GetVar("spring_F_asphalt", GetVar("spring_F", 60000f));
-			var springR = GetVar("spring_R_asphalt", GetVar("spring_R", 50000f));
-			var dampBumpF = GetVar("damp_bump_F_asphalt", GetVar("damp_bump_F", 4400f));
-			var dampRebF = GetVar("damp_rebound_F_asphalt", GetVar("damp_rebound_F", 11500f));
-			var dampBumpR = GetVar("damp_bump_R_asphalt", GetVar("damp_bump_R", 4400f));
-			var dampRebR = GetVar("damp_rebound_R_asphalt", GetVar("damp_rebound_R", 9000f));
+			var springF = GetVar("spring_F", 60000f);
+			var springR = GetVar("spring_R", 50000f);
+			var dampBumpF = GetVar("damp_bump_F", 4400f);
+			var dampRebF = GetVar("damp_rebound_F", 11500f);
+			var dampBumpR = GetVar("damp_bump_R", 4400f);
+			var dampRebR = GetVar("damp_rebound_R", 9000f);
 
 			// Average bump+rebound for single BEPU damping value; BEPU uses SpringDampingRatio
 			var dampF = (dampBumpF + dampRebF) * 0.5f;
@@ -496,8 +499,8 @@ namespace LibreRally.Vehicle.Physics
 			var reboundTravelF = ComputeReboundTravel(staticNormalLoad, springF);
 			var bumpTravelR = ComputeBumpTravel(staticNormalLoad, springR);
 			var reboundTravelR = ComputeReboundTravel(staticNormalLoad, springR);
-			var springHeightAdjustmentF = GetSignedVar("springheight_F_asphalt", GetSignedVar("springheight_F", 0f));
-			var springHeightAdjustmentR = GetSignedVar("springheight_R_asphalt", GetSignedVar("springheight_R", 0f));
+			var springHeightAdjustmentF = GetSignedVar("springheight_F", 0f);
+			var springHeightAdjustmentR = GetSignedVar("springheight_R", 0f);
 
 			float ComputeTargetOffset(bool isFrontAxle)
 			{
