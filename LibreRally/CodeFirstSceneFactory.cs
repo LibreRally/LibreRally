@@ -109,7 +109,7 @@ namespace LibreRally
 			var graphicsCompositor = GraphicsCompositorHelper.CreateDefault(
 				enablePostEffects: true,
 				camera: cameraComponent,
-				graphicsProfile: GraphicsProfile.Level_11_2);
+				graphicsProfile: GraphicsProfile.Level_11_0);
 			EnsureParticleRenderFeature(graphicsCompositor);
 
 			if (graphicsCompositor.Cameras.Count > 0)
