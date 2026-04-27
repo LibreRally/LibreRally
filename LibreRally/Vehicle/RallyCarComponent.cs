@@ -20,7 +20,7 @@ namespace LibreRally.Vehicle
 	/// Core component for rally vehicle simulation, handling engine, transmission, steering, and tyre dynamics.
 	/// </summary>
 	[ComponentCategory("LibreRally")]
-	public class RallyCarComponent : SyncScript
+	public sealed class RallyCarComponent : SyncScript
 	{
 		private const float GroundProbeMargin = 0.05f;
 		private const float SurfaceBlendDistance = 0.08f;
@@ -45,7 +45,7 @@ namespace LibreRally.Vehicle
 		private const float TurboSpoolRatePerSecond = 3f;
 		private const float WheelSurfaceVfxRiseRate = 12f;
 		private const float WheelSurfaceVfxFallRate = 4f;
-		private const float WheelSurfaceVfxMaxSpawnRate = 90f;
+		private const float WheelSurfaceVfxMaxSpawnRate = 50f;
 		private const float WheelSurfaceVfxSlipAngleWeight = 1.1f;
 		private const float WheelSurfaceVfxMinSlipRampRange = 1e-4f;
 		private const float TarmacVfxSlipRampStart = 0.22f;
@@ -376,6 +376,22 @@ namespace LibreRally.Vehicle
 		private float EffectiveRatio => GearRatios[Math.Clamp(CurrentGear, 0, GearRatios.Length - 1)] * FinalDrive;
 		private float _shiftCooldown;
 
+		private static readonly float[] AvailablePhysicsTickRates = [0.00278f, 0.004f, 0.008f, 0.010f, 0.016f, 0.033f];
+		private static readonly string[] AvailablePhysicsTickRateLabels = ["360 Hz", "240 Hz", "120 Hz", "100 Hz", "60 Hz", "30 Hz"];
+		private static int _physicsTickRateIndex = 1;
+		internal static float PhysicsTickRate => AvailablePhysicsTickRates[_physicsTickRateIndex];
+		internal static string PhysicsTickRateLabel => AvailablePhysicsTickRateLabels[_physicsTickRateIndex];
+
+		internal static string CyclePhysicsTickRate()
+		{
+			_physicsTickRateIndex = (_physicsTickRateIndex + 1) % AvailablePhysicsTickRates.Length;
+			return AvailablePhysicsTickRateLabels[_physicsTickRateIndex];
+		}
+
+		private const float MaxFrameDt = 0.05f;
+		private const int MaxPhysicsSteps = 15;
+		private float _physicsAccumulator;
+
 		// Simulated engine RPM — the engine drives the drivetrain, not the other way around.
 		private float _engineRpm;
 		// Thermal / oil / fuel / turbo simulation state
@@ -434,59 +450,23 @@ namespace LibreRally.Vehicle
 		/// </summary>
 		public override void Update()
 		{
-			var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
-			if (dt <= 0f || dt > 0.1f)
+			var frameDt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
+			if (frameDt <= 0f || frameDt > MaxFrameDt)
 			{
-				dt = 0.016f;
+				frameDt = PhysicsTickRate;
 			}
 
 			if (!Game.IsActive)
 			{
 				ClearLiveInputs();
 				SetVehicleBodiesAwake(false);
+				_physicsAccumulator = 0f;
 				return;
 			}
 
-			// ── Input ────────────────────────────────────────────────────────────
-			var pad = PlayerInputEnabled ? Input.GamePads.FirstOrDefault() : null;
-			float throttle = 0f, brake = 0f, steer = 0f;
-			var handbrakeRequested = false;
-
-			if (PlayerInputEnabled)
-			{
-				if (pad != null)
-				{
-					throttle  = ApplyTriggerDeadzone(pad.State.RightTrigger, GamePadTriggerDeadzone);
-					brake     = ApplyTriggerDeadzone(pad.State.LeftTrigger, GamePadTriggerDeadzone);
-					steer     = ApplySignedAxisDeadzone(pad.State.LeftThumb.X, GamePadSteerDeadzone);
-					handbrakeRequested = pad.IsButtonDown(GamePadButton.A);
-				}
-
-				if (Input.IsKeyDown(Keys.Up)    || Input.IsKeyDown(Keys.W))
-				{
-					throttle  = MathF.Max(throttle, 1f);
-				}
-
-				if (Input.IsKeyDown(Keys.Down)  || Input.IsKeyDown(Keys.S))
-				{
-					brake     = MathF.Max(brake,    1f);
-				}
-
-				if (Input.IsKeyDown(Keys.Left)  || Input.IsKeyDown(Keys.A))
-				{
-					steer     = MathF.Min(steer,   -1f);
-				}
-
-				if (Input.IsKeyDown(Keys.Right) || Input.IsKeyDown(Keys.D))
-				{
-					steer     = MathF.Max(steer,    1f);
-				}
-
-				if (Input.IsKeyDown(Keys.Space))
-				{
-					handbrakeRequested = true;
-				}
-			}
+			var input = VehicleInputState.Read(Input, PlayerInputEnabled, GamePadTriggerDeadzone, GamePadSteerDeadzone);
+			float throttle = input.Throttle, brake = input.Brake, steer = input.Steer;
+			var handbrakeRequested = input.HandbrakeRequested;
 
 			// ── Chassis physics ──────────────────────────────────────────────────
 			var chassisBody = CarBody.Get<BodyComponent>();
@@ -512,6 +492,14 @@ namespace LibreRally.Vehicle
 			BrakeInput    = brake;
 			SteeringInput = steer;
 
+			_physicsAccumulator += frameDt;
+			var steps = 0;
+			while (_physicsAccumulator >= PhysicsTickRate && steps < MaxPhysicsSteps)
+			{
+				var dt = PhysicsTickRate;
+				_physicsAccumulator -= PhysicsTickRate;
+				steps++;
+
 			// ── Auto transmission ────────────────────────────────────────────────
 			// Use slip-clamped driven-shaft RPM for shift decisions and engine coupling.
 			// The sampled wheel omega remains signed so reverse and engine braking keep
@@ -520,7 +508,7 @@ namespace LibreRally.Vehicle
 			var effectiveRatio = EffectiveRatio;
 			_shiftCooldown = MathF.Max(0f, _shiftCooldown - dt);
 
-			var standingGear = ResolveStandingGearSelection(
+			var standingGear = VehicleTransmissionController.ResolveStandingGear(
 				CurrentGear,
 				SpeedKmh,
 				forwardSpeed,
@@ -546,13 +534,7 @@ namespace LibreRally.Vehicle
 			DriveInput = driveInput;
 			ServiceBrakeInput = serviceBrakeInput;
 			HandbrakeEngaged = isHandbrake;
-			SetVehicleBodiesAwake(ShouldKeepVehicleAwake(
-				throttle,
-				brake,
-				steer,
-				handbrakeRequested,
-				chassisBody.LinearVelocity,
-				chassisBody.AngularVelocity));
+			SetVehicleBodiesAwake(VehicleInputState.ShouldKeepAwake(input, chassisBody.LinearVelocity, chassisBody.AngularVelocity));
 
 			var safeWheelRadius = MathF.Max(WheelRadius, 0.05f);
 			var roadWheelOmega = forwardSpeed / safeWheelRadius;
@@ -569,7 +551,7 @@ namespace LibreRally.Vehicle
 			                                  && !isHandbrake
 			                                  && SpeedKmh >= TractionControlMinimumSpeedKmh;
 			var tractionControlTargetScale = tractionControlCanIntervene
-				? ComputeTractionControlTorqueScale(
+				? VehicleTransmissionController.ComputeTractionControlTorqueScale(
 					drivenWheelSlipRatio,
 					TractionControlSlipRatioTarget,
 					TractionControlSlipRatioWindow,
@@ -578,14 +560,14 @@ namespace LibreRally.Vehicle
 			var tractionControlRate = tractionControlTargetScale < TractionControlTorqueScale
 				? TractionControlApplyRate
 				: TractionControlReleaseRate;
-			var tractionControlScale = AdvanceControllerScale(
+			var tractionControlScale = VehicleTransmissionController.AdvanceControllerScale(
 				TractionControlTorqueScale,
 				tractionControlTargetScale,
 				tractionControlRate,
 				dt);
 			TractionControlTorqueScale = tractionControlScale;
 			TractionControlActive = tractionControlCanIntervene && tractionControlScale < 0.98f;
-			var slipClampedDrivenWheelOmega = ClampDrivenWheelOmegaForSlip(
+			var slipClampedDrivenWheelOmega = VehicleTransmissionController.ClampDrivenWheelOmegaForSlip(
 				roadWheelOmega,
 				drivenWheelOmega,
 				effectiveRatio,
@@ -622,19 +604,13 @@ namespace LibreRally.Vehicle
 			}
 
 			wheelToEngineRpm = effectiveRatio * (60f / (2f * MathF.PI));
-			slipClampedDrivenWheelOmega = ClampDrivenWheelOmegaForSlip(
+			slipClampedDrivenWheelOmega = VehicleTransmissionController.ClampDrivenWheelOmegaForSlip(
 				roadWheelOmega,
 				drivenWheelOmega,
 				effectiveRatio,
 				ShiftSlipAllowanceRpm);
 			var drivelineRpm = Math.Clamp(MathF.Abs(slipClampedDrivenWheelOmega) * wheelToEngineRpm, IdleRpm, MaxRpm);
 			DrivelineRpm = drivelineRpm;
-
-			var gearLabel = isReverseGear ? "R" : CurrentGear.ToString();
-			var padInfo = pad != null
-				? $"Pad | T:{throttle:F2} B:{brake:F2} S:{steer:F2} G:{gearLabel}{(isHandbrake ? " HB" : string.Empty)}"
-				: $"No pad ({Input.GamePads.Count}) — use arrows";
-			DebugText.Print($"{padInfo} | {SpeedKmh:F0} km/h", new Int2(10, 30));
 
 			// ── Engine simulation ─────────────────────────────────────────────────
 			// Two separate concerns:
@@ -654,13 +630,13 @@ namespace LibreRally.Vehicle
 			var torqueRpm   = driveInput > 0.05f ? MathF.Max(drivelineRpm, launchRpm) : drivelineRpm;
 			// Base the launch wheelspin limiter on the slowest grounded driven wheel so
 			// one unloaded open-diff wheel does not choke torque to the whole axle.
-			var autoClutchSlipClampedOmega = ClampDrivenWheelOmegaForSlip(
+			var autoClutchSlipClampedOmega = VehicleTransmissionController.ClampDrivenWheelOmegaForSlip(
 				roadWheelOmega,
 				autoClutchDrivenWheelOmega,
 				effectiveRatio,
 				AutoClutchWheelspinWindowRpm);
 			var crankTorqueScale = driveInput > 0.05f
-				? ComputeAutoClutchTorqueScale(
+				? VehicleTransmissionController.ComputeAutoClutchTorqueScale(
 					autoClutchDrivenWheelOmega,
 					autoClutchSlipClampedOmega,
 					effectiveRatio,
@@ -713,8 +689,9 @@ namespace LibreRally.Vehicle
 			var totalActualSteerAngle = 0f;
 			var steerWheelCount = 0;
 
-			foreach (var wheel in SteerWheels)
+			for (var wi = 0; wi < SteerWheels.Count; wi++)
 			{
+				var wheel = SteerWheels[wi];
 				var ws = wheel.Get<WheelSettings>();
 				if (ws?.SteerMotor == null)
 				{
@@ -744,8 +721,9 @@ namespace LibreRally.Vehicle
 			var wheelTargetOmega   = -(MaxRpm * (2f * MathF.PI / 60f) / effectiveRatio) * driveDirection;
 			var availableWheelForce = MathF.Max(0f, crankTorque) * effectiveRatio / WheelRadius / numDrive;
 
-			foreach (var wheel in DriveWheels)
+			for (var wi = 0; wi < DriveWheels.Count; wi++)
 			{
+				var wheel = DriveWheels[wi];
 				var ws = wheel.Get<WheelSettings>();
 				if (ws?.DriveMotor == null)
 				{
@@ -764,7 +742,7 @@ namespace LibreRally.Vehicle
 
 				wheel.Transform.UpdateWorldMatrix();
 				var driveAxisLocalA = MeasureWheelAxleAxisLocalA(chassisTransform.WorldMatrix, wheel.Transform.WorldMatrix);
-				var rearWheel = IsRearWheel(wheel, ws);
+				var rearWheel = ws.DynamicsIndex >= VehicleDynamicsSystem.RL;
 
 				if (isHandbrake && rearWheel)
 				{
@@ -822,7 +800,7 @@ namespace LibreRally.Vehicle
 					if (absCanIntervene)
 					{
 						var wheelState = dynamics.WheelStates[i];
-						var rollingDirection = ResolveRollingDirection(forwardSpeed, wheelState.AngularVelocity);
+						var rollingDirection = VehicleTransmissionController.ResolveRollingDirection(forwardSpeed, wheelState.AngularVelocity);
 						var targetBrakeScale = dynamics.WheelGrounded[i]
 							? ComputeAbsBrakeTorqueScale(
 								wheelState.SlipRatio,
@@ -832,7 +810,7 @@ namespace LibreRally.Vehicle
 								AbsMinBrakeTorqueScale)
 							: 1f;
 						var responseRate = targetBrakeScale < _absBrakeTorqueScales[i] ? AbsApplyRate : AbsReleaseRate;
-						_absBrakeTorqueScales[i] = AdvanceControllerScale(_absBrakeTorqueScales[i], targetBrakeScale, responseRate, dt);
+						_absBrakeTorqueScales[i] = VehicleTransmissionController.AdvanceControllerScale(_absBrakeTorqueScales[i], targetBrakeScale, responseRate, dt);
 						wheelServiceBrakeTorque *= _absBrakeTorqueScales[i];
 						AbsActive |= _absBrakeTorqueScales[i] < 0.98f;
 					}
@@ -881,7 +859,7 @@ namespace LibreRally.Vehicle
 			                        || Dynamics.WheelGrounded[VehicleDynamicsSystem.FR];
 			if (Dynamics == null && frontAxleGrounded)
 			{
-				var lowSpeedYawAssist = ComputeLowSpeedYawAssistRate(
+				var lowSpeedYawAssist = VehicleTransmissionController.ComputeLowSpeedYawAssistRate(
 					steerRack,
 					forwardSpeed,
 					driveInput,
@@ -891,12 +869,18 @@ namespace LibreRally.Vehicle
 				if (MathF.Abs(lowSpeedYawAssist) > 1e-4f)
 				{
 					var assistAv = chassisBody.AngularVelocity;
-					assistAv.Y = ApplyYawAssistTopUp(assistAv.Y, lowSpeedYawAssist, 1.25f * dt);
+					assistAv.Y = VehicleTransmissionController.ApplyYawAssistTopUp(assistAv.Y, lowSpeedYawAssist, 1.25f * dt);
 					chassisBody.AngularVelocity = assistAv;
 				}
 			}
+			} // while
 
-			UpdateWheelSurfaceVfx(dt, chassisTransform.WorldMatrix);
+			if (steps >= MaxPhysicsSteps)
+			{
+				_physicsAccumulator = 0f;
+			}
+
+			UpdateWheelSurfaceVfx(frameDt, chassisTransform.WorldMatrix);
 			SuspensionVisualRig?.UpdateVisuals();
 		}
 
@@ -983,7 +967,7 @@ namespace LibreRally.Vehicle
 					dynamics.WheelSurfaces[dynamicsIndex] = wheelSettings.CurrentSurfaceProperties;
 				}
 
-				var isFrontAxle = !IsRearWheel(wheel, wheelSettings);
+				var isFrontAxle = wheelSettings.DynamicsIndex < VehicleDynamicsSystem.RL;
 				var staticCamber = isFrontAxle ? FrontStaticCamberRadians : RearStaticCamberRadians;
 				var camberGain = isFrontAxle ? FrontCamberGainPerMeter : RearCamberGainPerMeter;
 				var alignmentCamber = ComputeAlignmentCamberAngle(staticCamber, camberGain, _suspensionCompressions[i]);
@@ -1317,8 +1301,9 @@ namespace LibreRally.Vehicle
 				chassisBody.Awake = awake;
 			}
 
-			foreach (var wheelBody in Wheels.Select(wheel => wheel.Get<BodyComponent>()))
+			for (var wi = 0; wi < Wheels.Count; wi++)
 			{
+				var wheelBody = Wheels[wi].Get<BodyComponent>();
 				if (wheelBody != null)
 				{
 					wheelBody.Awake = awake;
@@ -1413,8 +1398,9 @@ namespace LibreRally.Vehicle
 			Span<bool> sampledWheelGrounded = stackalloc bool[VehicleDynamicsSystem.WheelCount];
 			var sampledCount = 0;
 
-			foreach (var wheel in DriveWheels)
+			for (var wi = 0; wi < DriveWheels.Count; wi++)
 			{
+				var wheel = DriveWheels[wi];
 				var ws = wheel.Get<WheelSettings>();
 				var dynamicsIndex = ws?.DynamicsIndex ?? -1;
 				if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount)
@@ -1432,7 +1418,7 @@ namespace LibreRally.Vehicle
 				}
 			}
 
-			return ResolveDrivenWheelOmega(
+			return VehicleTransmissionController.ResolveDrivenWheelOmega(
 				fallbackOmega,
 				forwardSpeed,
 				sampledWheelOmegas[..sampledCount],
@@ -1457,8 +1443,9 @@ namespace LibreRally.Vehicle
 			Span<bool> sampledWheelGrounded = stackalloc bool[VehicleDynamicsSystem.WheelCount];
 			var sampledCount = 0;
 
-			foreach (var ws in DriveWheels.Select(wheel => wheel.Get<WheelSettings>()))
+			for (var wi = 0; wi < DriveWheels.Count; wi++)
 			{
+				var ws = DriveWheels[wi].Get<WheelSettings>();
 				var dynamicsIndex = ws?.DynamicsIndex ?? -1;
 				if ((uint)dynamicsIndex >= VehicleDynamicsSystem.WheelCount)
 				{
@@ -1482,7 +1469,7 @@ namespace LibreRally.Vehicle
 				}
 			}
 
-			autoClutchDrivenWheelOmega = ResolveAutoClutchDrivenWheelOmega(
+			autoClutchDrivenWheelOmega = VehicleTransmissionController.ResolveAutoClutchDrivenWheelOmega(
 				fallbackOmega,
 				sampledWheelOmegas[..sampledCount],
 				sampledWheelGrounded[..sampledCount]);
@@ -1851,7 +1838,7 @@ namespace LibreRally.Vehicle
 			var emitter = new ParticleEmitter
 			{
 				EmitterName = "WheelSurfaceVfx",
-				MaxParticlesOverride = 180,
+				MaxParticlesOverride = 90,
 				ParticleLifetime = new Vector2(0.35f, 0.95f),
 				SimulationSpace = EmitterSimulationSpace.World,
 				ShapeBuilder = new ShapeBuilderBillboard(),
@@ -1893,7 +1880,12 @@ namespace LibreRally.Vehicle
 			}
 
 			var dynamics = Dynamics;
-			var inverseChassisWorld = Matrix.Invert(chassisWorld);
+
+			// Transform wheel surface position to chassis-local using basis vectors (avoids Matrix.Invert)
+			var chassisPos = chassisWorld.TranslationVector;
+			var chassisRight = chassisWorld.Right;
+			var chassisUp = chassisWorld.Up;
+			var chassisForward = chassisWorld.Backward;
 
 			for (var i = 0; i < VehicleDynamicsSystem.WheelCount; i++)
 			{
@@ -1929,13 +1921,17 @@ namespace LibreRally.Vehicle
 
 					var tyreRadius = wheelSettings?.TyreModel?.Radius ?? WheelRadius;
 					var wheelSurfacePosition = ComputeWheelSurfaceVfxPosition(i, tyreRadius);
-					wheelSurfaceVfxEntity.Transform.Position = Vector3.TransformCoordinate(wheelSurfacePosition, inverseChassisWorld);
+					var relPos = wheelSurfacePosition - chassisPos;
+					wheelSurfaceVfxEntity.Transform.Position = new Vector3(
+						Vector3.Dot(relPos, chassisRight),
+						Vector3.Dot(relPos, chassisUp),
+						Vector3.Dot(relPos, chassisForward));
 				}
 
 				var responseRate = targetIntensity > _wheelSurfaceVfxIntensity[i]
 					? WheelSurfaceVfxRiseRate
 					: WheelSurfaceVfxFallRate;
-				_wheelSurfaceVfxIntensity[i] = AdvanceControllerScale(_wheelSurfaceVfxIntensity[i], targetIntensity, responseRate, dt);
+				_wheelSurfaceVfxIntensity[i] = VehicleTransmissionController.AdvanceControllerScale(_wheelSurfaceVfxIntensity[i], targetIntensity, responseRate, dt);
 				wheelSurfaceVfxSpawner.SpawnCount = _wheelSurfaceVfxIntensity[i] * WheelSurfaceVfxMaxSpawnRate;
 				wheelSurfaceVfxComponent.Color = ResolveWheelSurfaceVfxColor(wheelSurface, _wheelSurfaceVfxIntensity[i]);
 			}

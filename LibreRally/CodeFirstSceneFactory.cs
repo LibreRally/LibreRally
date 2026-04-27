@@ -107,7 +107,7 @@ namespace LibreRally
 			scene.Entities.Add(skyboxEntity);
 
 			var graphicsCompositor = GraphicsCompositorHelper.CreateDefault(
-				enablePostEffects: true,
+				enablePostEffects: false,
 				camera: cameraComponent,
 				graphicsProfile: GraphicsProfile.Level_11_0);
 			EnsureParticleRenderFeature(graphicsCompositor);
@@ -156,6 +156,16 @@ namespace LibreRally
 	/// </summary>
 	public sealed class LibreRallyGame : Game
 	{
+		/// <summary>
+	/// Initializes a new instance of the <see cref="LibreRallyGame"/> class with a 60 Hz fixed timestep.
+	/// </summary>
+	public LibreRallyGame()
+		{
+			IsFixedTimeStep = true;
+			TargetElapsedTime = TimeSpan.FromSeconds(1.0 / 60.0);
+			IsDrawDesynchronized = false;
+		}
+
 		/// <summary>
 		/// Loads the initial scene content and wires up the startup game state.
 		/// </summary>

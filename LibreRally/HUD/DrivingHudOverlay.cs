@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using System.Text;
 using LibreRally.Race;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Physics;
@@ -72,6 +75,7 @@ namespace LibreRally.HUD
 		private Label? _inputSummaryLabel;
 		private Label? _hudStatusLabel;
 		private Label? _timerLabel;
+		private Label? _perfLabel;
 		private Label? _speedValueLabel;
 		private Label? _rpmValueLabel;
 		private Label? _gearValueLabel;
@@ -80,6 +84,18 @@ namespace LibreRally.HUD
 		private Label? _tractionLampLabel;
 		private Label? _speedUnitLabel;
 		private Label? _rpmUnitLabel;
+		private float _smoothFrameTimeMs;
+		private float _smoothFps;
+		private long _lastTimestamp;
+		private int _frameSkip;
+		private readonly StringBuilder _wheelDebugBuilder = new();
+		private static readonly string[] CachedGearLabels = ["R", "1", "2", "3", "4", "5", "6", "7", "8"];
+		private string _cachedPerfText = string.Empty;
+		private string _cachedHudStatusText = string.Empty;
+		private int _cachedGear;
+		private float _cachedSpeedKmh;
+		private float _cachedEngineRpm;
+		private const float FpsSmoothingFactor = 0.05f;
 		private HudBar? _debugThrottleBar;
 		private HudBar? _debugBrakeBar;
 		private HudBar? _debugSteerBar;
@@ -141,7 +157,11 @@ namespace LibreRally.HUD
 				return;
 			}
 
-			UpdateWidgets();
+			_frameSkip++;
+			if ((_frameSkip & 1) == 0)
+			{
+				UpdateWidgets();
+			}
 		}
 
 		/// <summary>
@@ -160,6 +180,18 @@ namespace LibreRally.HUD
 			{
 				return;
 			}
+
+			var now = Stopwatch.GetTimestamp();
+			if (_lastTimestamp > 0)
+			{
+				var frameTimeMs = (float)((now - _lastTimestamp) / (double)Stopwatch.Frequency) * 1000f;
+				if (_smoothFrameTimeMs <= 0f)
+					_smoothFrameTimeMs = frameTimeMs;
+				else
+					_smoothFrameTimeMs += (frameTimeMs - _smoothFrameTimeMs) * FpsSmoothingFactor;
+				_smoothFps = 1000f / MathF.Max(_smoothFrameTimeMs, 0.001f);
+			}
+			_lastTimestamp = now;
 
 			var context = _game.GraphicsContext;
 			context.CommandList.SetRenderTargetAndViewport(presenter.DepthStencilBuffer, presenter.BackBuffer);
@@ -257,6 +289,7 @@ namespace LibreRally.HUD
 			};
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Fill));
 			header.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
+			header.ColumnsProportions.Add(new Proportion(ProportionType.Auto));
 
 			_timerLabel = new Label
 			{
@@ -264,12 +297,20 @@ namespace LibreRally.HUD
 			};
 			header.Widgets.Add(_timerLabel);
 
+			_perfLabel = new Label
+			{
+				TextColor = InfoColor,
+				HorizontalAlignment = HorizontalAlignment.Center,
+			};
+			Grid.SetColumn(_perfLabel, 1);
+			header.Widgets.Add(_perfLabel);
+
 			_hudStatusLabel = new Label
 			{
 				TextColor = CopyColor,
 				HorizontalAlignment = HorizontalAlignment.Right,
 			};
-			Grid.SetColumn(_hudStatusLabel, 1);
+			Grid.SetColumn(_hudStatusLabel, 2);
 			header.Widgets.Add(_hudStatusLabel);
 
 			Grid.SetColumnSpan(header, 2);
@@ -472,11 +513,24 @@ namespace LibreRally.HUD
 				_debugStatusLabel.Text = StatusText;
 			}
 
+			if (_perfLabel != null)
+			{
+				var perfText = $"Phys {Vehicle.RallyCarComponent.PhysicsTickRateLabel}  |  {_smoothFps,3:F0} fps  {_smoothFrameTimeMs,5:F1} ms";
+				if (perfText != _cachedPerfText)
+				{
+					_perfLabel.Text = _cachedPerfText = perfText;
+				}
+			}
+
 			if (_hudStatusLabel != null)
 			{
-				_hudStatusLabel.Text = Car == null
+				var statusText = Car == null
 					? "No vehicle  |  -- km/h  |  -- rpm"
 					: $"Myra HUD  |  {Car.SpeedKmh:F0} km/h  |  {Car.EngineRpm:F0} rpm";
+				if (statusText != _cachedHudStatusText)
+				{
+					_hudStatusLabel.Text = _cachedHudStatusText = statusText;
+				}
 			}
 
 			if (Car == null)
@@ -489,7 +543,12 @@ namespace LibreRally.HUD
 
 			if (_speedValueLabel != null)
 			{
-				_speedValueLabel.Text = $"{Car.SpeedKmh:F0}";
+				var spd = (int)Car.SpeedKmh;
+				if (spd != (int)_cachedSpeedKmh)
+				{
+					_speedValueLabel.Text = spd.ToString();
+					_cachedSpeedKmh = spd;
+				}
 			}
 
 			if (_speedUnitLabel != null)
@@ -499,7 +558,12 @@ namespace LibreRally.HUD
 
 			if (_rpmValueLabel != null)
 			{
-				_rpmValueLabel.Text = $"{Car.EngineRpm / 1000f:F1}";
+				var rpmDisplay = (int)(Car.EngineRpm / 100f);
+				if (rpmDisplay != (int)(_cachedEngineRpm / 100f))
+				{
+					_rpmValueLabel.Text = (Car.EngineRpm / 1000f).ToString("F1");
+					_cachedEngineRpm = Car.EngineRpm;
+				}
 			}
 
 			if (_rpmUnitLabel != null)
@@ -509,7 +573,11 @@ namespace LibreRally.HUD
 
 			if (_gearValueLabel != null)
 			{
-				_gearValueLabel.Text = FormatGear(Car.CurrentGear);
+				if (Car.CurrentGear != _cachedGear)
+				{
+					_gearValueLabel.Text = FormatGear(Car.CurrentGear);
+					_cachedGear = Car.CurrentGear;
+				}
 			}
 
 			if (_shiftLabel != null)
@@ -533,7 +601,7 @@ namespace LibreRally.HUD
 
 			if (_speedSummaryLabel != null)
 			{
-				_speedSummaryLabel.Text = $"Speed {Car.SpeedKmh,6:F1} km/h  |  Gear {FormatGear(Car.CurrentGear)}  |  Engine {Car.EngineRpm,6:F0} rpm  |  Driveline {Car.DrivelineRpm,6:F0} rpm";
+				_speedSummaryLabel.Text = $"Perf Phys:{Vehicle.RallyCarComponent.PhysicsTickRateLabel}  Render:{_smoothFps,3:F0}fps  {_smoothFrameTimeMs,5:F1}ms  |  Speed {Car.SpeedKmh,6:F1} km/h  |  Gear {FormatGear(Car.CurrentGear)}  |  Engine {Car.EngineRpm,6:F0} rpm  |  Driveline {Car.DrivelineRpm,6:F0} rpm";
 			}
 
 			if (_bodySummaryLabel != null)
@@ -608,7 +676,7 @@ namespace LibreRally.HUD
 
 			if (_speedSummaryLabel != null)
 			{
-				_speedSummaryLabel.Text = "Telemetry unavailable: vehicle not loaded.";
+				_speedSummaryLabel.Text = $"Perf Phys:{Vehicle.RallyCarComponent.PhysicsTickRateLabel}  Render:{_smoothFps,3:F0}fps  {_smoothFrameTimeMs,5:F1}ms  |  Telemetry unavailable: vehicle not loaded.";
 			}
 
 			if (_bodySummaryLabel != null)
@@ -669,18 +737,31 @@ namespace LibreRally.HUD
 
 			for (var i = 0; i < Math.Min(_wheelDebugLabels.Count, VehicleDynamicsSystem.WheelCount); i++)
 			{
-				_wheelDebugLabels[i].Text =
-					$"{WheelNames[i]} g:{(dynamics.WheelGrounded[i] ? "Y" : "N")} " +
-					$"c:{dynamics.SuspensionCompression[i] * MetersToMillimeters,6:F0} " +
-					$"v:{dynamics.SuspensionVelocity[i],6:F2} " +
-					$"sf:{dynamics.SpringForces[i] / NewtonsToKilonewtons,5:F2} " +
-					$"df:{dynamics.DamperForces[i] / NewtonsToKilonewtons,5:F2} " +
-					$"bf:{dynamics.BumpStopForces[i] / NewtonsToKilonewtons,5:F2} " +
-					$"sr:{dynamics.WheelStates[i].SlipRatio,5:F2} " +
-					$"load:{dynamics.CurrentNormalLoads[i] / NewtonsToKilonewtons,5:F2} " +
-					$"fx:{dynamics.LongitudinalForces[i] / NewtonsToKilonewtons,6:F2} " +
-					$"fy:{dynamics.LateralForces[i] / NewtonsToKilonewtons,6:F2} " +
-					$"om:{dynamics.WheelStates[i].AngularVelocity,6:F1}";
+				_wheelDebugBuilder.Clear();
+				_wheelDebugBuilder.Append(WheelNames[i]);
+				_wheelDebugBuilder.Append(" g:");
+				_wheelDebugBuilder.Append(dynamics.WheelGrounded[i] ? 'Y' : 'N');
+				_wheelDebugBuilder.Append(" c:");
+				_wheelDebugBuilder.AppendFormat("{0,6:F0}", dynamics.SuspensionCompression[i] * MetersToMillimeters);
+				_wheelDebugBuilder.Append(" v:");
+				_wheelDebugBuilder.AppendFormat("{0,6:F2}", dynamics.SuspensionVelocity[i]);
+				_wheelDebugBuilder.Append(" sf:");
+				_wheelDebugBuilder.AppendFormat("{0,5:F2}", dynamics.SpringForces[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" df:");
+				_wheelDebugBuilder.AppendFormat("{0,5:F2}", dynamics.DamperForces[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" bf:");
+				_wheelDebugBuilder.AppendFormat("{0,5:F2}", dynamics.BumpStopForces[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" sr:");
+				_wheelDebugBuilder.AppendFormat("{0,5:F2}", dynamics.WheelStates[i].SlipRatio);
+				_wheelDebugBuilder.Append(" load:");
+				_wheelDebugBuilder.AppendFormat("{0,5:F2}", dynamics.CurrentNormalLoads[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" fx:");
+				_wheelDebugBuilder.AppendFormat("{0,6:F2}", dynamics.LongitudinalForces[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" fy:");
+				_wheelDebugBuilder.AppendFormat("{0,6:F2}", dynamics.LateralForces[i] / NewtonsToKilonewtons);
+				_wheelDebugBuilder.Append(" om:");
+				_wheelDebugBuilder.AppendFormat("{0,6:F1}", dynamics.WheelStates[i].AngularVelocity);
+				_wheelDebugLabels[i].Text = _wheelDebugBuilder.ToString();
 			}
 		}
 
@@ -774,7 +855,7 @@ namespace LibreRally.HUD
 			HorizontalAlignment = HorizontalAlignment.Center,
 		};
 
-		private static string FormatGear(int currentGear) => currentGear <= 0 ? "R" : currentGear.ToString();
+		private static string FormatGear(int currentGear) => currentGear < CachedGearLabels.Length ? CachedGearLabels[currentGear] : currentGear.ToString();
 
 		private static string FormatAssistState(bool enabled, bool active) => !enabled ? "OFF" : active ? "ON" : "RDY";
 

@@ -1,4 +1,7 @@
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
 using Stride.BepuPhysics;
 using Stride.Core.Diagnostics;
 using Stride.Core.Mathematics;
@@ -304,31 +307,12 @@ namespace LibreRally.Vehicle.Physics
 				camberAngles,
 				longitudinalAccel,
 				lateralAccel,
-				preserveWheelState: true,
-				dt);
-
-			// ── 6. Re-evaluate load transfer with the current-step force estimate ─
-			// First pass uses the previous force estimate as a predictor. Recomputing within the
-			// same step removes the one-frame lag from load transfer and body attitude response.
-			longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
-			lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
-
-			instantaneousAccelerationWorld = RunForcePredictionPass(
-				wheelGrounded,
-				wheelContactScales,
-				engineTorqueAtWheels,
-				wheelOrientations,
-				wheelVelocities,
-				brakeTorque,
-				camberAngles,
-				longitudinalAccel,
-				lateralAccel,
 				preserveWheelState: false,
 				dt);
 			longitudinalAccel = Vector3.Dot(instantaneousAccelerationWorld, forwardDir);
 			lateralAccel = Vector3.Dot(instantaneousAccelerationWorld, rightDir);
 
-			// ── 6b. Chassis body attitude torque from suspension compression and sprung-mass acceleration ─
+			// ── Chassis body attitude torque from suspension compression and sprung-mass acceleration ─
 			// Load transfer creates a body moment M = m * a * h about the chassis axes even before
 			// the compression-delta term becomes large enough to be visually obvious in the suspension.
 			// Feeding that moment into the attitude system makes braking dive and cornering lean show up
@@ -468,9 +452,24 @@ namespace LibreRally.Vehicle.Physics
 			CurrentNormalLoads[RL] += rearLatTransfer * 0.5f;
 			CurrentNormalLoads[RR] -= rearLatTransfer * 0.5f;
 
-			for (var i = 0; i < WheelCount; i++)
+			if (Vector128.IsHardwareAccelerated)
 			{
-				CurrentNormalLoads[i] += SpringForces[i] + DamperForces[i] + BumpStopForces[i];
+				ref var curRef = ref MemoryMarshal.GetArrayDataReference(CurrentNormalLoads);
+				ref var springRef = ref MemoryMarshal.GetArrayDataReference(SpringForces);
+				ref var damperRef = ref MemoryMarshal.GetArrayDataReference(DamperForces);
+				ref var bumpRef = ref MemoryMarshal.GetArrayDataReference(BumpStopForces);
+				var result = Vector128.LoadUnsafe(ref curRef) +
+				             Vector128.LoadUnsafe(ref springRef) +
+				             Vector128.LoadUnsafe(ref damperRef) +
+				             Vector128.LoadUnsafe(ref bumpRef);
+				result.StoreUnsafe(ref curRef);
+			}
+			else
+			{
+				for (var i = 0; i < WheelCount; i++)
+				{
+					CurrentNormalLoads[i] += SpringForces[i] + DamperForces[i] + BumpStopForces[i];
+				}
 			}
 
 			// Clamp — wheel cannot push up (negative load means wheel has lifted)
@@ -734,8 +733,6 @@ namespace LibreRally.Vehicle.Physics
 					EffectivePeakFrictionCoefficients[i] = 0f;
 					WheelStates[i].LateralDeflection = 0f;
 
-					// Still call Update with normalLoad=0 so angular velocity integrates
-					// from drive/brake torque while airborne (important for AWD diffs and landing).
 					tyreModel.Update(
 						ref WheelStates[i],
 						0f, 0f, 0f,
@@ -750,8 +747,6 @@ namespace LibreRally.Vehicle.Physics
 					continue;
 				}
 
-				// Decompose wheel velocity into longitudinal and lateral components
-				// in the wheel's local frame.
 				ResolveWheelBasis(in wheelOrientations[i], out var wheelRight, out _, out var wheelForward);
 
 				var vel = wheelVelocities[i];

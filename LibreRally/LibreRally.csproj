@@ -1,22 +1,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net10.0;net10.0-windows</TargetFrameworks>
-	  <GenerateDocumentationFile>true</GenerateDocumentationFile>
-	  <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
-    <ItemGroup>
-        <PackageReference Include="CommentSense" Version="1.0.0"/>
-        <PackageReference Include="JetBrains.Annotations" Version="2025.2.4"/>
-        <PackageReference Include="Microsoft.Build.Tasks.Core" Version="18.4.0"/>
-        <PackageReference Include="Myra.Stride" Version="1.5.11"/>
-        <PackageReference Include="NuGet.Protocol" Version="7.0.3"/>
-        <PackageReference Include="Stride.Engine" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.Video" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.BepuPhysics" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.Navigation" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.Particles" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.UI" Version="4.3.0.2507"/>
-        <PackageReference Include="Stride.Core.Assets.CompilerApp" Version="4.3.0.2507" IncludeAssets="build;buildTransitive"/>
-        <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6"/>
-    </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="CommentSense" Version="1.0.0" />
+    <PackageReference Include="JetBrains.Annotations" Version="2025.2.4" />
+    <PackageReference Include="Microsoft.Build.Tasks.Core" Version="18.4.0" />
+    <PackageReference Include="Myra.Stride" Version="1.5.11" />
+    <PackageReference Include="NuGet.Protocol" Version="7.0.3" />
+    <PackageReference Include="Stride.Engine" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.Video" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.BepuPhysics" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.Navigation" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.Particles" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.UI" Version="4.3.0.2507" />
+    <PackageReference Include="Stride.Core.Assets.CompilerApp" Version="4.3.0.2507" IncludeAssets="build;buildTransitive" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6" />
+    <PackageReference Include="Stride.SharpFont" Version="1.0.1" />
+  </ItemGroup>
 </Project>

@@ -86,28 +86,16 @@ namespace LibreRally.Vehicle.Rendering
 
 		private static Quaternion CreateRotationFromXAxis(Vector3 forward, Vector3 upReference)
 		{
-			var alignAxis = Vector3.Cross(Vector3.UnitX, forward);
-			Quaternion primaryRotation;
-			if (alignAxis.LengthSquared() < 1e-6f)
+			var axis = Vector3.Cross(Vector3.UnitX, forward);
+			if (axis.LengthSquared() < 1e-6f)
 			{
-				primaryRotation = Vector3.Dot(Vector3.UnitX, forward) >= 0f
+				return Vector3.Dot(Vector3.UnitX, forward) >= 0f
 					? Quaternion.Identity
 					: Quaternion.RotationAxis(upReference, MathF.PI);
 			}
-			else
-			{
-				var dot = (float)Math.Clamp(Vector3.Dot(Vector3.UnitX, forward), -1f, 1f);
-				primaryRotation = Quaternion.RotationAxis(Vector3.Normalize(alignAxis), MathF.Acos(dot));
-			}
 
-			var currentUp = Vector3.Transform(Vector3.UnitY, primaryRotation);
-			var projectedUp = Vector3.Normalize(currentUp - forward * Vector3.Dot(currentUp, forward));
-			var targetUp = Vector3.Normalize(upReference - forward * Vector3.Dot(upReference, forward));
-			var signedAngle = MathF.Atan2(
-				Vector3.Dot(Vector3.Cross(projectedUp, targetUp), forward),
-				(float)Math.Clamp(Vector3.Dot(projectedUp, targetUp), -1f, 1f));
-			var twistRotation = Quaternion.RotationAxis(forward, signedAngle);
-			return Quaternion.Normalize(twistRotation * primaryRotation);
+			var dot = Math.Clamp(Vector3.Dot(Vector3.UnitX, forward), -1f, 1f);
+			return Quaternion.RotationAxis(Vector3.Normalize(axis), MathF.Acos(dot));
 		}
 
 		private static Vector3 ProjectOnPlane(Vector3 vector, Vector3 planeNormal)

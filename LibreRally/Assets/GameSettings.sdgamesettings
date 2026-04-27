@@ -26,15 +26,15 @@ Defaults:
             -   Enabled: true
                 ParallelUpdate: true
                 Deterministic: false
-                FixedTimeStepSeconds: 0.0166666
+                FixedTimeStepSeconds: 0.00416667
                 TimeScale: 1.0
-                MaxStepPerFrame: 3
+                MaxStepPerFrame: 12
                 UsePerBodyAttributes: true
                 PoseGravity: {X: 0.0, Y: -9.8, Z: 0.0}
                 PoseLinearDamping: 0.05
                 PoseAngularDamping: 0.05
                 SolverIteration: 1
-                SolverSubStep: 8
+                SolverSubStep: 1
                 SoftStartDuration: 0:00:00:01.0000000
                 SoftStartSubstepFactor: 4
 Overrides: []

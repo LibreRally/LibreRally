@@ -57,6 +57,11 @@ namespace LibreRally.HUD
 			get => _vehicles;
 			set
 			{
+				if (ReferenceEquals(_vehicles, value))
+				{
+					return;
+				}
+
 				_vehicles = value;
 				RebuildRoot();
 			}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "LibreRally-McpServer": {
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "C:\\Users\\pierc\\source\\repos\\archanox\\LibreRally\\LibreRally.McpServer"
+      ]
+    }
+  }
+}

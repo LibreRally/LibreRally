@@ -58,6 +58,7 @@ namespace LibreRally
 		ConnectOutSim,
 		DisconnectOutSim,
 		ReconnectOutSim,
+		CyclePhysicsTickRate,
 	}
 
 	/// <summary>
@@ -191,6 +192,7 @@ namespace LibreRally
 		private VehicleSelectionOverlay? _vehicleSelectionOverlay;
 		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
 		private TelemetryOverlay? _telemetryOverlay;
+		private LoadingOverlay? _loadingOverlay;
 		private readonly VehicleSetupOverrides _setupOverrides = new();
 		private readonly VehicleTelemetrySession _telemetrySession = new();
 		private readonly VehicleSpawnerTrackBuilder _trackBuilder = new();
@@ -208,7 +210,7 @@ namespace LibreRally
 		private const int PauseMenuPhysicsCalibrationIndex = 4;
 		private const int PauseMenuTelemetryIndex = 5;
 		private const int PauseMenuItemCount = 6;
-		private const int TelemetryMenuItemCount = 8;
+		private const int TelemetryMenuItemCount = 9;
 
 		private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
 		[
@@ -245,10 +247,26 @@ namespace LibreRally
 			EnsurePhysicsCalibrationOverlay();
 			EnsureTelemetryOverlay();
 			InitializeLiveTuningBridge();
+			EnsureLoadingOverlay();
+			if (_loadingOverlay != null)
+			{
+				_loadingOverlay.Visible = true;
+				_loadingOverlay.Enabled = true;
+			}
 
 			try
 			{
-				LoadVehicle();
+				var progress = new Progress<VehicleLoadProgress>(p =>
+				{
+					_status = p.Stage;
+					if (_loadingOverlay != null)
+					{
+						_loadingOverlay.StatusText = p.Stage;
+						_loadingOverlay.TitleText = $"Loading Vehicle... ({p.Progress * 100f:F0}%)";
+						_loadingOverlay.SetProgress(p.Progress);
+					}
+				});
+				LoadVehicle(progress: progress);
 			}
 			catch (Exception ex)
 			{
@@ -259,9 +277,17 @@ namespace LibreRally
 					_drivingHudOverlay.StatusText = _status;
 				}
 			}
+			finally
+			{
+				if (_loadingOverlay != null)
+				{
+					_loadingOverlay.Visible = false;
+					_loadingOverlay.Enabled = false;
+				}
+			}
 		}
 
-		private void LoadVehicle(BeamNgVehicleVariantDescriptor? selectedVehicle = null)
+		private void LoadVehicle(BeamNgVehicleVariantDescriptor? selectedVehicle = null, IProgress<VehicleLoadProgress>? progress = null)
 		{
 			if (_vehicleSession == null)
 			{
@@ -273,7 +299,8 @@ namespace LibreRally
 				ConfigFileName,
 				SpawnPosition,
 				_selectedVehicleIndex,
-				selectedVehicle);
+				selectedVehicle,
+				progress);
 			VehicleFolderPath = loadResult.VehicleFolderPath;
 			ConfigFileName = loadResult.ConfigFileName;
 			_selectedVehicleIndex = loadResult.SelectedVehicleIndex;
@@ -419,6 +446,17 @@ namespace LibreRally
 			};
 
 			((Game)Game).GameSystems.Add(_telemetryOverlay);
+		}
+
+		private void EnsureLoadingOverlay()
+		{
+			if (_loadingOverlay != null) return;
+			_loadingOverlay = new LoadingOverlay(Services)
+			{
+				Visible = false,
+				Enabled = false,
+			};
+			((Game)Game).GameSystems.Add(_loadingOverlay);
 		}
 
 		private void BindPhysicsCalibrationOverlay()
@@ -759,6 +797,11 @@ namespace LibreRally
 				case TelemetryMenuAction.ReconnectOutSim:
 					ReconnectOutSim();
 					break;
+				case TelemetryMenuAction.CyclePhysicsTickRate:
+					var label = RallyCarComponent.CyclePhysicsTickRate();
+					SetTelemetryStatus($"Physics tick rate: {label}");
+					RefreshTelemetryOverlay();
+					break;
 			}
 		}
 
@@ -1074,6 +1117,7 @@ namespace LibreRally
 			new("Connect OutSim", "Open the OutSim UDP socket without changing the enable toggle."),
 			new("Disconnect OutSim", "Close the OutSim UDP socket while keeping the configured target intact."),
 			new("Reconnect OutSim", "Dispose and recreate the OutSim UDP socket for the current endpoint."),
+			new($"Physics Rate: {RallyCarComponent.PhysicsTickRateLabel}", "Cycle through physics tick rates (30/60/100/120/240/360 Hz). Higher rates improve handling at low FPS."),
 		];
 
 		private void RefreshTelemetryOverlay()

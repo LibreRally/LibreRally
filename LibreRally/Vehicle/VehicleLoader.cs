@@ -47,8 +47,9 @@ namespace LibreRally.Vehicle
 		/// If <see langword="null" />, auto-detects: prefers rally_pro_asphalt.pc, then first .pc file found.
 		/// </param>
 		/// <param name="setupOverrides">Optional live setup overrides applied after loading the base vehicle.</param>
+		/// <param name="progress">Optional progress reporter for loading UI updates.</param>
 		/// <returns>The fully loaded vehicle and its assembled metadata.</returns>
-		public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
+		public LoadedVehicle Load(string vehicleFolderPath, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null, IProgress<VehicleLoadProgress>? progress = null)
 		{
 			var vehiclesRoot = Path.GetDirectoryName(vehicleFolderPath) ?? vehicleFolderPath;
 			return LoadInternal(
@@ -59,15 +60,11 @@ namespace LibreRally.Vehicle
 				[vehiclesRoot],
 				null,
 				null,
-				setupOverrides);
+				setupOverrides,
+				progress);
 		}
 
-		/// <summary>Loads a vehicle from a resolved BeamNG source and builds its runtime entities.</summary>
-		/// <param name="vehicleSource">Resolved BeamNG source that supplies vehicle content and lookup paths.</param>
-		/// <param name="configFileName">Optional PC configuration name to load.</param>
-		/// <param name="setupOverrides">Optional live setup overrides applied after loading the base vehicle.</param>
-		/// <returns>The fully loaded vehicle and its assembled metadata.</returns>
-		public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null)
+		public LoadedVehicle Load(BeamNgResolvedVehicle vehicleSource, string? configFileName = null, VehicleSetupOverrides? setupOverrides = null, IProgress<VehicleLoadProgress>? progress = null)
 		{
 			return LoadInternal(
 				vehicleSource.VehicleFolderPath,
@@ -77,7 +74,8 @@ namespace LibreRally.Vehicle
 				vehicleSource.VehiclesRootDirectories,
 				vehicleSource.ResolveVehicleAssetPath,
 				vehicleSource,
-				setupOverrides);
+				setupOverrides,
+				progress);
 		}
 
 		private LoadedVehicle LoadInternal(
@@ -88,52 +86,28 @@ namespace LibreRally.Vehicle
 			IReadOnlyList<string> vehiclesRootDirectories,
 			Func<string, string?>? virtualAssetResolver,
 			BeamNgResolvedVehicle? resolvedVehicle,
-			VehicleSetupOverrides? setupOverrides)
+			VehicleSetupOverrides? setupOverrides,
+			IProgress<VehicleLoadProgress>? progress)
 		{
 			if (!Directory.Exists(vehicleFolderPath))
 			{
 				throw new DirectoryNotFoundException($"Vehicle folder not found: '{vehicleFolderPath}'");
 			}
 
-			// 0. Load .pc config (parts selection + physics variables)
-			PcConfig? pcConfig = null;
-			var pcPath = PcConfigLoader.FindBestConfig(vehicleFolderPath, configFileName);
-			if (pcPath != null)
-			{
-				try
-				{
-					pcConfig = PcConfigLoader.Load(pcPath);
-					Log.Info($"[VehicleLoader] PC config: {Path.GetFileName(pcPath)} | " +
-					         $"parts={pcConfig.Parts.Count} vars={pcConfig.Vars.Count}");
-				}
-				catch (Exception ex)
-				{
-					Log.Warning($"[VehicleLoader] Failed to parse .pc config '{pcPath}': {ex.Message}");
-				}
-			}
-			else
-			{
-				Log.Warning("[VehicleLoader] No .pc config file found — using jbeam defaults.");
-			}
+			var (pcConfig, pcPath) = LoadPcConfig(vehicleFolderPath, configFileName, setupOverrides);
+			progress?.Report(new VehicleLoadProgress("Loading configuration", 0.05f));
 
-			if (pcConfig == null && setupOverrides?.VariableOverrides.Count > 0)
-			{
-				pcConfig = new PcConfig();
-			}
-
-			ApplyVariableOverridesToConfig(pcConfig, setupOverrides);
-
-			// 1. Parse + assemble jbeam (with pc config for parts selection + variable substitution)
 			var definition = JBeamAssembler.Assemble(jbeamSearchFolders, vehicleFolderPath, pcConfig);
+			progress?.Report(new VehicleLoadProgress("Parsing vehicle structure", 0.20f));
+
 			ApplySetupOverridesToDefinition(definition, setupOverrides);
 			var defaultPaintPalette = BeamNgPaintPaletteResolver.LoadDefaultPalette(vehicleFolderPath, pcPath);
 			IReadOnlyDictionary<string, float>? preferredSetupVars = pcConfig?.Vars;
 
-			// 2. Build physics entity hierarchy
 			var result = VehiclePhysicsBuilder.Build(definition, preferredSetupVars);
 			var rootEntity = result.RootEntity;
+			progress?.Report(new VehicleLoadProgress("Building physics", 0.30f));
 
-			// 3. Attach visual meshes (best-effort — falls back to a visible box)
 			TryAttachMeshes(
 				vehicleFolderPath,
 				result,
@@ -144,7 +118,7 @@ namespace LibreRally.Vehicle
 				virtualAssetResolver,
 				resolvedVehicle,
 				defaultPaintPalette);
-
+			progress?.Report(new VehicleLoadProgress("Loading meshes", 0.65f));
 			// 4. Wire up the rally car driving component
 			float V(string name, float fallback) =>
 				definition.Vars.TryGetValue(name, out var v) && v > 0 ? v : fallback;
@@ -341,6 +315,7 @@ namespace LibreRally.Vehicle
 				}
 			}
 			rootEntity.Add(car);
+			progress?.Report(new VehicleLoadProgress("Wiring components", 0.85f));
 
 			var reverseGear = powertrain.GearRatios[0];
 			var drivenLayout = powertrain.DriveFrontAxle && powertrain.DriveRearAxle
@@ -389,6 +364,7 @@ namespace LibreRally.Vehicle
 				Log.Info($"[VehicleLoader] Active config path: {pcPath}");
 			}
 
+			progress?.Report(new VehicleLoadProgress("Complete", 1f));
 			return new LoadedVehicle(definition, rootEntity, car, result.ChassisEntity, result.WheelFL, result.WheelFR, result.WheelRL, result.WheelRR, diagnostics);
 		}
 
@@ -418,6 +394,37 @@ namespace LibreRally.Vehicle
 		{
 			var window = tractionControl?.SlipRangeThreshold ?? 0.10f;
 			return Math.Clamp(window, 0.02f, 0.35f);
+		}
+
+		private static (PcConfig? Config, string? Path) LoadPcConfig(string vehicleFolderPath, string? configFileName, VehicleSetupOverrides? setupOverrides)
+		{
+			PcConfig? pcConfig = null;
+			var pcPath = PcConfigLoader.FindBestConfig(vehicleFolderPath, configFileName);
+			if (pcPath != null)
+			{
+				try
+				{
+					pcConfig = PcConfigLoader.Load(pcPath);
+					Log.Info($"[VehicleLoader] PC config: {Path.GetFileName(pcPath)} | " +
+					         $"parts={pcConfig.Parts.Count} vars={pcConfig.Vars.Count}");
+				}
+				catch (Exception ex)
+				{
+					Log.Warning($"[VehicleLoader] Failed to parse .pc config '{pcPath}': {ex.Message}");
+				}
+			}
+			else
+			{
+				Log.Warning("[VehicleLoader] No .pc config file found — using jbeam defaults.");
+			}
+
+			if (pcConfig == null && setupOverrides?.VariableOverrides.Count > 0)
+			{
+				pcConfig = new PcConfig();
+			}
+
+			ApplyVariableOverridesToConfig(pcConfig, setupOverrides);
+			return (pcConfig, pcPath);
 		}
 
 		internal static TyreModel CreateTyreModel(in VehicleTyreSpec spec)

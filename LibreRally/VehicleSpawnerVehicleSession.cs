@@ -86,7 +86,8 @@ namespace LibreRally
 			string configFileName,
 			Vector3 spawnPosition,
 			int selectedVehicleIndex,
-			BeamNgVehicleVariantDescriptor? selectedVehicle = null)
+			BeamNgVehicleVariantDescriptor? selectedVehicle = null,
+			IProgress<VehicleLoadProgress>? progress = null)
 		{
 			var selectedConfig = selectedVehicle?.ConfigFileName;
 			var requestedConfig = selectedVehicle != null
@@ -116,8 +117,8 @@ namespace LibreRally
 				? selectedVehicle.ConfigFileName
 				: string.IsNullOrWhiteSpace(configFileName) ? null : configFileName;
 			var vehicle = resolvedVehicle != null
-				? loader.Load(resolvedVehicle, configToLoad, _setupOverrides)
-				: loader.Load(basePath, configToLoad, _setupOverrides);
+				? loader.Load(resolvedVehicle, configToLoad, _setupOverrides, progress)
+				: loader.Load(basePath, configToLoad, _setupOverrides, progress);
 
 			if (selectedVehicle != null)
 			{

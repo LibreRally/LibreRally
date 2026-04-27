@@ -30,6 +30,18 @@ Hierarchy:
                         VehicleFolderPath: Resources\BeamNG Vehicles\basic_car
                         ConfigFileName: basic_car.pc
                         SpawnPosition: {X: 0.0, Y: 2.0, Z: 0.0}
+                        OutGaugeEnabled: true
+                        OutGaugeDelayCentiseconds: 1
+                        OutGaugeIp: 127.0.0.1
+                        OutGaugePort: 4444
+                        OutGaugeId: 0
+                        OutSimEnabled: false
+                        OutSimDelayCentiseconds: 1
+                        OutSimIp: 127.0.0.1
+                        OutSimPort: 4123
+                        OutSimId: 0
+                        LiveTuningBridgeEnabled: true
+                        LiveTuningBridgePort: 18765
         -   Entity:
                 Id: 92760995-654a-4869-8fa2-d63c9a9ff02b
                 Name: Camera

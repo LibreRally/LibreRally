@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 
 namespace LibreRally.Vehicle.Physics
 {
@@ -1525,9 +1526,7 @@ namespace LibreRally.Vehicle.Physics
 			var currentSlope = longitudinal
 				? ComputeLongitudinalForceSlope(slipRatio, coefficients.B, coefficients.C, coefficients.D, coefficients.E)
 				: ComputeLateralForceSlopePerTanAlpha(slipAngle, coefficients.B, coefficients.C, coefficients.D, coefficients.E);
-			var referenceSlope = longitudinal
-				? ComputeLongitudinalForceSlope(0f, referenceCoefficients.B, referenceCoefficients.C, referenceCoefficients.D, referenceCoefficients.E)
-				: ComputeLateralForceSlopePerTanAlpha(0f, referenceCoefficients.B, referenceCoefficients.C, referenceCoefficients.D, referenceCoefficients.E);
+			var referenceSlope = referenceCoefficients.B * referenceCoefficients.C * referenceCoefficients.D;
 			if (MathF.Abs(referenceSlope) <= 1e-4f)
 			{
 				return 1f;
@@ -1833,6 +1832,7 @@ namespace LibreRally.Vehicle.Physics
 		/// <param name="halfPatch">Contact patch half-length a (m).</param>
 		/// <param name="brushCperLength">Brush stiffness per unit length of tread (N/m²).</param>
 		/// <param name="patchLength">Full contact patch length 2a (m).</param>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		internal float ComputeCarcassShearForce(float radiusDelta, float halfPatch,
 			float brushCperLength, float patchLength)
 		{
@@ -1844,6 +1844,7 @@ namespace LibreRally.Vehicle.Physics
 		/// Pacejka Magic Formula: F = D · sin(C · atan(B·x − E·(B·x − atan(B·x)))).
 		/// Reference: Pacejka, "Tire and Vehicle Dynamics", Eq. 4.6.
 		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private static float MagicFormula(float x, float b, float c, float d, float e)
 		{
 			var bx = b * x;
@@ -1873,6 +1874,7 @@ namespace LibreRally.Vehicle.Physics
 			return (forwardForce - backwardForce) / denominator;
 		}
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		internal static float ComputeMagicFormulaSlope(float x, float b, float c, float d, float e)
 		{
 			var bx = b * x;
@@ -1884,6 +1886,7 @@ namespace LibreRally.Vehicle.Physics
 			return d * MathF.Cos(c * atanShape) * c * atanShapeDerivative;
 		}
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private static float MagicFormulaCosineWeight(float x, float b, float c, float e)
 		{
 			var bx = b * x;
@@ -1901,6 +1904,7 @@ namespace LibreRally.Vehicle.Physics
 		/// at high slip angles, referenced from:
 		/// Abdulrahim, "Measurement and Analysis of Rally Car Dynamics at High Attitude Angles".
 		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private float MagicFormulaRally(float x, float b, float c, float d, float e)
 		{
 			var pacejkaForce = MagicFormula(x, b, c, d, e);
