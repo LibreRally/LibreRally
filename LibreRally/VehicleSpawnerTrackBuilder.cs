@@ -37,17 +37,21 @@ namespace LibreRally
 		public void ConfigureGround(Entity entity, Game game)
 		{
 			entity.Transform.Position = new Vector3(entity.Transform.Position.X, -0.5f, entity.Transform.Position.Z);
-			entity.Add(new StaticComponent
+
+			if (entity.Get<StaticComponent>() == null)
 			{
-				FrictionCoefficient = 1.5f,
-				Collider = new CompoundCollider
+				entity.Add(new StaticComponent
 				{
-					Colliders =
+					FrictionCoefficient = 1.5f,
+					Collider = new CompoundCollider
 					{
-						new BoxCollider { Size = new Vector3(500f, 1f, 500f) },
+						Colliders =
+						{
+							new BoxCollider { Size = new Vector3(500f, 1f, 500f) },
+						},
 					},
-				},
-			});
+				});
+			}
 
 			AddRoadTestSections(entity, game);
 		}
