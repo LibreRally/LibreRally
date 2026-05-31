@@ -4,5 +4,9 @@
   items:
     - name: Basic Car reference vehicle
       href: vehicles/basic_car.md
+- name: Cesium
+  items:
+    - name: Startup scene mode
+      href: cesium/startup-scene-mode.md
 - name: API Reference
   href: api/index.md

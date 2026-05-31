@@ -19,6 +19,7 @@ namespace LibreRally.Tests
 				entry => AssertEntry(entry, PauseMenuAction.ResetVehicle, "Reset Vehicle", "spawn point"),
 				entry => AssertEntry(entry, PauseMenuAction.GarageSetup, "Garage Setup"),
 				entry => AssertEntry(entry, PauseMenuAction.VehicleSelect, "Vehicle Select"),
+				entry => AssertEntry(entry, PauseMenuAction.TrackSelect, "Track Select", "Cesium"),
 				entry => AssertEntry(entry, PauseMenuAction.PhysicsCalibration, "Physics Calibration"),
 				entry => AssertEntry(entry, PauseMenuAction.Telemetry, "Telemetry"));
 
@@ -46,12 +47,23 @@ namespace LibreRally.Tests
 		}
 
 		/// <summary>
-		/// Verifies that resolve pause menu action returns telemetry for sixth slot.
+		/// Verifies that resolve pause menu action returns track select for fifth slot.
 		/// </summary>
 		[Fact]
-		public void ResolvePauseMenuAction_ReturnsTelemetryForSixthSlot()
+		public void ResolvePauseMenuAction_ReturnsTrackSelectForFifthSlot()
 		{
-			var action = VehicleSpawner.ResolvePauseMenuAction(5);
+			var action = VehicleSpawner.ResolvePauseMenuAction(4);
+
+			Assert.Equal(PauseMenuAction.TrackSelect, action);
+		}
+
+		/// <summary>
+		/// Verifies that resolve pause menu action returns telemetry for seventh slot.
+		/// </summary>
+		[Fact]
+		public void ResolvePauseMenuAction_ReturnsTelemetryForSeventhSlot()
+		{
+			var action = VehicleSpawner.ResolvePauseMenuAction(6);
 
 			Assert.Equal(PauseMenuAction.Telemetry, action);
 		}

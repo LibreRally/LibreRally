@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "LibreRally.Windows": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "LIBRERALLY_CESIUM_ORIGIN_LONGITUDE": "144.96742729843564",
+        "LIBRERALLY_CESIUM_ORIGIN_LATITUDE": "-37.817440265044596",
+        "LIBRERALLY_CESIUM_STAGE": "ion"
+      }
+    }
+  }
+}

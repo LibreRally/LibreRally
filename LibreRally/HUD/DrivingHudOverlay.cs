@@ -140,6 +140,7 @@ namespace LibreRally.HUD
 			UpdateWidgets();
 		}
 
+		/// <inheritdoc/>
 		protected override void Destroy()
 		{
 			_desktop?.Dispose();

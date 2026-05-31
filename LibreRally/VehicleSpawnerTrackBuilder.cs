@@ -34,8 +34,13 @@ namespace LibreRally
 		/// </summary>
 		/// <param name="entity">The root scene entity that owns the ground setup.</param>
 		/// <param name="game">The active Stride game instance.</param>
-		public void ConfigureGround(Entity entity, Game game)
+		public void ConfigureGround(Entity entity, Game game, bool buildLocalTrack)
 		{
+			if (!buildLocalTrack)
+			{
+				return;
+			}
+
 			entity.Transform.Position = new Vector3(entity.Transform.Position.X, -0.5f, entity.Transform.Position.Z);
 
 			if (entity.Get<StaticComponent>() == null)

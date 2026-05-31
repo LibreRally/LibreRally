@@ -8,8 +8,11 @@ using LibreRally.HUD;
 using LibreRally.Telemetry;
 using LibreRally.Vehicle;
 using LibreRally.Vehicle.Content;
+using Stride.BepuPhysics;
+using Stride.BepuPhysics.Definitions.Colliders;
 using Stride.Core.Mathematics;
 using Stride.Engine;
+using Stride.Games;
 using Stride.Input;
 
 namespace LibreRally
@@ -31,6 +34,9 @@ namespace LibreRally
 		/// <summary>Open the vehicle selection menu.</summary>
 		VehicleSelect,
 
+		/// <summary>Open the track selection menu.</summary>
+		TrackSelect,
+
 		/// <summary>Open the physics calibration menu.</summary>
 		PhysicsCalibration,
 
@@ -44,6 +50,13 @@ namespace LibreRally
 	/// <param name="Item">The UI item descriptor.</param>
 	/// <param name="Action">The action to execute when selected.</param>
 	public readonly record struct PauseMenuEntry(PauseMenuItem Item, PauseMenuAction Action);
+
+	/// <summary>
+	/// Represents a playable track or world entry available in the track-selection menu.
+	/// </summary>
+	/// <param name="Item">The UI descriptor shown in the overlay.</param>
+	/// <param name="Selection">The startup scene selection to load when chosen.</param>
+	internal readonly record struct TrackSelectionEntry(PauseMenuItem Item, StartupSceneSelection Selection);
 
 	/// <summary>
 	/// Defines the available actions in the telemetry menu.
@@ -83,6 +96,17 @@ namespace LibreRally
 		/// Gets or sets the initial spawn position for the vehicle.
 		/// </summary>
 		public Vector3 SpawnPosition { get; set; } = new Vector3(0, 0.15f, 0);
+
+		/// <summary>
+		/// Gets or sets the entity name of the optional geospatial spawn anchor.
+		/// </summary>
+		internal string? SpawnAnchorEntityName { get; set; }
+
+		/// <summary>
+		/// Gets or sets the startup scene selection that should be preserved for track switching.
+		/// </summary>
+		internal StartupSceneSelection StartupSelection { get; set; } =
+			new(StartupSceneMode.Default, CesiumStageBootstrapConfiguration.CreateSampleStage());
 
 		/// <summary>
 		/// Gets or sets a value indicating whether OutGauge telemetry is enabled.
@@ -190,27 +214,43 @@ namespace LibreRally
 		private PauseMenuOverlay? _pauseMenuOverlay;
 		private SetupUiShellOverlay? _setupUiShellOverlay;
 		private VehicleSelectionOverlay? _vehicleSelectionOverlay;
+		private TrackSelectionOverlay? _trackSelectionOverlay;
 		private PhysicsCalibrationOverlay? _physicsCalibrationOverlay;
 		private TelemetryOverlay? _telemetryOverlay;
 		private LoadingOverlay? _loadingOverlay;
 		private readonly VehicleSetupOverrides _setupOverrides = new();
 		private readonly VehicleTelemetrySession _telemetrySession = new();
 		private readonly VehicleSpawnerTrackBuilder _trackBuilder = new();
+		private readonly List<HitInfo> _spawnSupportHits = [];
 		private VehicleSpawnerVehicleSession? _vehicleSession;
 		private VehicleLiveTuningBridgeServer? _liveTuningBridgeServer;
+		private PendingVehicleLoadRequest? _pendingVehicleLoad;
+		private Entity? _spawnFallbackSupportEntity;
+		private float _pendingVehicleLoadWaitSeconds;
 		private int _selectedVehicleIndex;
+		private int _selectedTrackIndex;
 		private int _pauseMenuSelectedIndex;
 		private int _telemetryMenuSelectedIndex;
 		private bool _vehicleSelectionOpenedFromPauseMenu;
+		private StartupSceneSelection? _pendingSceneSelection;
 		private MenuScreen _activeMenuScreen;
 		private const int PauseMenuResumeIndex = 0;
 		private const int PauseMenuResetVehicleIndex = 1;
 		private const int PauseMenuGarageSetupIndex = 2;
 		private const int PauseMenuVehicleSelectIndex = 3;
-		private const int PauseMenuPhysicsCalibrationIndex = 4;
-		private const int PauseMenuTelemetryIndex = 5;
-		private const int PauseMenuItemCount = 6;
+		private const int PauseMenuTrackSelectIndex = 4;
+		private const int PauseMenuPhysicsCalibrationIndex = 5;
+		private const int PauseMenuTelemetryIndex = 6;
+		private const int PauseMenuItemCount = 7;
 		private const int TelemetryMenuItemCount = 9;
+		private const float SpawnSupportProbeHeight = 5f;
+		private const float SpawnSupportProbeLength = 48f;
+		private const float SpawnSupportSurfaceClearance = 2.5f;
+		private const float SpawnSupportFallbackDelaySeconds = 8f;
+		private const float SpawnSupportFallbackTopOffset = 2.5f;
+		private const float SpawnLoadingCameraHeight = 96f;
+		private const float SpawnLoadingCameraBackOffset = 28f;
+		private static readonly Vector3 SpawnSupportFallbackPadSize = new(8f, 1f, 8f);
 
 		private static readonly IReadOnlyList<PauseMenuEntry> PauseMenuEntries =
 		[
@@ -218,6 +258,7 @@ namespace LibreRally
 			new(new PauseMenuItem("Reset Vehicle", "Respawn the current car back at the spawn point."), PauseMenuAction.ResetVehicle),
 			new(new PauseMenuItem("Garage Setup", "Open the restored Myra tuning shell for stage prep changes."), PauseMenuAction.GarageSetup),
 			new(new PauseMenuItem("Vehicle Select", "Load a different bundled vehicle from the current catalog."), PauseMenuAction.VehicleSelect),
+			new(new PauseMenuItem("Track Select", "Switch between the local test track and the available Cesium track presets."), PauseMenuAction.TrackSelect),
 			new(new PauseMenuItem("Physics Calibration", "Isolate tyre model contributions and tune anti-slip parameters live."), PauseMenuAction.PhysicsCalibration),
 			new(new PauseMenuItem("Telemetry", "Enable or disable OutGauge/OutSim, then connect, disconnect, or reconnect their UDP sockets."), PauseMenuAction.Telemetry),
 		];
@@ -228,9 +269,14 @@ namespace LibreRally
 			Pause,
 			GarageSetup,
 			VehicleSelection,
+			TrackSelection,
 			PhysicsCalibration,
 			Telemetry,
 		}
+
+		private sealed record PendingVehicleLoadRequest(
+			BeamNgVehicleVariantDescriptor? SelectedVehicle,
+			IProgress<VehicleLoadProgress>? Progress);
 
 		/// <summary>
 		/// Initializes the track, overlays, and vehicle catalog at scene startup.
@@ -241,9 +287,11 @@ namespace LibreRally
 			AddGroundPhysics();
 			EnsureDrivingHudOverlay();
 			InitializeVehicleCatalog();
+			_selectedTrackIndex = ResolveCurrentTrackIndex();
 			EnsurePauseMenuOverlay();
 			EnsureSetupUiShellOverlay();
 			EnsureVehicleSelectionOverlay();
+			EnsureTrackSelectionOverlay();
 			EnsurePhysicsCalibrationOverlay();
 			EnsureTelemetryOverlay();
 			InitializeLiveTuningBridge();
@@ -266,7 +314,7 @@ namespace LibreRally
 						_loadingOverlay.SetProgress(p.Progress);
 					}
 				});
-				LoadVehicle(progress: progress);
+				RequestVehicleLoad(progress: progress);
 			}
 			catch (Exception ex)
 			{
@@ -279,7 +327,7 @@ namespace LibreRally
 			}
 			finally
 			{
-				if (_loadingOverlay != null)
+				if (_loadingOverlay != null && _pendingVehicleLoad == null)
 				{
 					_loadingOverlay.Visible = false;
 					_loadingOverlay.Enabled = false;
@@ -287,17 +335,45 @@ namespace LibreRally
 			}
 		}
 
-		private void LoadVehicle(BeamNgVehicleVariantDescriptor? selectedVehicle = null, IProgress<VehicleLoadProgress>? progress = null)
+		/// <summary>
+		/// Releases transient overlays and live systems when the scene is torn down.
+		/// </summary>
+		public override void Cancel()
+		{
+			DisposeRuntimeSystems();
+			base.Cancel();
+		}
+
+		private void RequestVehicleLoad(BeamNgVehicleVariantDescriptor? selectedVehicle = null, IProgress<VehicleLoadProgress>? progress = null)
+		{
+			if (ShouldWaitForSpawnSupport(StartupSelection.SceneMode, SpawnAnchorEntityName) && !IsSpawnSupportReady())
+			{
+				_pendingVehicleLoad = new PendingVehicleLoadRequest(selectedVehicle, progress);
+				_pendingVehicleLoadWaitSeconds = 0f;
+				UnloadVehicle();
+				PrepareSpawnLoadingCamera();
+				_status = BuildSpawnWaitingStatus(GetCurrentTrackName());
+				ShowLoadingOverlay(_status, progress: 0f);
+				return;
+			}
+
+			_pendingVehicleLoad = null;
+			_pendingVehicleLoadWaitSeconds = 0f;
+			LoadVehicleNow(selectedVehicle, progress);
+		}
+
+		private void LoadVehicleNow(BeamNgVehicleVariantDescriptor? selectedVehicle = null, IProgress<VehicleLoadProgress>? progress = null)
 		{
 			if (_vehicleSession == null)
 			{
 				throw new InvalidOperationException("Vehicle session was not initialized.");
 			}
 
+			var spawnPosition = ResolveSpawnPosition();
 			var loadResult = _vehicleSession.LoadVehicle(
 				VehicleFolderPath,
 				ConfigFileName,
-				SpawnPosition,
+				spawnPosition,
 				_selectedVehicleIndex,
 				selectedVehicle,
 				progress);
@@ -365,10 +441,39 @@ namespace LibreRally
 				_selectedVehicleIndex = selectedIndex;
 				_activeMenuScreen = MenuScreen.None;
 				_vehicleSelectionOpenedFromPauseMenu = false;
-				LoadVehicle(vehicles[selectedIndex]);
+				RequestVehicleLoad(vehicles[selectedIndex]);
 			};
 
 			((Game)Game).GameSystems.Add(_vehicleSelectionOverlay);
+		}
+
+		private void EnsureTrackSelectionOverlay()
+		{
+			if (_trackSelectionOverlay != null)
+			{
+				return;
+			}
+
+			_trackSelectionOverlay = new TrackSelectionOverlay(Services)
+			{
+				Items = GetAvailableTrackItems(),
+				SelectedIndex = _selectedTrackIndex,
+				OverlayVisible = _activeMenuScreen == MenuScreen.TrackSelection,
+				CurrentTrackName = GetCurrentTrackName(),
+				StatusText = _status,
+			};
+			_trackSelectionOverlay.ItemActivated = selectedIndex =>
+			{
+				var tracks = GetAvailableTrackSelections();
+				if (selectedIndex < 0 || selectedIndex >= tracks.Count)
+				{
+					return;
+				}
+
+				QueueTrackSelection(tracks[selectedIndex].Selection);
+			};
+
+			((Game)Game).GameSystems.Add(_trackSelectionOverlay);
 		}
 
 		private void EnsurePauseMenuOverlay()
@@ -489,6 +594,59 @@ namespace LibreRally
 			_selectedVehicleIndex = _vehicleSession.InitializeCatalog(VehicleFolderPath, ConfigFileName);
 		}
 
+		private IReadOnlyList<TrackSelectionEntry> GetAvailableTrackSelections()
+		{
+			var tracks = new List<TrackSelectionEntry>
+			{
+				new(
+					new PauseMenuItem(
+						"Local Test Track",
+						"Load the existing procedural test environment with the familiar local ground sections."),
+					StartupSelection with { SceneMode = StartupSceneMode.Default }),
+			};
+			foreach (var stage in CesiumStageBootstrapConfiguration.BuildTrackSelectionStages(StartupSelection.CesiumStage))
+			{
+				tracks.Add(new TrackSelectionEntry(
+					new PauseMenuItem(
+						stage.DisplayName,
+						$"Load {stage.Description}"),
+					new StartupSceneSelection(StartupSceneMode.Cesium, stage)));
+			}
+
+			return tracks;
+		}
+
+		private IReadOnlyList<PauseMenuItem> GetAvailableTrackItems() =>
+			GetAvailableTrackSelections().Select(entry => entry.Item).ToArray();
+
+		private int ResolveCurrentTrackIndex()
+		{
+			var tracks = GetAvailableTrackSelections();
+			for (var index = 0; index < tracks.Count; index++)
+			{
+				if (AreEquivalentTrackSelections(tracks[index].Selection, StartupSelection))
+				{
+					return index;
+				}
+			}
+
+			return 0;
+		}
+
+		private string GetCurrentTrackName()
+		{
+			var tracks = GetAvailableTrackSelections();
+			for (var index = 0; index < tracks.Count; index++)
+			{
+				if (AreEquivalentTrackSelections(tracks[index].Selection, StartupSelection))
+				{
+					return tracks[index].Item.Title;
+				}
+			}
+
+			return ResolveTrackSelectionLabel(StartupSelection);
+		}
+
 		internal static bool IsPauseMenuToggleRequested(bool keyboardPausePressed, bool controllerStartPressed) =>
 			keyboardPausePressed || controllerStartPressed;
 
@@ -503,8 +661,15 @@ namespace LibreRally
 		internal static MenuScreen ResolvePauseMenuToggle(MenuScreen currentScreen) =>
 			currentScreen == MenuScreen.Pause ? MenuScreen.None : MenuScreen.Pause;
 
+		internal static bool AreEquivalentTrackSelections(StartupSceneSelection left, StartupSceneSelection right) =>
+			left.SceneMode == right.SceneMode
+			&& (left.SceneMode != StartupSceneMode.Cesium
+			    || CesiumStageBootstrapConfiguration.MatchesTrackIdentity(left.CesiumStage, right.CesiumStage));
+
 		internal static MenuScreen ResolveVehicleSelectionCloseTarget(bool openedFromPauseMenu) =>
 			openedFromPauseMenu ? MenuScreen.Pause : MenuScreen.None;
+
+		internal static MenuScreen ResolveTrackSelectionCloseTarget() => MenuScreen.Pause;
 
 		internal static bool IsVehicleMenuMoveUpRequested(bool keyboardUpPressed, bool controllerUpPressed) =>
 			keyboardUpPressed || controllerUpPressed;
@@ -587,6 +752,17 @@ namespace LibreRally
 					HandleVehicleSelectionInput(pad);
 				}
 			}
+			else if (_activeMenuScreen == MenuScreen.TrackSelection)
+			{
+				if (pauseMenuToggleRequested)
+				{
+					CloseTrackSelection();
+				}
+				else
+				{
+					HandleTrackSelectionInput(pad);
+				}
+			}
 			else
 			{
 				if (vehicleMenuShortcutRequested)
@@ -656,7 +832,7 @@ namespace LibreRally
 				var selectedVehicle = vehicles[_selectedVehicleIndex];
 				_activeMenuScreen = MenuScreen.None;
 				_vehicleSelectionOpenedFromPauseMenu = false;
-				LoadVehicle(selectedVehicle);
+				RequestVehicleLoad(selectedVehicle);
 				return;
 			}
 
@@ -704,6 +880,9 @@ namespace LibreRally
 					break;
 				case PauseMenuVehicleSelectIndex:
 					ExecutePauseMenuAction(PauseMenuAction.VehicleSelect);
+					break;
+				case PauseMenuTrackSelectIndex:
+					ExecutePauseMenuAction(PauseMenuAction.TrackSelect);
 					break;
 				case PauseMenuPhysicsCalibrationIndex:
 					ExecutePauseMenuAction(PauseMenuAction.PhysicsCalibration);
@@ -758,6 +937,9 @@ namespace LibreRally
 				case PauseMenuAction.VehicleSelect:
 					OpenVehicleSelection(fromPauseMenu: true);
 					break;
+				case PauseMenuAction.TrackSelect:
+					OpenTrackSelection();
+					break;
 				case PauseMenuAction.PhysicsCalibration:
 					OpenPhysicsCalibration();
 					break;
@@ -811,11 +993,57 @@ namespace LibreRally
 			var selectedVehicle = ResolveSelectedVehicleDescriptor();
 			if (selectedVehicle != null)
 			{
-				LoadVehicle(selectedVehicle);
+				RequestVehicleLoad(selectedVehicle);
 				return;
 			}
 
-			LoadVehicle();
+			RequestVehicleLoad();
+		}
+
+		private void HandleTrackSelectionInput(IGamePadDevice? pad)
+		{
+			var tracks = GetAvailableTrackSelections();
+			if (tracks.Count == 0)
+			{
+				if (IsVehicleMenuCancelRequested(
+					    Input.IsKeyPressed(Keys.Escape),
+					    pad?.IsButtonPressed(GamePadButton.B) ?? false))
+				{
+					CloseTrackSelection();
+				}
+
+				return;
+			}
+
+			_selectedTrackIndex = Math.Clamp(_selectedTrackIndex, 0, tracks.Count - 1);
+			if (IsVehicleMenuMoveUpRequested(
+				    Input.IsKeyPressed(Keys.Up),
+				    pad?.IsButtonPressed(GamePadButton.PadUp) ?? false))
+			{
+				_selectedTrackIndex = (_selectedTrackIndex - 1 + tracks.Count) % tracks.Count;
+			}
+
+			if (IsVehicleMenuMoveDownRequested(
+				    Input.IsKeyPressed(Keys.Down),
+				    pad?.IsButtonPressed(GamePadButton.PadDown) ?? false))
+			{
+				_selectedTrackIndex = (_selectedTrackIndex + 1) % tracks.Count;
+			}
+
+			if (IsVehicleMenuConfirmRequested(
+				    Input.IsKeyPressed(Keys.Enter),
+				    pad?.IsButtonPressed(GamePadButton.A) ?? false))
+			{
+				QueueTrackSelection(tracks[_selectedTrackIndex].Selection);
+				return;
+			}
+
+			if (IsVehicleMenuCancelRequested(
+				    Input.IsKeyPressed(Keys.Escape),
+				    pad?.IsButtonPressed(GamePadButton.B) ?? false))
+			{
+				CloseTrackSelection();
+			}
 		}
 
 		private void OpenVehicleSelection(bool fromPauseMenu)
@@ -864,6 +1092,31 @@ namespace LibreRally
 			_activeMenuScreen = MenuScreen.Telemetry;
 		}
 
+		private void OpenTrackSelection()
+		{
+			_selectedTrackIndex = ResolveCurrentTrackIndex();
+			_activeMenuScreen = MenuScreen.TrackSelection;
+		}
+
+		private void CloseTrackSelection()
+		{
+			_activeMenuScreen = ResolveTrackSelectionCloseTarget();
+			_pauseMenuSelectedIndex = PauseMenuTrackSelectIndex;
+		}
+
+		private void QueueTrackSelection(StartupSceneSelection selection)
+		{
+			if (AreEquivalentTrackSelections(selection, StartupSelection))
+			{
+				CloseTrackSelection();
+				return;
+			}
+
+			_pendingSceneSelection = selection;
+			_activeMenuScreen = MenuScreen.None;
+			_status = $"Loading {ResolveTrackSelectionLabel(selection)}...";
+		}
+
 		private void CloseTelemetryMenu()
 		{
 			_activeMenuScreen = MenuScreen.Pause;
@@ -904,7 +1157,7 @@ namespace LibreRally
 			}
 
 			var selectedVehicle = ResolveSelectedVehicleDescriptor();
-			LoadVehicle(selectedVehicle);
+			RequestVehicleLoad(selectedVehicle);
 		}
 
 		private BeamNgVehicleVariantDescriptor? ResolveSelectedVehicleDescriptor()
@@ -923,24 +1176,282 @@ namespace LibreRally
 
 		private void AttachCamera(Entity chassis, RallyCarComponent car)
 		{
-			var cameraEntity = SceneSystem.SceneInstance.RootScene.Entities
-				.FirstOrDefault(e => e.Get<CameraComponent>() != null);
+			var cameraEntity = ResolveCameraEntity();
 			if (cameraEntity == null)
 			{
 				return;
 			}
 
-			foreach (var s in cameraEntity.GetAll<SyncScript>().ToList())
-			{
-				cameraEntity.Remove(s);
-			}
-
+			RemoveCameraScripts(cameraEntity);
 			cameraEntity.Add(new RallyCameraScript { Target = chassis, CarComponent = car, });
 		}
 
 		private void AddGroundPhysics()
 		{
-			_trackBuilder.ConfigureGround(Entity, (Game)Game);
+			_trackBuilder.ConfigureGround(Entity, (Game)Game, StartupSelection.SceneMode == StartupSceneMode.Default);
+		}
+
+		internal static bool ShouldWaitForSpawnSupport(StartupSceneMode sceneMode, string? spawnAnchorEntityName) =>
+			sceneMode == StartupSceneMode.Cesium && !string.IsNullOrWhiteSpace(spawnAnchorEntityName);
+
+		internal static string BuildSpawnWaitingStatus(string trackName) =>
+			$"Waiting for {trackName} collision near the spawn point...";
+
+		private Vector3 ResolveSpawnPosition()
+		{
+			if (TryResolveSpawnSupportPoint(out var supportPoint))
+			{
+				return BuildSpawnPositionFromSupportPoint(supportPoint, SpawnSupportSurfaceClearance);
+			}
+
+			if (TryResolveSpawnAnchorPosition(out var anchorPosition))
+			{
+				return anchorPosition;
+			}
+
+			return SpawnPosition;
+		}
+
+		private bool TryResolveSpawnAnchorPosition(out Vector3 anchorPosition)
+		{
+			anchorPosition = Vector3.Zero;
+			if (string.IsNullOrWhiteSpace(SpawnAnchorEntityName) || SceneSystem.SceneInstance.RootScene == null)
+			{
+				return false;
+			}
+
+			var rootScene = SceneSystem.SceneInstance.RootScene;
+			var anchorEntity = FindEntityByName(rootScene.Entities, SpawnAnchorEntityName);
+			if (anchorEntity == null)
+			{
+				return false;
+			}
+
+			var anchor = anchorEntity.Get<CesiumGlobeAnchorComponent>();
+			var georeference = FindComponentInScene<CesiumGeoreferenceComponent>(rootScene.Entities);
+			if (anchor != null && georeference != null)
+			{
+				anchorPosition = anchor.ResolveLocalPosition(georeference);
+				return true;
+			}
+
+			anchorPosition = anchorEntity.Transform.Position;
+			return true;
+		}
+
+		private bool TryProcessPendingVehicleLoad()
+		{
+			if (_pendingVehicleLoad == null)
+			{
+				return false;
+			}
+
+			_pendingVehicleLoadWaitSeconds += (float)Game.UpdateTime.Elapsed.TotalSeconds;
+			PrepareSpawnLoadingCamera();
+			var spawnSupportReady = !ShouldWaitForSpawnSupport(StartupSelection.SceneMode, SpawnAnchorEntityName) || IsSpawnSupportReady();
+			if (!spawnSupportReady && TryActivateSpawnFallbackSupport())
+			{
+				spawnSupportReady = IsSpawnSupportReady();
+			}
+
+			if (spawnSupportReady)
+			{
+				var request = _pendingVehicleLoad;
+				_pendingVehicleLoad = null;
+				_pendingVehicleLoadWaitSeconds = 0f;
+				try
+				{
+					ShowLoadingOverlay("Spawn support ready.", progress: 1f);
+					LoadVehicleNow(request.SelectedVehicle, request.Progress);
+				}
+				catch (Exception ex)
+				{
+					Log.Error($"Failed to load vehicle after waiting for spawn support: {ex}");
+					_status = $"Load error: {ex.Message}";
+				}
+				finally
+				{
+					HideLoadingOverlay();
+				}
+
+				return false;
+			}
+
+			_status = BuildSpawnWaitingStatus(GetCurrentTrackName());
+			ShowLoadingOverlay(_status, progress: 0f);
+			return true;
+		}
+
+		private bool IsSpawnSupportReady()
+		{
+			return TryResolveSpawnSupportPoint(out _);
+		}
+
+		private bool TryResolveSpawnSupportPoint(out Vector3 supportPoint)
+		{
+			supportPoint = Vector3.Zero;
+			if (!TryResolveSpawnAnchorPosition(out var spawnPosition))
+			{
+				return false;
+			}
+
+			var simulation = ResolveSceneSimulation();
+			if (simulation == null)
+			{
+				return false;
+			}
+
+			_spawnSupportHits.Clear();
+			var rayOrigin = spawnPosition + Vector3.UnitY * SpawnSupportProbeHeight;
+			var rayDirection = -Vector3.UnitY;
+			simulation.RayCastPenetrating(in rayOrigin, in rayDirection, SpawnSupportProbeLength, _spawnSupportHits);
+			var nearestDistance = float.PositiveInfinity;
+			foreach (var hit in _spawnSupportHits)
+			{
+				if (IsSpawnSupportHitReady(hit.Collidable, hit.Distance, SpawnSupportProbeLength))
+				{
+					if (hit.Distance < nearestDistance)
+					{
+						nearestDistance = hit.Distance;
+					}
+				}
+			}
+
+			if (!float.IsFinite(nearestDistance))
+			{
+				return false;
+			}
+
+			supportPoint = rayOrigin + rayDirection * nearestDistance;
+			return true;
+		}
+
+		internal static bool IsSpawnSupportHitReady(object? collidable, float hitDistance, float maximumAcceptedDistance)
+		{
+			if (collidable is not EntityComponent entityComponent
+			    || entityComponent.Entity?.Get<TrackSurfaceComponent>() == null)
+			{
+				return false;
+			}
+
+			return float.IsFinite(hitDistance)
+			       && hitDistance >= 0f
+			       && hitDistance <= maximumAcceptedDistance;
+		}
+
+		internal static bool ShouldActivateSpawnFallbackSupport(float elapsedSeconds, float fallbackDelaySeconds) =>
+			float.IsFinite(elapsedSeconds) && elapsedSeconds >= Math.Max(fallbackDelaySeconds, 0f);
+
+		internal static Vector3 BuildSpawnFallbackSupportCenter(Vector3 spawnPosition, float topOffset, float padThickness)
+		{
+			var safeTopOffset = Math.Max(topOffset, 0f);
+			var safeThickness = Math.Max(padThickness, 0f);
+			return spawnPosition - Vector3.UnitY * (safeTopOffset + safeThickness * 0.5f);
+		}
+
+		internal static Vector3 BuildSpawnPositionFromSupportPoint(Vector3 supportPoint, float clearance)
+		{
+			return supportPoint + Vector3.UnitY * Math.Max(clearance, 0f);
+		}
+
+		internal static (Vector3 Position, Quaternion Rotation) BuildSpawnLoadingCameraPose(Vector3 spawnPosition)
+		{
+			var cameraPosition = spawnPosition + new Vector3(0f, SpawnLoadingCameraHeight, SpawnLoadingCameraBackOffset);
+			var forward = spawnPosition - cameraPosition;
+			return (cameraPosition, CesiumRotationUtilities.CreateCameraRotationFromUpAndForward(Vector3.UnitY, forward));
+		}
+
+		private void PrepareSpawnLoadingCamera()
+		{
+			if (!TryResolveSpawnAnchorPosition(out var spawnPosition))
+			{
+				return;
+			}
+
+			var cameraEntity = ResolveCameraEntity();
+			if (cameraEntity == null)
+			{
+				return;
+			}
+
+			RemoveCameraScripts(cameraEntity);
+			var pose = BuildSpawnLoadingCameraPose(spawnPosition);
+			cameraEntity.Transform.Position = pose.Position;
+			cameraEntity.Transform.Rotation = pose.Rotation;
+		}
+
+		private bool TryActivateSpawnFallbackSupport()
+		{
+			if (_spawnFallbackSupportEntity != null)
+			{
+				return true;
+			}
+
+			if (!ShouldActivateSpawnFallbackSupport(_pendingVehicleLoadWaitSeconds, SpawnSupportFallbackDelaySeconds)
+			    || !TryResolveSpawnAnchorPosition(out var spawnPosition))
+			{
+				return false;
+			}
+
+			var supportEntity = new Entity("CesiumSpawnFallbackSupport");
+			supportEntity.Transform.Position = BuildSpawnFallbackSupportCenter(
+				spawnPosition,
+				SpawnSupportFallbackTopOffset,
+				SpawnSupportFallbackPadSize.Y);
+			supportEntity.Add(new StaticComponent
+			{
+				FrictionCoefficient = 1.1f,
+				Collider = new CompoundCollider
+				{
+					Colliders = { new BoxCollider { Size = SpawnSupportFallbackPadSize } },
+				},
+			});
+			supportEntity.Add(new TrackSurfaceComponent
+			{
+				SurfaceType = LibreRally.Vehicle.Physics.SurfaceType.Tarmac,
+				SurfaceFrictionCoefficient = 1.1f,
+			});
+			Entity.AddChild(supportEntity);
+			_spawnFallbackSupportEntity = supportEntity;
+			_status = $"Using temporary spawn support for {GetCurrentTrackName()}.";
+			return true;
+		}
+
+		private BepuSimulation? ResolveSceneSimulation()
+		{
+			var rootScene = SceneSystem.SceneInstance.RootScene;
+			if (rootScene == null)
+			{
+				return null;
+			}
+
+			return FindComponentInScene<StaticComponent>(rootScene.Entities)?.Simulation
+			       ?? FindComponentInScene<BodyComponent>(rootScene.Entities)?.Simulation;
+		}
+
+		private void ShowLoadingOverlay(string statusText, float progress)
+		{
+			if (_loadingOverlay == null)
+			{
+				return;
+			}
+
+			_loadingOverlay.TitleText = "Preparing Stage...";
+			_loadingOverlay.StatusText = statusText;
+			_loadingOverlay.SetProgress(progress);
+			_loadingOverlay.Visible = true;
+			_loadingOverlay.Enabled = true;
+		}
+
+		private void HideLoadingOverlay()
+		{
+			if (_loadingOverlay == null)
+			{
+				return;
+			}
+
+			_loadingOverlay.Visible = false;
+			_loadingOverlay.Enabled = false;
 		}
 
 		private void InitializeLiveTuningBridge()
@@ -1000,12 +1511,15 @@ namespace LibreRally
 			try
 			{
 				var selectedVehicle = ResolveSelectedVehicleDescriptor();
-				LoadVehicle(selectedVehicle);
+				RequestVehicleLoad(selectedVehicle);
+				var isQueued = _pendingVehicleLoad != null;
 				return new LiveTuningBridgeResponse
 				{
 					Succeeded = true,
 					Command = "reload_vehicle",
-					Summary = $"Reloaded {GetCurrentVehicleName()} with the current config.",
+					Summary = isQueued
+						? $"Queued reload for {GetCurrentVehicleName()} while Cesium spawn support becomes ready."
+						: $"Reloaded {GetCurrentVehicleName()} with the current config.",
 					Snapshot = CreateLiveTuningSnapshot(),
 				};
 			}
@@ -1044,6 +1558,17 @@ namespace LibreRally
 		public override void Update()
 		{
 			HandlePauseAndVehicleSelectionInput();
+			if (_pendingSceneSelection != null)
+			{
+				ReloadScene(_pendingSceneSelection);
+				return;
+			}
+
+			if (TryProcessPendingVehicleLoad())
+			{
+				return;
+			}
+
 			var dt = (float)Game.UpdateTime.Elapsed.TotalSeconds;
 			_telemetrySession.Update((Game)Game, dt, _vehicleSession?.Car);
 			_liveTuningBridgeServer?.Pump(CreateLiveTuningSnapshot, ApplyLiveTuningPatch, ReloadLiveTuningVehicle);
@@ -1067,6 +1592,15 @@ namespace LibreRally
 				_vehicleSelectionOverlay.SelectedIndex = _selectedVehicleIndex;
 				_vehicleSelectionOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.VehicleSelection;
 				_vehicleSelectionOverlay.StatusText = _status;
+			}
+
+			if (_trackSelectionOverlay != null)
+			{
+				_trackSelectionOverlay.Items = GetAvailableTrackItems();
+				_trackSelectionOverlay.SelectedIndex = _selectedTrackIndex;
+				_trackSelectionOverlay.OverlayVisible = _activeMenuScreen == MenuScreen.TrackSelection;
+				_trackSelectionOverlay.CurrentTrackName = GetCurrentTrackName();
+				_trackSelectionOverlay.StatusText = _status;
 			}
 
 			if (_pauseMenuOverlay != null)
@@ -1106,6 +1640,105 @@ namespace LibreRally
 				DebugText.Print(_status, new Int2(10, 10));
 			}
 		}
+
+		private void ReloadScene(StartupSceneSelection selection)
+		{
+			_pendingSceneSelection = null;
+			DisposeRuntimeSystems();
+			var game = (Game)Game;
+			var sceneSetup = CodeFirstSceneFactory.CreateStartupSceneSetup(game, selection);
+			SceneSystem.GraphicsCompositor = sceneSetup.GraphicsCompositor;
+			SceneSystem.SceneInstance.RootScene = sceneSetup.Scene;
+		}
+
+		private void DisposeRuntimeSystems()
+		{
+			_pendingVehicleLoad = null;
+			_pendingVehicleLoadWaitSeconds = 0f;
+			_spawnFallbackSupportEntity = null;
+			UnloadVehicle();
+			DisposeOverlay(ref _trackSelectionOverlay);
+			DisposeOverlay(ref _vehicleSelectionOverlay);
+			DisposeOverlay(ref _pauseMenuOverlay);
+			DisposeOverlay(ref _setupUiShellOverlay);
+			DisposeOverlay(ref _physicsCalibrationOverlay);
+			DisposeOverlay(ref _telemetryOverlay);
+			DisposeOverlay(ref _loadingOverlay);
+			DisposeOverlay(ref _drivingHudOverlay);
+			_liveTuningBridgeServer?.Dispose();
+			_liveTuningBridgeServer = null;
+		}
+
+		private void DisposeOverlay<T>(ref T? overlay)
+			where T : GameSystemBase
+		{
+			if (overlay == null)
+			{
+				return;
+			}
+
+			((Game)Game).GameSystems.Remove(overlay);
+			overlay = null;
+		}
+
+		private static Entity? FindEntityByName(IEnumerable<Entity> entities, string name)
+		{
+			foreach (var entity in entities)
+			{
+				if (string.Equals(entity.Name, name, StringComparison.Ordinal))
+				{
+					return entity;
+				}
+
+				var childMatch = FindEntityByName(entity.GetChildren(), name);
+				if (childMatch != null)
+				{
+					return childMatch;
+				}
+			}
+
+			return null;
+		}
+
+		private Entity? ResolveCameraEntity()
+		{
+			return SceneSystem.SceneInstance.RootScene?.Entities
+				.FirstOrDefault(entity => entity.Get<CameraComponent>() != null);
+		}
+
+		private static void RemoveCameraScripts(Entity cameraEntity)
+		{
+			foreach (var script in cameraEntity.GetAll<SyncScript>().ToList())
+			{
+				cameraEntity.Remove(script);
+			}
+		}
+
+		private static T? FindComponentInScene<T>(IEnumerable<Entity> entities)
+			where T : EntityComponent
+		{
+			foreach (var entity in entities)
+			{
+				var component = entity.Get<T>();
+				if (component != null)
+				{
+					return component;
+				}
+
+				var childComponent = FindComponentInScene<T>(entity.GetChildren());
+				if (childComponent != null)
+				{
+					return childComponent;
+				}
+			}
+
+			return null;
+		}
+
+		private static string ResolveTrackSelectionLabel(StartupSceneSelection selection) =>
+			selection.SceneMode == StartupSceneMode.Cesium
+				? selection.CesiumStage.DisplayName
+				: "Local Test Track";
 
 		private IReadOnlyList<PauseMenuItem> BuildTelemetryMenuItems() =>
 		[

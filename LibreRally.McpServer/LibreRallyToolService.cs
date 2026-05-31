@@ -27,7 +27,8 @@ internal sealed class LibreRallyToolService
 			.Select(Path.GetFileName)
 			.OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
 			.Where(name => !string.IsNullOrWhiteSpace(name))
-			.ToArray()!;
+			.Select(x => x!)
+			.ToArray();
 
 		return new VehicleConfigListResult
 		{
