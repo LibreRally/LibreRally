@@ -10,6 +10,7 @@ This site is published with [DocFX](https://dotnet.github.io/docfx/) and include
 ## Getting started
 
 - Explore the [reference vehicle documentation](vehicles/basic_car.md)
+- Configure the [Cesium startup scene mode](cesium/startup-scene-mode.md)
 - Browse the generated [API reference](api/index.md)
 
 ## Projects covered by this site
