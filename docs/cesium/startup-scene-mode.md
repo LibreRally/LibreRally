@@ -8,6 +8,10 @@ LibreRally includes a code-first Cesium startup path behind `LIBRERALLY_SCENE_MO
 - `LIBRERALLY_SCENE_MODE=cesium`: boots the Stride-native Cesium scene bootstrap
 - `LIBRERALLY_CESIUM_STAGE` selects the Cesium preset:
   - `sample` (default): Cesium's public `TilesetWithRequestVolume` sample
+  - `melbourne` / `melbourne-photogrammetry`: curated Melbourne photogrammetry
+  - `google` / `google-photorealistic` / `google-photorealistic-3d-tiles`: Google Photorealistic 3D Tiles
+  - `osm` / `osm-buildings` / `cesium-osm-buildings`: Cesium OSM Buildings
+  - `file`: load a local `tileset.json` from `LIBRERALLY_CESIUM_LOCAL_FILE`
   - `url`: load a contributor-supplied `tileset.json` URL
   - `ion`: load a Cesium ion asset
 
@@ -16,7 +20,8 @@ LibreRally includes a code-first Cesium startup path behind `LIBRERALLY_SCENE_MO
 | Variable | Purpose |
 | --- | --- |
 | `LIBRERALLY_SCENE_MODE` | Set to `cesium` to boot the Cesium scene path. |
-| `LIBRERALLY_CESIUM_STAGE` | Select `sample`, `url`, or `ion`. |
+| `LIBRERALLY_CESIUM_STAGE` | Select `sample`, `melbourne`, `google`, `osm`, `file`, `url`, or `ion` (aliases supported). |
+| `LIBRERALLY_CESIUM_LOCAL_FILE` | Absolute path to a local `tileset.json` used by the `file` preset. |
 | `LIBRERALLY_CESIUM_URL` | Overrides the tileset URL for the `url` preset. |
 | `LIBRERALLY_CESIUM_ION_ASSET_ID` | Cesium ion asset id for the `ion` preset. |
 | `LIBRERALLY_CESIUM_ION_ACCESS_TOKEN` | Cesium ion access token for the `ion` preset. |
@@ -25,6 +30,7 @@ LibreRally includes a code-first Cesium startup path behind `LIBRERALLY_SCENE_MO
 | `LIBRERALLY_CESIUM_ORIGIN_HEIGHT` | Override the local georeference height in meters. |
 | `LIBRERALLY_CESIUM_MAX_SCREEN_SPACE_ERROR` | Override Cesium Native screen-space error budget. |
 | `LIBRERALLY_CESIUM_MAX_TILE_LOADS` | Override maximum simultaneous tile loads. |
+| `LIBRERALLY_CESIUM_MAX_CACHED_BYTES` | Override Cesium Native cache memory budget in bytes. |
 
 `LIBRERALLY_CESIUM_ORIGIN_LONGITUDE` and `LIBRERALLY_CESIUM_ORIGIN_LATITUDE` use the standard geographic ordering:
 
