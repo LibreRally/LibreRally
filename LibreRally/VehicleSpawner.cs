@@ -663,6 +663,7 @@ namespace LibreRally
 
 		internal static bool AreEquivalentTrackSelections(StartupSceneSelection left, StartupSceneSelection right) =>
 			left.SceneMode == right.SceneMode
+			// Default mode always maps to the single local test track regardless of any stale Cesium stage value.
 			&& (left.SceneMode != StartupSceneMode.Cesium
 			    || CesiumStageBootstrapConfiguration.MatchesTrackIdentity(left.CesiumStage, right.CesiumStage));
 

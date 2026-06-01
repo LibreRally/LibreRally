@@ -10,7 +10,6 @@
             "request": "launch",
             "projectPath": "${workspaceFolder}/LibreRally.Windows/LibreRally.Windows.csproj",
             "env": {
-                "LIBRERALLY_CESIUM_STAGE": "ion",
                 "LIBRERALLY_CESIUM_ORIGIN_LONGITUDE": "144.9673305",
                 "LIBRERALLY_CESIUM_ORIGIN_LATITUDE": "-37.8175087"
             }
