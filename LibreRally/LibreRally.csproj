@@ -20,7 +20,7 @@
     <PackageReference Include="Stride.UI" Version="4.3.0.2507" />
     <PackageReference Include="Stride.Core.Assets.CompilerApp" Version="4.3.0.2507" IncludeAssets="build;buildTransitive" />
     <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
     <PackageReference Include="Stride.SharpFont" Version="1.0.1" />
   </ItemGroup>
 </Project>
